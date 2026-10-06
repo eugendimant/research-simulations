@@ -9,6 +9,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 __version__ = "1.2.9.1"  # v1.2.9.1: report describes the effects actually built in (report-facing version stamp)
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 from datetime import datetime
 import json
 import base64
@@ -87,6 +88,28 @@ def _report_clean_column_name(name: str) -> str:
     return clean.strip('_') or "Variable"
 
 
+def _numeric_column_names(df: "pd.DataFrame") -> List[str]:
+    """Names of the numeric (non-boolean) columns of ``df``, in column order.
+
+    Text answers (open-ended questions) must never reach a mean, SD or range: ``df[cols].min()`` on a
+    text column raised a UFuncTypeError that used to replace both instructor analyses with a stub.
+    """
+    names: List[str] = []
+    for name, dtype in zip(df.columns, df.dtypes):
+        if pd.api.types.is_numeric_dtype(dtype) and not pd.api.types.is_bool_dtype(dtype):
+            names.append(name)
+    return names
+
+
+def _scale_column_registry(metadata: Dict[str, Any]) -> Dict[str, List[str]]:
+    """Map each scale name to the item columns the engine generated for it (``scale_generation_log``)."""
+    registry: Dict[str, List[str]] = {}
+    for entry in (metadata.get("scale_generation_log") or []):
+        if isinstance(entry, dict):
+            registry[str(entry.get("name", ""))] = list(entry.get("columns_generated") or [])
+    return registry
+
+
 def _find_scale_columns(df: "pd.DataFrame", scale: Dict[str, Any],
                         col_registry: Optional[Dict[str, List[str]]] = None) -> List[str]:
     """Find DataFrame columns for a scale using multiple name strategies.
@@ -100,35 +123,247 @@ def _find_scale_columns(df: "pd.DataFrame", scale: Dict[str, Any],
     2. variable_name cleaned with _report_clean_column_name
     3. name cleaned with _report_clean_column_name
     4. Legacy: name.replace(' ', '_')
+
+    v1.2.9.1: only numeric columns are returned. A prefix match used to pick up an open-ended TEXT column
+    whose name starts with the scale name (``Punitive_Pilot_03`` for scale ``Punitive_Pilot``), and the text
+    then reached numeric statistics. When several columns share the prefix, the ones whose remainder is
+    purely digits (``<prefix>_1``, ``<prefix>_2``, ...) win over longer names such as ``<prefix>_Pilot_1``.
     """
     scale_name = scale.get("name", "Scale")
+    numeric = _numeric_column_names(df)
+    numeric_set = set(numeric)
+
+    def _by_prefix(prefix: str) -> List[str]:
+        lead = f"{prefix}_"
+        loose = [c for c in numeric if str(c).startswith(lead) and str(c)[-1:].isdigit()]
+        strict = [c for c in loose if str(c)[len(lead):].isdigit()]
+        return sorted(strict or loose, key=str)
 
     # Strategy 1: Column registry from engine's scale_generation_log
     if col_registry:
         cols = col_registry.get(scale_name, [])
         if cols:
-            existing = [c for c in cols if c in df.columns]
+            existing = [c for c in cols if c in numeric_set]
             if existing:
                 return existing
 
     # Strategy 2: variable_name with clean column name (matches engine)
     var_name = str(scale.get("variable_name", "")).strip()
     if var_name:
-        prefix = _report_clean_column_name(var_name)
-        cols = [c for c in df.columns if c.startswith(f"{prefix}_") and c[-1].isdigit()]
+        cols = _by_prefix(_report_clean_column_name(var_name))
         if cols:
-            return sorted(cols)
+            return cols
 
     # Strategy 3: display name with clean column name
-    prefix = _report_clean_column_name(scale_name)
-    cols = [c for c in df.columns if c.startswith(f"{prefix}_") and c[-1].isdigit()]
+    cols = _by_prefix(_report_clean_column_name(scale_name))
     if cols:
-        return sorted(cols)
+        return cols
 
     # Strategy 4: Legacy fallback — simple space-to-underscore
-    prefix = scale_name.replace(' ', '_')
-    cols = [c for c in df.columns if c.startswith(f"{prefix}_") and c[-1].isdigit()]
-    return sorted(cols)
+    return _by_prefix(str(scale_name).replace(' ', '_'))
+
+
+def _hypothesis_text(hypothesis: Any) -> str:
+    """Return the wording of one extracted hypothesis.
+
+    ``_parse_prereg_hypotheses`` returns plain strings, but an older/other caller may hand over
+    ``{"text": ...}`` dicts; both are accepted so the executive summary can never fail on the shape.
+    """
+    if isinstance(hypothesis, dict):
+        for key in ("text", "hypothesis", "statement"):
+            value = hypothesis.get(key)
+            if value:
+                return str(value).strip()
+        return ""
+    return "" if hypothesis is None else str(hypothesis).strip()
+
+
+def _is_finite_number(value: Any) -> bool:
+    """True for a real, finite number (bools, None, NaN and +/-inf are not)."""
+    if isinstance(value, bool) or value is None:
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _report_p_cell(p: Any, html: bool = False) -> str:
+    """p-value for a table cell: ``< .001`` below .001, ``0.0432`` otherwise, ``n/a`` if unusable."""
+    if not _is_finite_number(p):
+        return "n/a"
+    value = float(p)
+    if value < 0.001:
+        return "&lt; .001" if html else "< .001"
+    return f"{value:.4f}"
+
+
+def _report_p_text(p: Any, html: bool = False) -> str:
+    """Format a p-value for running text: ``p < .001`` below .001, ``p = 0.0432`` otherwise, ``p n/a`` if unusable.
+
+    A p-value that rounds to 0.0000 must never be printed as ``p = 0.0000``, and NaN/inf never reach the page.
+    ``html=True`` writes the less-than sign as ``&lt;``.
+    """
+    cell = _report_p_cell(p, html=html)
+    if cell == "n/a":
+        return "p n/a"
+    return f"p {cell}" if cell.startswith(("<", "&lt;")) else f"p = {cell}"
+
+
+def _fnum(value: Any, fmt: str = ".2f", na: str = "n/a") -> str:
+    """Format ``value`` with ``fmt``; return ``na`` when it is missing or not finite (never prints nan/inf)."""
+    if not _is_finite_number(value):
+        return na
+    return format(float(value), fmt)
+
+
+# DV types whose item columns are tied together: a ranking uses each rank once, a constant-sum question splits
+# a fixed total. The mean of such items is the same for every participant, so it says nothing about conditions.
+_JOINT_ITEM_SCALE_TYPES = frozenset({"rank_order", "ranking", "rank_order_scale", "constant_sum", "constantsum"})
+
+
+def _is_joint_item_scale(scale: Dict[str, Any]) -> bool:
+    """True when the scale is a constant-sum or rank-order question (items sum to a constant)."""
+    kind = re.sub(r"[\s\-]+", "_", str(scale.get("type", "") or "").strip().lower())
+    return kind in _JOINT_ITEM_SCALE_TYPES
+
+
+def _composite_has_no_variation(composite: Any, condition: Any = None) -> bool:
+    """True when every condition group (with 2+ valid values) is constant, so no test can be computed.
+
+    With zero variance in every group a t-test or ANOVA divides by zero: scipy answers NaN or +/-inf with
+    p = NaN or 0, and the numpy fallbacks answer t = 0, p = 1; none of it is a result. The check uses the
+    range of each group with a relative tolerance, because a constant-sum mean such as 100 / 3 carries float
+    noise of about 1e-14 that would otherwise look like variation and give t = 2,500,000.
+    """
+    try:
+        values = pd.to_numeric(pd.Series(composite), errors="coerce")
+        valid = values.notna()
+        if int(valid.sum()) < 2:
+            return False
+
+        def _flat(group: "pd.Series") -> bool:
+            arr = group.to_numpy(dtype=float)
+            spread = float(np.nanmax(arr) - np.nanmin(arr))
+            return spread <= 1e-9 * max(1.0, float(np.nanmax(np.abs(arr))))
+
+        if condition is None:
+            return _flat(values[valid])
+        cond = pd.Series(condition).reindex(values.index)
+        groups = [values[valid & (cond == c)] for c in cond[valid].dropna().unique()]
+        sized = [g for g in groups if len(g) >= 2]
+        return bool(sized) and all(_flat(g) for g in sized)
+    except (TypeError, ValueError):
+        logger.warning("Could not check the composite for variation", exc_info=True)
+        return False
+
+
+def _finite_results_only(results: Any) -> Any:
+    """Copy of a statistics result dict without any test, row or comparison whose numbers are not finite.
+
+    A zero-variance pair gives t = NaN or +/-inf with p = NaN or 0, and +/-inf is not "significant".
+    A test like that says nothing, so it is left out instead of printing ``t = nan`` or ``p = 0.0000``.
+    Non-dict input is returned unchanged.
+    """
+    if not isinstance(results, dict):
+        return results
+
+    def _all_finite(node: Any) -> bool:
+        if isinstance(node, dict):
+            return all(_all_finite(v) for v in node.values())
+        if isinstance(node, (list, tuple)):
+            return all(_all_finite(v) for v in node)
+        if isinstance(node, (float, np.floating)):
+            return bool(np.isfinite(node))
+        return True
+
+    cleaned: Dict[str, Any] = {}
+    for key, value in results.items():
+        if isinstance(value, dict):
+            nested = [v for v in value.values() if isinstance(v, dict)]
+            if nested and len(nested) == len(value):  # rows keyed by name (coefficients, cell statistics, ...)
+                kept = {k: v for k, v in value.items() if _all_finite(v)}
+                if kept:
+                    cleaned[key] = kept
+            elif _all_finite(value):
+                cleaned[key] = value
+        elif isinstance(value, list) and value and all(isinstance(v, dict) for v in value):
+            kept_rows = [v for v in value if _all_finite(v)]
+            if kept_rows:
+                cleaned[key] = kept_rows
+        elif _all_finite(value):
+            cleaned[key] = value
+    return cleaned
+
+
+def _report_context(df: pd.DataFrame, metadata: Dict[str, Any], prereg_text: str,
+                    team_info: Optional[Dict[str, Any]], html: bool) -> SimpleNamespace:
+    """Shared state of one report run: the output list plus the values that several sections need.
+
+    These values used to be computed inside the first section that needed them, so a failure there left every
+    later section without them. They are computed once, defensively, before any section runs.
+    """
+    n_total = len(df)
+    try:
+        n_excluded = int(df["Exclude_Recommended"].sum()) if "Exclude_Recommended" in df.columns else 0
+    except (TypeError, ValueError):
+        logger.warning("Exclude_Recommended could not be summed; assuming no recommended exclusions", exc_info=True)
+        n_excluded = 0
+    conditions = list(metadata.get("conditions") or [])
+    try:
+        df = _align_condition_values(df, [str(c) for c in conditions])
+    except (TypeError, ValueError, KeyError):
+        logger.warning("Condition labels could not be aligned with the metadata; using them as they are", exc_info=True)
+    # v1.0.6.3: Fallback (HTML) - if the metadata conditions do not match the data, use the data's own values
+    if html and conditions and "CONDITION" in df.columns:
+        data_conditions = df["CONDITION"].unique().tolist()
+        if data_conditions and sum(1 for c in conditions if c in data_conditions) == 0:
+            conditions = data_conditions
+    return SimpleNamespace(
+        out=[], html=html, df=df,
+        # v1.2.4.0: the FULL dataset is analysed. Exclude_Recommended is informational (it teaches students about
+        # data quality) and must NOT reduce the analysis N: instructors expect the full sample.
+        df_clean=df,
+        metadata=metadata, prereg_text=prereg_text, team_info=team_info,
+        n_total=n_total, n_excluded=n_excluded, n_clean=n_total - n_excluded,
+        exclusion_rate=(n_excluded / n_total * 100) if n_total > 0 else 0,
+        conditions=conditions, factors=metadata.get("factors") or [], scales=metadata.get("scales") or [],
+        col_registry={}, dv_batch=[], all_scale_results=[], exec_summary_index=None,
+    )
+
+
+_P_ZERO_TEXT = re.compile(r"\bp\s*=\s*0\.0{3,4}(?![0-9])")
+_P_ZERO_CELL = re.compile(r"(<td class=['\"](?:sig|marginal|nonsig)['\"]>)\s*0\.0{3,4}\s*(</td>)")
+
+
+def _finalize_p_text(text: str, html: bool) -> str:
+    """Last-line guard for a finished report: a p-value that prints as 0.0000 (or 0.000) is written ``< .001``.
+
+    The statistics boxes, chart annotations and p columns format p with a fixed number of decimals, which turns
+    every p below .00005 into ``p = 0.0000``. Only the unambiguous forms are rewritten: the phrase ``p = 0.000(0)``
+    and, in HTML, the significance-coloured p cells of the tables (``<td class='sig'>0.0000</td>``).
+    """
+    less = "&lt;" if html else "<"
+    text = _P_ZERO_TEXT.sub(f"p {less} .001", text)
+    if html:
+        text = _P_ZERO_CELL.sub(r"\1&lt; .001\2", text)
+    return text
+
+
+def _no_variation_note(scale: Dict[str, Any], n_items: int, mean: Any) -> str:
+    """One truthful sentence (plain text) for a measure whose composite cannot be tested."""
+    kind = re.sub(r"[\s\-]+", "_", str(scale.get("type", "") or "").strip().lower())
+    m = _fnum(mean, ".2f")
+    if kind in ("constant_sum", "constantsum"):
+        return (f"The {n_items} options of this question are shares of one fixed total, so their mean is fixed by design "
+                f"({m} for everyone who answered all of them) and cannot differ between conditions. The composite is not "
+                "analysed; each option is compared across conditions instead.")
+    if _is_joint_item_scale(scale):
+        return (f"The {n_items} items of this question are ranks, so their mean rank is fixed by design "
+                f"({m} for everyone who ranked all of them) and cannot differ between conditions. The composite is not "
+                "analysed; each item is compared across conditions instead.")
+    return (f"Every participant in every condition has the same score on this measure (M = {m}), so there is no variation "
+            "to analyse and no test can be computed.")
 
 
 # ---------------------------------------------------------------------------
@@ -2306,6 +2541,37 @@ class ComprehensiveInstructorReport:
     def __init__(self):
         self._warnings: List[str] = []
         self._insights: List[str] = []
+        self.section_errors: List[str] = []  # sections the last report had to skip (see _run_section)
+
+    def _run_section(self, ctx: Any, title: str, build: Any, slot: Optional[int] = None) -> bool:
+        """Run one report section. If it raises, replace what it wrote by a one-line note and carry on.
+
+        The note reads ``[section "<title>" could not be generated: <reason>]``; the failure is logged and added to
+        ``self.section_errors`` so the caller can flag it. ``slot`` is the index of a reserved output entry (the
+        executive-summary placeholder) that should hold the note instead of the end of the report.
+        Returns True when the section ran cleanly.
+        """
+        mark = len(ctx.out)
+        n_results = len(ctx.all_scale_results)
+        try:
+            build(ctx)
+            return True
+        except Exception as exc:  # noqa: BLE001 - one bad section must not cost the whole report
+            reason = re.sub(r"\s+", " ", f"{type(exc).__name__}: {exc}").strip()[:300]
+            logger.warning("Report section %r could not be generated: %s", title, reason, exc_info=True)
+            self.section_errors.append(f"'{title}': {reason}")
+            del ctx.out[mark:]
+            del ctx.all_scale_results[n_results:]
+            note = f'[section "{title}" could not be generated: {reason}]'
+            if ctx.html:
+                entries = [f"<div class='warning-box'>{_html_lib.escape(note)}</div>"]
+            else:
+                entries = [note, ""]
+            if slot is not None and 0 <= slot < len(ctx.out):
+                ctx.out[slot] = entries[0]
+            else:
+                ctx.out.extend(entries)
+            return False
 
     def generate_comprehensive_report(
         self,
@@ -2315,8 +2581,40 @@ class ComprehensiveInstructorReport:
         prereg_text: str = "",
         team_info: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Generate the comprehensive instructor-only report."""
-        lines: List[str] = []
+        """Generate the comprehensive instructor-only report (Markdown).
+
+        The report is built section by section, each behind a guard: a section that raises is replaced by one line,
+        ``[section "<title>" could not be generated: <reason>]``, and the others are not affected. Skipped sections
+        are logged and listed in ``self.section_errors``. Every dependent variable is its own guarded block.
+        """
+        self.section_errors = []
+        ctx = _report_context(df, metadata, prereg_text, team_info, html=False)
+        for title, build in (
+            ("Study overview", self._md_overview),
+            ("Data quality assurance", self._md_quality_assurance),
+            ("1. Data quality summary", self._md_data_quality),
+            ("2. Experimental design verification", self._md_design),
+            ("3. Dependent variable analysis", self._md_dv_header),
+        ):
+            self._run_section(ctx, title, build)
+        for scale in list(ctx.scales or []):
+            ctx.dv_batch = [scale]
+            name = scale.get("name", "Scale") if isinstance(scale, dict) else scale
+            self._run_section(ctx, f"3. Dependent variable analysis: {name}", self._md_dv_scale)
+        for title, build in (
+            ("4. Preregistration alignment check", self._md_prereg),
+            ("5. Persona distribution and impact", self._md_persona),
+            ("6. Open-ended questions summary", self._md_open_ended),
+            ("7. Effect size quality assessment", self._md_effect_sizes),
+            ("8. Condition balance analysis", self._md_condition_balance),
+            ("9. Instructor recommendations", self._md_recommendations),
+        ):
+            self._run_section(ctx, title, build)
+        return _finalize_p_text("\n".join(map(str, ctx.out)), html=False)
+
+    def _md_overview(self, ctx: Any) -> None:
+        """Report header and study overview."""
+        lines, metadata, team_info = ctx.out, ctx.metadata, ctx.team_info
 
         # Header
         lines.append("=" * 80)
@@ -2429,6 +2727,10 @@ class ComprehensiveInstructorReport:
         lines.append(f"**Total Simulations Run (all time):** {total_simulations}")
         lines.append("")
 
+    def _md_quality_assurance(self, ctx: Any) -> None:
+        """Automated quality checks: scale ranges and open-ended response uniqueness."""
+        lines, df, metadata = ctx.out, ctx.df, ctx.metadata
+
         # === v1.2.5: DATA QUALITY ASSURANCE SECTION ===
         lines.append("")
         lines.append("-" * 80)
@@ -2443,17 +2745,26 @@ class ComprehensiveInstructorReport:
         if scales:
             lines.append("| Scale | Items | Expected Range | Actual Range | Status |")
             lines.append("|-------|-------|---------------|--------------|--------|")
+            # v1.2.9.1: same column lookup as the analysis below (registry first, numeric columns only). Matching
+            # "<name>_<digits>" by hand picked up an open-ended TEXT column (UFuncTypeError, both analyses stubbed)
+            # and missed names such as "1.9Q" whose columns are "1_9Q_1".
+            _range_registry = _scale_column_registry(metadata)
             for scale in scales:
                 s_name = str(scale.get("name", "Unknown")).strip().replace(" ", "_")
                 n_items = scale.get("num_items", 5)
                 s_min = scale.get("scale_min", 1)
                 s_max = scale.get("scale_max", 7)
-                cols = [c for c in df.columns if c.startswith(f"{s_name}_") and c[len(s_name)+1:].isdigit()]
+                cols = _find_scale_columns(df, scale, _range_registry)
                 if cols:
                     actual_min = df[cols].min().min()
                     actual_max = df[cols].max().max()
+                    if not (_is_finite_number(actual_min) and _is_finite_number(actual_max)):
+                        lines.append(f"| {s_name} | {len(cols)} | [{s_min}-{s_max}] | no answers | ⚠️ Review |")
+                        continue
                     status = "✅ Pass" if actual_min >= s_min and actual_max <= s_max else "⚠️ Review"
                     lines.append(f"| {s_name} | {len(cols)} | [{s_min}-{s_max}] | [{actual_min}-{actual_max}] | {status} |")
+                else:
+                    lines.append(f"| {s_name} | 0 | [{s_min}-{s_max}] | no columns found | ⚠️ Review |")
             lines.append("")
 
         # Response uniqueness check for open-ended (v1.2.5.1: centralized detection)
@@ -2474,6 +2785,11 @@ class ComprehensiveInstructorReport:
                 lines.append(f"- {col}: {unique_responses}/{total} unique ({pct:.1f}%) {status}")
             lines.append("")
 
+    def _md_data_quality(self, ctx: Any) -> None:
+        """Section 1: exclusions, attention checks and completion times."""
+        lines, df = ctx.out, ctx.df
+        n_total, n_excluded, n_clean, exclusion_rate = ctx.n_total, ctx.n_excluded, ctx.n_clean, ctx.exclusion_rate
+
         # =============================================================
         # SECTION 1: DATA QUALITY SUMMARY
         # =============================================================
@@ -2481,11 +2797,6 @@ class ComprehensiveInstructorReport:
         lines.append("## 1. DATA QUALITY SUMMARY")
         lines.append("-" * 80)
         lines.append("")
-
-        n_total = len(df)
-        n_excluded = int(df["Exclude_Recommended"].sum()) if "Exclude_Recommended" in df.columns else 0
-        n_clean = n_total - n_excluded
-        exclusion_rate = (n_excluded / n_total * 100) if n_total > 0 else 0
 
         lines.append(f"| Metric | Value |")
         lines.append(f"|--------|-------|")
@@ -2519,6 +2830,11 @@ class ComprehensiveInstructorReport:
             lines.append(f"- Very slow (>30min): {(df['Completion_Time_Seconds'] > 1800).sum()}")
             lines.append("")
 
+    def _md_design(self, ctx: Any) -> None:
+        """Section 2: design type, condition distribution and factor structure."""
+        lines, metadata, df, n_total = ctx.out, ctx.metadata, ctx.df, ctx.n_total
+        conditions, factors, scales = ctx.conditions, ctx.factors, ctx.scales
+
         # =============================================================
         # SECTION 2: EXPERIMENTAL DESIGN CHECK
         # =============================================================
@@ -2526,11 +2842,6 @@ class ComprehensiveInstructorReport:
         lines.append("## 2. EXPERIMENTAL DESIGN VERIFICATION")
         lines.append("-" * 80)
         lines.append("")
-
-        conditions = metadata.get("conditions", [])
-        factors = metadata.get("factors", [])
-        scales = metadata.get("scales", [])
-        df = _align_condition_values(df, [str(c) for c in conditions])
 
         lines.append(f"**Design type:** {metadata.get('design_type', 'Between-subjects')}")
         lines.append(f"**Number of conditions:** {len(conditions)}")
@@ -2572,6 +2883,10 @@ class ComprehensiveInstructorReport:
                 lines.append(f"- **{fname}**: {', '.join(str(l) for l in levels)} ({len(levels)} levels)")
             lines.append("")
 
+    def _md_dv_header(self, ctx: Any) -> None:
+        """Section 3 heading; also prepares the data and column registry the per-DV blocks use."""
+        lines, df, metadata = ctx.out, ctx.df, ctx.metadata
+
         # =============================================================
         # SECTION 3: DV ANALYSIS & STATISTICS
         # =============================================================
@@ -2586,10 +2901,13 @@ class ComprehensiveInstructorReport:
         df_clean = df
 
         # v1.4.11: Build column registry from scale_generation_log if available
-        _gen_log = metadata.get("scale_generation_log", [])
-        _col_registry: Dict[str, List[str]] = {}
-        for _entry in _gen_log:
-            _col_registry[str(_entry.get("name", ""))] = list(_entry.get("columns_generated", []))
+        _col_registry: Dict[str, List[str]] = _scale_column_registry(metadata)
+        ctx.df_clean, ctx.col_registry = df_clean, _col_registry
+
+    def _md_dv_scale(self, ctx: Any) -> None:
+        """Section 3: the block of one dependent variable (``ctx.dv_batch`` holds just that scale)."""
+        lines, df_clean, conditions = ctx.out, ctx.df_clean, ctx.conditions
+        _col_registry, scales = ctx.col_registry, ctx.dv_batch
 
         for scale in scales:
             scale_name = scale.get("name", "Scale")
@@ -2613,7 +2931,7 @@ class ComprehensiveInstructorReport:
                 for col in scale_cols[:10]:  # Limit to first 10 items
                     if col in df_clean.columns:
                         stats = df_clean[col].describe()
-                        lines.append(f"| {col} | {stats['mean']:.2f} | {stats['std']:.2f} | {stats['min']:.0f} | {stats['max']:.0f} |")
+                        lines.append(f"| {col} | {_fnum(stats['mean'], '.2f')} | {_fnum(stats['std'], '.2f')} | {_fnum(stats['min'], '.0f')} | {_fnum(stats['max'], '.0f')} |")
                 lines.append("")
 
                 # v1.0.5.4: Compute composite for multi-item scales, use raw values for single-item DVs
@@ -2622,13 +2940,22 @@ class ComprehensiveInstructorReport:
                     lines.append("#### Composite Score (Mean)")
                     lines.append("")
                     comp_stats = composite.describe()
-                    lines.append(f"- Mean: {comp_stats['mean']:.3f}")
-                    lines.append(f"- SD: {comp_stats['std']:.3f}")
-                    lines.append(f"- Range: [{comp_stats['min']:.2f}, {comp_stats['max']:.2f}]")
+                    lines.append(f"- Mean: {_fnum(comp_stats['mean'], '.3f')}")
+                    lines.append(f"- SD: {_fnum(comp_stats['std'], '.3f')}")
+                    lines.append(f"- Range: [{_fnum(comp_stats['min'], '.2f')}, {_fnum(comp_stats['max'], '.2f')}]")
                     lines.append("")
                 else:
                     # Single-item DV — use the column directly (no composite needed)
                     composite = df_clean[scale_cols[0]]
+
+                # v1.2.9.1: a composite that cannot differ between participants (constant-sum or rank-order items,
+                # or no variation at all) is not analysed: SD = 0 in every group makes the by-condition table and
+                # Cohen's d meaningless. Say so and compare the items instead.
+                if _is_joint_item_scale(scale) or _composite_has_no_variation(
+                        composite, df_clean["CONDITION"] if "CONDITION" in df_clean.columns else None):
+                    lines.extend(self._no_variation_block(scale, scale_cols, df_clean, composite, conditions, html=False))
+                    lines.append("")
+                    continue
 
                 # v1.0.5.4: By-condition analysis runs for ALL DVs (single-item and multi-item)
                 if "CONDITION" in df_clean.columns:
@@ -2682,6 +3009,10 @@ class ComprehensiveInstructorReport:
 
             lines.append("")
 
+    def _md_prereg(self, ctx: Any) -> None:
+        """Section 4: preregistration alignment check."""
+        lines, prereg_text, scales, n_total = ctx.out, ctx.prereg_text, ctx.scales, ctx.n_total
+
         # =============================================================
         # SECTION 4: PREREGISTRATION CHECK
         # =============================================================
@@ -2722,6 +3053,10 @@ class ComprehensiveInstructorReport:
             lines.append("```")
             lines.append("")
 
+    def _md_persona(self, ctx: Any) -> None:
+        """Section 5: persona distribution and its impact on the data."""
+        lines, metadata, n_total = ctx.out, ctx.metadata, ctx.n_total
+
         # =============================================================
         # SECTION 5: PERSONA DISTRIBUTION ANALYSIS
         # =============================================================
@@ -2757,6 +3092,10 @@ class ComprehensiveInstructorReport:
             if careless_share > 0.1:
                 lines.append(f"⚠️ Notable careless/random ({careless_share:.0%}) - verify exclusion criteria are working")
             lines.append("")
+
+    def _md_open_ended(self, ctx: Any) -> None:
+        """Section 6: open-ended questions and how the responses were generated."""
+        lines, df, metadata, conditions = ctx.out, ctx.df, ctx.metadata, ctx.conditions
 
         # =============================================================
         # SECTION 6: OPEN-ENDED QUESTIONS SUMMARY (NEW v2.4.4)
@@ -2864,6 +3203,10 @@ class ComprehensiveInstructorReport:
                 lines.append("Each response is unique per participant with topic-grounded content matching persona profiles.")
             lines.append("")
 
+    def _md_effect_sizes(self, ctx: Any) -> None:
+        """Section 7: configured versus observed effect sizes."""
+        lines, metadata = ctx.out, ctx.metadata
+
         # =============================================================
         # SECTION 7: EFFECT SIZE QUALITY ASSESSMENT (NEW v2.4.4)
         # =============================================================
@@ -2916,6 +3259,10 @@ class ComprehensiveInstructorReport:
             lines.append("No effect sizes were explicitly configured for this simulation.")
             lines.append("The simulation used domain-inferred defaults based on study context.")
             lines.append("")
+
+    def _md_condition_balance(self, ctx: Any) -> None:
+        """Section 8: participants per condition."""
+        lines, df, conditions = ctx.out, ctx.df, ctx.conditions
 
         # =============================================================
         # SECTION 8: CONDITION BALANCE ANALYSIS (NEW v2.4.4)
@@ -2976,6 +3323,10 @@ class ComprehensiveInstructorReport:
             lines.append("No CONDITION column found in data.")
             lines.append("")
 
+    def _md_recommendations(self, ctx: Any) -> None:
+        """Section 9: recommendations for instructors, and the report footer."""
+        lines, conditions, n_clean, exclusion_rate = ctx.out, ctx.conditions, ctx.n_clean, ctx.exclusion_rate
+
         # =============================================================
         # SECTION 9: RECOMMENDATIONS
         # =============================================================
@@ -3007,8 +3358,6 @@ class ComprehensiveInstructorReport:
         lines.append("-" * 80)
         lines.append("END OF COMPREHENSIVE INSTRUCTOR REPORT")
         lines.append("-" * 80)
-
-        return "\n".join(lines)
 
     def _get_detailed_impact(self, persona: str) -> str:
         """Get detailed impact description for instructor understanding."""
@@ -3297,13 +3646,10 @@ class ComprehensiveInstructorReport:
             r'(\w+)\s+will\s+be\s+(?:higher|lower|greater|less|more|stronger|weaker)\s+(?:in|for|among)\s+([^.!?\n]+[.!?]?)',
         ]
         for pattern in effect_patterns:
-            matches = re.findall(pattern, prereg_original, re.IGNORECASE)
-            for match in matches:
-                # Combine match groups into a hypothesis statement
-                if isinstance(match, tuple):
-                    text = " ".join([m for m in match if m]).strip()
-                else:
-                    text = match.strip()
+            # Keep the whole matched sentence. Joining only the capture groups dropped the words between them
+            # ("gamified  see a tier badge ...", "Trust the AI condition") and read as garbled text in the report.
+            for found in re.finditer(pattern, prereg_original, re.IGNORECASE):
+                text = re.sub(r"\s+", " ", found.group(0)).strip()
                 if len(text) > 15 and text not in result["hypotheses"]:
                     result["hypotheses"].append(text)
 
@@ -4033,6 +4379,11 @@ class ComprehensiveInstructorReport:
         Returns:
             HTML string with executive summary
         """
+        # Measures whose composite could not be tested (constant-sum or rank-order items, or no variation at all)
+        # are listed below, not counted as null results.
+        untested = [str(r.get("scale_name", "Unknown Scale")) for r in all_scale_results if r.get("not_tested")]
+        all_scale_results = [r for r in all_scale_results if not r.get("not_tested")]
+
         html = ["<h2>2. Executive Summary</h2>"]
         html.append("<div class='section-block' style='background:#f0f7ff;border-left:4px solid #3498db;'>")
 
@@ -4063,6 +4414,9 @@ class ComprehensiveInstructorReport:
                 p_val = stats["anova"]["p_value"]
                 is_sig = stats["anova"]["significant"]
                 is_marginal = stats["anova"].get("marginally_significant", False)
+            if p_val is not None and not _is_finite_number(p_val):
+                # an undefined test (for example zero variance in every group) is no finding either way
+                p_val, is_sig, is_marginal = None, False, False
 
             # Get effect size
             if "cohens_d" in stats:
@@ -4071,6 +4425,8 @@ class ComprehensiveInstructorReport:
             elif "eta_squared" in stats:
                 effect_val = stats["eta_squared"]["value"]
                 effect_type = "η²"
+            if effect_type is not None and not _is_finite_number(effect_val):
+                effect_val, effect_type = 0, None
 
             # Get means for condition comparison
             if chart_data:
@@ -4123,6 +4479,15 @@ class ComprehensiveInstructorReport:
             f"{', '.join(str(c) for c in conditions)}. "
         )
         html.append(f"The analysis examined {n_scales} dependent variable{'s' if n_scales > 1 else ''}.")
+        if untested:
+            html.append(
+                f" {len(untested)} further measure{'s' if len(untested) > 1 else ''} could not be tested as a composite "
+                f"(a constant-sum or rank-order question, or no variation at all): {_html_lib.escape(', '.join(untested[:8]))}"
+                f"{' and more' if len(untested) > 8 else ''}. See the Statistical Analysis section for the item-by-item comparison where one applies."
+            )
+        if not all_scale_results:
+            html.append("</p></div>")
+            return "\n".join(html)
 
         # Main Findings
         html.append("<br><br><strong style='color:#2c3e50;font-size:15px;'>Key Results:</strong><br>")
@@ -4143,7 +4508,8 @@ class ComprehensiveInstructorReport:
                     html.append(
                         f"{finding['highest_cond']} (M = {finding['highest_mean']:.2f}) > {finding['lowest_cond']} (M = {finding['lowest_mean']:.2f}), "
                     )
-                html.append(f"p = {finding['p_value']:.4f}, {effect_desc} effect ({finding['effect_type']} = {finding['effect_size']:.2f})<br>")
+                _effect_txt = f", {effect_desc} effect ({finding['effect_type']} = {finding['effect_size']:.2f})" if finding['effect_type'] else ""
+                html.append(f"{_report_p_text(finding['p_value'], html=True)}{_effect_txt}<br>")
 
             if largest_effect:
                 html.append(
@@ -4161,7 +4527,7 @@ class ComprehensiveInstructorReport:
                     html.append(
                         f"{finding['highest_cond']} (M = {finding['highest_mean']:.2f}) > {finding['lowest_cond']} (M = {finding['lowest_mean']:.2f}), "
                     )
-                html.append(f"p = {finding['p_value']:.4f}<br>")
+                html.append(f"{_report_p_text(finding['p_value'], html=True)}<br>")
 
         if n_sig == 0 and not marginal_findings:
             html.append(
@@ -4172,39 +4538,40 @@ class ComprehensiveInstructorReport:
             if all_effects:
                 closest = min(all_effects, key=lambda x: x['p_value'] if x['p_value'] else 1)
                 if closest['p_value']:
-                    html.append(f"The closest to significance was <strong>{closest['scale']}</strong> (p = {closest['p_value']:.4f}).")
+                    html.append(f"The closest to significance was <strong>{closest['scale']}</strong> ({_report_p_text(closest['p_value'], html=True)}).")
         elif n_sig == 0:
             # Had marginal but no sig findings
             html.append(
                 f"<span style='color:#e74c3c;'>✗</span> No differences reached conventional significance (p &lt; .05). "
             )
 
-        # Pre-registration Hypothesis Evaluation
+        # Pre-registration hypotheses. The match below uses words in the measure names only: it never tests the
+        # predicted direction, so it can point to a related result but must never call a hypothesis "supported".
         if prereg_text:
             prereg_info = self._parse_prereg_hypotheses(prereg_text)
-            hypotheses = prereg_info.get("hypotheses", [])
+            hypotheses = [h for h in (_hypothesis_text(x) for x in prereg_info.get("hypotheses", [])) if h]
 
-            html.append("<br><br><strong style='color:#2c3e50;font-size:15px;'>Pre-Registration Evaluation:</strong><br>")
+            html.append("<br><br><strong style='color:#2c3e50;font-size:15px;'>Pre-Registration Hypotheses:</strong><br>")
 
             if hypotheses:
-                html.append(f"The pre-registration document specified {len(hypotheses)} hypothesis/hypotheses. Based on the simulated results:<br>")
-
-                # More sophisticated matching
-                for i, h in enumerate(hypotheses):
-                    h_text = h.get("text", "")
-                    h_matched = False
-
-                    # Check if any significant finding relates to this hypothesis
+                html.append(
+                    f"{len(hypotheses)} hypothesis statement(s) were picked out of the pre-registration text automatically (the wording may be "
+                    "incomplete). Each one is matched to the dependent variables by words in the variable name only, so the lines below point "
+                    "to related results. They do not test the predicted direction and do not show that a hypothesis is supported:<br>"
+                )
+                for h_text in hypotheses:
+                    h_lower = h_text.lower()
+                    related = []
                     for finding in sig_findings:
-                        scale_lower = finding["scale"].lower()
-                        h_lower = h_text.lower()
-                        if any(word in h_lower for word in scale_lower.split() if len(word) > 3):
-                            html.append(f"&nbsp;&nbsp;<span style='color:#27ae60;'>✓</span> <em>\"{h_text[:80]}{'...' if len(h_text) > 80 else ''}\"</em> — <strong>Supported</strong><br>")
-                            h_matched = True
-                            break
-
-                    if not h_matched:
-                        html.append(f"&nbsp;&nbsp;<span style='color:#e74c3c;'>✗</span> <em>\"{h_text[:80]}{'...' if len(h_text) > 80 else ''}\"</em> — Not supported<br>")
+                        words = [w for w in re.findall(r"[a-z0-9]+", str(finding["scale"]).lower()) if len(w) > 3]
+                        if any(w in h_lower for w in words):
+                            related.append(str(finding["scale"]))
+                    shown = _html_lib.escape(h_text[:80] + ("..." if len(h_text) > 80 else ""))
+                    if related:
+                        names = _html_lib.escape(", ".join(related[:3]))
+                        html.append(f"&nbsp;&nbsp;• <em>\"{shown}\"</em> — a significant result on a related measure was found ({names}); the direction was not checked<br>")
+                    else:
+                        html.append(f"&nbsp;&nbsp;• <em>\"{shown}\"</em> — no significant related result<br>")
             else:
                 html.append("No specific hypotheses were extracted from the pre-registration document. Review the document manually to compare predictions with results.")
 
@@ -4318,6 +4685,111 @@ class ComprehensiveInstructorReport:
             requested["correlation"] = True
 
         return requested
+
+    def _item_comparisons(
+        self,
+        df: pd.DataFrame,
+        item_cols: List[str],
+        conditions: List[Any],
+    ) -> List[Dict[str, Any]]:
+        """Compare each item column across conditions (the analysis for a composite that cannot vary).
+
+        Returns one dict per item: ``item``, ``cells`` (clean condition name -> (mean, sd, n)), ``varies``
+        and ``test`` (the finite results of ``_run_statistical_tests``; empty when no test is defined).
+        """
+        rows: List[Dict[str, Any]] = []
+        if "CONDITION" not in df.columns:
+            return rows
+        for col in item_cols:
+            frame = pd.DataFrame({
+                "CONDITION": df["CONDITION"].to_numpy(),
+                "_item": pd.to_numeric(df[col], errors="coerce").to_numpy(),
+            })
+            cells: Dict[str, Tuple[float, float, int]] = {}
+            for cond in conditions:
+                group = frame.loc[frame["CONDITION"] == cond, "_item"].dropna()
+                if len(group) > 0:
+                    cells[_clean_condition_name(cond)] = (
+                        float(group.mean()), float(group.std()) if len(group) > 1 else float("nan"), int(len(group)))
+            varies = not _composite_has_no_variation(frame["_item"], frame["CONDITION"])
+            test: Dict[str, Any] = {}
+            if varies and len(cells) >= 2:
+                test = _finite_results_only(self._run_statistical_tests(frame, "_item", "CONDITION"))
+            rows.append({"item": str(col), "cells": cells, "varies": varies, "test": test})
+        return rows
+
+    @staticmethod
+    def _item_test_cells(row: Dict[str, Any], html: bool = False) -> Tuple[str, str, str, str]:
+        """(test statistic, p-value, effect size, significance class) for one ``_item_comparisons`` row."""
+        res = row.get("test") or {}
+        if len(row.get("cells", {})) == 2 and "t_test" in res:
+            t = res["t_test"]
+            d = res.get("cohens_d", {}).get("value")
+            effect = f"d = {_fnum(d, '.2f')}" if _is_finite_number(d) else "n/a"
+            return (f"t = {_fnum(t.get('statistic'), '.2f')}", _report_p_cell(t.get("p_value"), html=html), effect,
+                    "sig" if t.get("significant") else ("marginal" if t.get("marginally_significant") else "nonsig"))
+        if "anova" in res:
+            a = res["anova"]
+            eta = res.get("eta_squared", {}).get("value")
+            effect = f"η² = {_fnum(eta, '.3f')}" if _is_finite_number(eta) else "n/a"
+            return (f"F = {_fnum(a.get('f_statistic'), '.2f')}", _report_p_cell(a.get("p_value"), html=html), effect,
+                    "sig" if a.get("significant") else ("marginal" if a.get("marginally_significant") else "nonsig"))
+        return ("no variation within conditions" if not row.get("varies", True) else "not computed", "n/a", "n/a", "nonsig")
+
+    def _item_comparison_html(self, rows: List[Dict[str, Any]]) -> List[str]:
+        """HTML table for ``_item_comparisons`` rows (all text escaped)."""
+        esc = lambda value: _html_lib.escape(str(value), quote=True)  # noqa: E731
+        out = ["<table><tr><th>Item</th><th>Mean (SD) by condition</th><th>Test</th><th>p</th><th>Effect size</th></tr>"]
+        for row in rows:
+            cells = "<br>".join(f"{esc(c)}: {_fnum(m, '.2f')} ({_fnum(sd, '.2f')})" for c, (m, sd, _n) in row["cells"].items())
+            test, p_cell, effect, cls = self._item_test_cells(row, html=True)
+            out.append(f"<tr><td>{esc(row['item'])}</td><td>{cells}</td><td>{test}</td><td class='{cls}'>{p_cell}</td><td>{effect}</td></tr>")
+        out.append("</table>")
+        return out
+
+    def _item_comparison_markdown(self, rows: List[Dict[str, Any]]) -> List[str]:
+        """Markdown table for ``_item_comparisons`` rows."""
+        cell = lambda value: str(value).replace("|", "\\|")  # noqa: E731
+        out = ["| Item | Mean (SD) by condition | Test | p | Effect size |", "|------|------------------------|------|---|-------------|"]
+        for row in rows:
+            cells = "; ".join(f"{cell(c)}: {_fnum(m, '.2f')} ({_fnum(sd, '.2f')})" for c, (m, sd, _n) in row["cells"].items())
+            test, p_cell, effect, _cls = self._item_test_cells(row)
+            out.append(f"| {cell(row['item'])} | {cells} | {test} | {p_cell} | {effect} |")
+        return out
+
+    def _no_variation_block(
+        self,
+        scale: Dict[str, Any],
+        scale_cols: List[str],
+        df: pd.DataFrame,
+        composite: Any,
+        conditions: List[Any],
+        html: bool,
+    ) -> List[str]:
+        """Lines/HTML for a DV whose composite cannot be tested (constant-sum, rank-order, zero variance).
+
+        Says why in one sentence and, when the measure has several items, compares each item across
+        conditions instead. Never computes a test on the constant composite.
+        """
+        mean = float(np.nanmean(pd.to_numeric(pd.Series(composite), errors="coerce"))) if len(df) else float("nan")
+        note = _no_variation_note(scale, len(scale_cols), mean)
+        rows: List[Dict[str, Any]] = []
+        if len(scale_cols) >= 2:
+            rows = [r for r in self._item_comparisons(df, scale_cols, conditions) if r["cells"]]
+        out: List[str] = []
+        if html:
+            out.append(f"<div class='warning-box'>{_html_lib.escape(note)}</div>")
+            if rows:
+                out.extend(self._item_comparison_html(rows))
+                out.append(f"<p style='font-size:0.85em;color:#64748b;'>p-values are not corrected for the {len(rows)} comparisons.</p>")
+            return out
+        out.append(f"**Note:** {note}")
+        out.append("")
+        if rows:
+            out.extend(self._item_comparison_markdown(rows))
+            out.append("")
+            out.append(f"*p-values are not corrected for the {len(rows)} comparisons.*")
+        return out
 
     def _create_bar_chart(
         self,
@@ -4895,7 +5367,41 @@ class ComprehensiveInstructorReport:
         prereg_text: str = "",
         team_info: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Generate a comprehensive HTML report with visualizations and statistical tests."""
+        """Generate a comprehensive HTML report with visualizations and statistical tests.
+
+        The report is built section by section, each behind a guard: a section that raises is replaced by one note,
+        ``[section "<title>" could not be generated: <reason>]``, and the others are not affected. Skipped sections
+        are logged and listed in ``self.section_errors``. Every dependent variable is its own guarded block.
+        """
+        self.section_errors = []
+        ctx = _report_context(df, metadata, prereg_text, team_info, html=True)
+        ctx.out = self._html_document_head(metadata)
+        self._run_section(ctx, "Study overview", self._html_overview)
+        self._run_section(ctx, "1. Sample overview", self._html_sample_overview)
+        self._run_section(ctx, "Executive summary slot", self._html_exec_slot)
+        self._run_section(ctx, "3. Statistical analysis by DV", self._html_dv_header)
+        for scale in list(ctx.scales or []):
+            ctx.dv_batch = [scale]
+            name = scale.get("name", "Scale") if isinstance(scale, dict) else scale
+            self._run_section(ctx, f"3. Statistical analysis by DV: {name}", self._html_dv_scale)
+        self._run_section(ctx, "4-5. Persona and categorical analysis", self._html_persona)
+        self._run_section(ctx, "2. Executive summary", self._html_exec_summary, slot=ctx.exec_summary_index)
+        for title, build in (
+            ("6. Effect size verification", self._html_effect_verification),
+            ("7. Data quality and exclusions", self._html_exclusions),
+            ("Generation warnings", self._html_generation_warnings),
+            ("8. Instructor notes and methodology", self._html_methodology),
+            ("9. Data dictionary", self._html_data_dictionary),
+            ("Footer", self._html_footer),
+        ):
+            self._run_section(ctx, title, build)
+        # Safety net: whatever user-controlled text reached the markup, the finished report contains no
+        # script, iframe, form, event handler, external resource or javascript: link, and the browser
+        # that opens the file is told to run no script and load nothing from the network.
+        return _harden_report_html(_finalize_p_text("\n".join(map(str, ctx.out)), html=True))
+
+    def _html_document_head(self, metadata: Dict[str, Any]) -> List[str]:
+        """Open the HTML document: styles, contents sidebar and the start of the report container."""
 
         # CSS styles for the report (v1.3.4: improved layout with TOC and sections)
         css = """
@@ -4987,6 +5493,11 @@ class ComprehensiveInstructorReport:
             "<div class='report-container'>",
             "<a id='top'></a>",
         ]
+        return html_parts
+
+    def _html_overview(self, ctx: Any) -> None:
+        """Report header and study overview (design, DVs, generation method and details)."""
+        html_parts, metadata, team_info = ctx.out, ctx.metadata, ctx.team_info
 
         # Header
         html_parts.append("<span class='confidential'>CONFIDENTIAL &mdash; INSTRUCTOR ONLY</span>")
@@ -5200,19 +5711,10 @@ class ComprehensiveInstructorReport:
         html_parts.append("</div>")  # close Study Overview section-block
         html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
 
-        # Summary metrics
-        n_total = len(df)
-        n_excluded = int(df["Exclude_Recommended"].sum()) if "Exclude_Recommended" in df.columns else 0
-        n_clean = n_total - n_excluded
-        exclusion_rate = (n_excluded / n_total * 100) if n_total > 0 else 0
-        conditions = metadata.get("conditions", [])
-        df = _align_condition_values(df, [str(c) for c in conditions])
-        # v1.0.6.3: Fallback — if metadata conditions don't match df, use df values
-        if conditions and "CONDITION" in df.columns:
-            _df_conds = df["CONDITION"].unique().tolist()
-            _matches = sum(1 for c in conditions if c in _df_conds)
-            if _matches == 0 and _df_conds:
-                conditions = _df_conds
+    def _html_sample_overview(self, ctx: Any) -> None:
+        """Section 1: sample size, exclusions and condition distribution."""
+        html_parts, df, n_total, n_clean, exclusion_rate, conditions = (
+            ctx.out, ctx.df, ctx.n_total, ctx.n_clean, ctx.exclusion_rate, ctx.conditions)
 
         html_parts.append("<a id='sample-overview'></a>")
         html_parts.append("<h2>1. Sample Overview</h2>")
@@ -5236,15 +5738,19 @@ class ComprehensiveInstructorReport:
 
         html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
 
-        # v1.2.4.0: Use FULL dataset for instructor report analysis.
-        # Exclude_Recommended is informational (teaches students about data quality)
-        # but should NOT reduce the analysis N — instructors expect the full sample.
-        df_clean = df
+    def _html_exec_slot(self, ctx: Any) -> None:
+        """Reserve the place of the executive summary; it is filled in after the DV analysis."""
+        html_parts = ctx.out
 
         # v1.3.4: Executive Summary placeholder — will be computed after DV analysis and inserted here
         html_parts.append("<a id='exec-summary'></a>")
         exec_summary_index = len(html_parts)
         html_parts.append("<!-- EXEC_SUMMARY_PLACEHOLDER -->")
+        ctx.exec_summary_index = exec_summary_index
+
+    def _html_dv_header(self, ctx: Any) -> None:
+        """Section 3 heading; also prepares the column registry the per-DV blocks use."""
+        html_parts, metadata = ctx.out, ctx.metadata
 
         # DV Analysis with statistical tests
         scales = metadata.get("scales", [])
@@ -5255,10 +5761,13 @@ class ComprehensiveInstructorReport:
         all_scale_results = []
 
         # v1.0.6.3: Build column registry for HTML report (same as markdown)
-        _html_gen_log = metadata.get("scale_generation_log", [])
-        _html_col_registry: Dict[str, List[str]] = {}
-        for _entry in _html_gen_log:
-            _html_col_registry[str(_entry.get("name", ""))] = list(_entry.get("columns_generated", []))
+        _html_col_registry: Dict[str, List[str]] = _scale_column_registry(metadata)
+        ctx.scales, ctx.all_scale_results, ctx.col_registry = scales, all_scale_results, _html_col_registry
+
+    def _html_dv_scale(self, ctx: Any) -> None:
+        """Section 3: the block of one dependent variable (``ctx.dv_batch`` holds just that scale)."""
+        html_parts, df_clean, metadata, conditions, prereg_text = ctx.out, ctx.df_clean, ctx.metadata, ctx.conditions, ctx.prereg_text
+        all_scale_results, _html_col_registry, scales = ctx.all_scale_results, ctx.col_registry, ctx.dv_batch
 
         for scale in scales:
             scale_name = scale.get("name", "Scale")
@@ -5275,6 +5784,16 @@ class ComprehensiveInstructorReport:
                 composite = df_clean[scale_cols].mean(axis=1)
                 df_analysis = df_clean.copy()
                 df_analysis["_composite"] = composite
+
+                # v1.2.9.1: a composite that cannot differ between participants (constant-sum or rank-order items,
+                # or no variation at all) gets no tests and no charts: with SD = 0 in every group scipy answers
+                # t = nan / p = nan (or t = +/-inf, p = 0) and the numpy fallbacks t = 0, p = 1. Say so and compare
+                # the items instead.
+                if _is_joint_item_scale(scale) or _composite_has_no_variation(
+                        df_analysis["_composite"], df_analysis["CONDITION"] if "CONDITION" in df_analysis.columns else None):
+                    html_parts.extend(self._no_variation_block(scale, scale_cols, df_analysis, df_analysis["_composite"], conditions, html=True))
+                    all_scale_results.append({"scale_name": scale_name, "chart_data": {}, "stats_results": {}, "not_tested": True})
+                    continue
 
                 # Descriptive stats table
                 html_parts.append("<h4>Descriptive Statistics</h4>")
@@ -5326,6 +5845,7 @@ class ComprehensiveInstructorReport:
                 stats_results = {}
                 if len(conditions) >= 2 and "CONDITION" in df_analysis.columns:
                     stats_results = self._run_statistical_tests(df_analysis, "_composite", "CONDITION")
+                    stats_results = _finite_results_only(stats_results)  # v1.2.9.1: no nan/inf test ever reaches the page
 
                 # Extract effect size and p-value for bar chart annotation
                 effect_size_val = stats_results.get("cohens_d", {}).get("value") if "cohens_d" in stats_results else None
@@ -5656,6 +6176,7 @@ class ComprehensiveInstructorReport:
                         include_controls=True,
                         prereg_controls=prereg_controls
                     )
+                    reg_results = _finite_results_only(reg_results)
 
                     # Only show regression if it worked (no warnings for failures)
                     if "error" not in reg_results and "model_fit" in reg_results:
@@ -5696,6 +6217,7 @@ class ComprehensiveInstructorReport:
                     factors = metadata.get("factors", [])
                     if len(factors) >= 2 and len(conditions) >= 4:
                         factorial_results = self._run_factorial_anova(df_analysis, "_composite", factors, "CONDITION")
+                        factorial_results = _finite_results_only(factorial_results)
 
                         # Only show factorial ANOVA if it worked (no warnings for failures)
                         if ("error" not in factorial_results or factorial_results.get("single_factor")) and \
@@ -5791,6 +6313,10 @@ class ComprehensiveInstructorReport:
                     "chart_data": chart_data,
                     "stats_results": stats_results
                 })
+
+    def _html_persona(self, ctx: Any) -> None:
+        """Sections 4-5: persona distribution and response styles, then the categorical analysis."""
+        html_parts, df_clean, metadata, conditions, n_total = ctx.out, ctx.df_clean, ctx.metadata, ctx.conditions, ctx.n_total
 
         # Chi-squared test for categorical associations
         if "CONDITION" in df_clean.columns and "Gender" in df_clean.columns:
@@ -5991,6 +6517,11 @@ class ComprehensiveInstructorReport:
 
         html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
 
+    def _html_exec_summary(self, ctx: Any) -> None:
+        """Section 2: build the executive summary and put it into its reserved place."""
+        html_parts, all_scale_results, prereg_text = ctx.out, ctx.all_scale_results, ctx.prereg_text
+        n_total, conditions, exec_summary_index = ctx.n_total, ctx.conditions, ctx.exec_summary_index
+
         # v1.3.4: Insert executive summary into its placeholder position (before statistical analysis)
         if all_scale_results:
             exec_summary = self._generate_executive_summary(
@@ -6002,6 +6533,10 @@ class ComprehensiveInstructorReport:
             html_parts[exec_summary_index] = exec_summary
         else:
             html_parts[exec_summary_index] = ""  # Remove placeholder if no results
+
+    def _html_effect_verification(self, ctx: Any) -> None:
+        """Section 6: configured versus observed effect sizes."""
+        html_parts, metadata = ctx.out, ctx.metadata
 
         # ── Observed vs Configured Effect Sizes ─────────────────────────
         obs_effects = metadata.get("effect_sizes_observed", [])
@@ -6042,6 +6577,10 @@ class ComprehensiveInstructorReport:
                     )
                 html_parts.append("</table>")
 
+    def _html_exclusions(self, ctx: Any) -> None:
+        """Section 7: exclusion flags."""
+        html_parts, metadata = ctx.out, ctx.metadata
+
         # ── Exclusion Summary ─────────────────────────────────────────
         excl = metadata.get("exclusion_summary", {})
         if excl:
@@ -6062,6 +6601,10 @@ class ComprehensiveInstructorReport:
                               f"<div class='metric-label'>Total Excluded</div></div>")
             html_parts.append("</div>")
 
+    def _html_generation_warnings(self, ctx: Any) -> None:
+        """Warnings the engine recorded while generating the data."""
+        html_parts, metadata = ctx.out, ctx.metadata
+
         # ── Generation Warnings ────────────────────────────────────────
         gen_warnings = metadata.get("generation_warnings", [])
         if gen_warnings:
@@ -6070,6 +6613,10 @@ class ComprehensiveInstructorReport:
             for gw in gen_warnings:
                 html_parts.append(f"<li>{gw}</li>")
             html_parts.append("</ul></div>")
+
+    def _html_methodology(self, ctx: Any) -> None:
+        """Section 8: notes for instructors and methodology."""
+        html_parts = ctx.out
 
         # Footer - Notes for Instructors
         html_parts.append("<a id='methodology'></a>")
@@ -6105,6 +6652,10 @@ class ComprehensiveInstructorReport:
 
         html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
 
+    def _html_data_dictionary(self, ctx: Any) -> None:
+        """Section 9: description of every output column."""
+        html_parts, metadata = ctx.out, ctx.metadata
+
         # === DATA DICTIONARY (placed at the very bottom for reference) ===
         _col_descs_html = metadata.get("column_descriptions", {})
         if _col_descs_html and isinstance(_col_descs_html, dict):
@@ -6119,12 +6670,11 @@ class ComprehensiveInstructorReport:
             html_parts.append("</table>")
             html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
 
+    def _html_footer(self, ctx: Any) -> None:
+        """Closing line and the end of the report container."""
+        html_parts = ctx.out
+
         html_parts.append(f"<p style='color:#999;font-size:0.9em;margin-top:30px;text-align:center;'>"
                           f"Generated by Behavioral Experiment Simulation Tool v{__version__} "
                           f"&middot; Software by Dr. Eugen Dimant &middot; PolyForm Noncommercial 1.0.0</p>")
         html_parts.append("</div></div></body></html>")  # close report-container + page-wrapper
-
-        # Safety net: whatever user-controlled text reached the markup, the finished report contains no
-        # script, iframe, form, event handler, external resource or javascript: link, and the browser
-        # that opens the file is told to run no script and load nothing from the network.
-        return _harden_report_html("\n".join(html_parts))
