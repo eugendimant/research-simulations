@@ -26,6 +26,7 @@ Supported QSF Formats:
 """
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -34,6 +35,17 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
 __version__ = "1.2.9.1"  # v1.2.9.1: pass Qualtrics numeric validation through to the engine
+
+
+def _finite_float(value: Any, default: Optional[float] = None) -> Optional[float]:
+    """Return ``value`` as a finite float, or ``default`` when it is blank, non-numeric, NaN or infinite."""
+    if isinstance(value, bool):
+        return default
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return number if math.isfinite(number) else default
 
 
 # ============================================================================
@@ -1169,6 +1181,15 @@ class QSFPreviewParser:
                             number_max = float(settings['Max'])
                         except (ValueError, TypeError):
                             pass
+                    # v1.2.9.1: Qualtrics nests the declared range for "Number" validation:
+                    #   Settings["ValidNumber"] = {"Min": "18", "Max": "99", "NumDecimals": ""}
+                    # (the flat Settings["Min"]/["Max"] above never occurs in real exports, so no
+                    # declared range ever reached the engine). Blank or non-numeric entries keep
+                    # the previous value; a one-sided range keeps its one bound.
+                    _valid_number = settings.get('ValidNumber')
+                    if isinstance(_valid_number, dict) and content_type == 'ValidNumber':
+                        number_min = _finite_float(_valid_number.get('Min'), number_min)
+                        number_max = _finite_float(_valid_number.get('Max'), number_max)
                     # Regex validation pattern
                     custom_val = settings.get('CustomValidation', {})
                     if isinstance(custom_val, dict):
