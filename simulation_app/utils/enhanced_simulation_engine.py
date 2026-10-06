@@ -874,8 +874,14 @@ _PLACEHOLDER_QUESTION_RE = re.compile(
 )
 _BARE_VARIABLE_RE = re.compile(r"^(?:q|qid)?\s*\d+(?:[._]\d+)*(?:_text)?$", re.IGNORECASE)
 _HTML_TAG_RE = re.compile(r"</?[A-Za-z][^<>]*>")
-# CSS pasted into a question's text ("#QID154-7-label {display: inline-block; width: 5%;}")
-_CSS_BLOCK_RE = re.compile(r"(?:[#.][\w\-]+[^{}]*)\{[^{}]*\}")
+# CSS pasted into a question's text ("#QID154-7-label {display: inline-block; width: 5%;}"). The
+# selector must start a token (so the "." of "U.S." does not) and the block must hold a declaration
+# ("prop: value") and no piped-text "$": the old pattern swallowed everything from the first "." or "#"
+# to the next "{...}", so "The U.S. government gave ${e://Field/amount} to you" became "The U to you".
+_CSS_BLOCK_RE = re.compile(
+    r"(?<![\w$])[#.][\w\-]+(?:[ \t]*[,>+~][ \t]*[#.]?[\w\-]+)*[ \t]*\{[^{}$]*:[^{}$]*\}")
+# <script>/<style> elements: their content is code, not question wording (dropped before tag stripping)
+_SCRIPT_STYLE_RE = re.compile(r"<(script|style)\b.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
 # Qualtrics piped text: ${e://Field/Name} (the "$" is sometimes already stripped)
 _PIPED_TEXT_RE = re.compile(r"\$?\{[^{}]*\}")
 _HTML_BREAK_TAG_RE = re.compile(r"</?(?:br|p|div|li|ul|ol|tr|td|th|table|h[1-6])\b[^<>]*>", re.IGNORECASE)
@@ -896,6 +902,7 @@ def _clean_question_text(text: Any) -> str:
     if text is None:
         return ""
     t = html.unescape(html.unescape(str(text)))
+    t = _SCRIPT_STYLE_RE.sub(" ", t)    # code inside <script>/<style> is not wording
     t = _HTML_BREAK_TAG_RE.sub(" ", t)  # line/paragraph breaks separate words
     t = _HTML_TAG_RE.sub("", t)         # inline tags (<b>, <span>) vanish without adding a gap
     t = _CSS_BLOCK_RE.sub(" ", t)       # stylesheet rules pasted into the question text
@@ -14772,7 +14779,11 @@ class EnhancedSimulationEngine:
                         scale_report["columns_missing"].append(col_name)
                         continue
                     scale_report["columns_found"].append(col_name)
-                    col_values = df[col_name].tolist()
+                    # v1.2.9.1: missing cells are NaN; min/max/mean over them gave NaN, which
+                    # Metadata.json wrote as the invalid JSON token "NaN" (49 of 150 designs).
+                    col_values = df[col_name].dropna().tolist()
+                    if not col_values:
+                        continue
                     all_values.extend(col_values)
                     col_min = min(col_values)
                     col_max = max(col_values)
@@ -14788,8 +14799,10 @@ class EnhancedSimulationEngine:
                 expected_range = spec_points - 1
                 utilization = (observed_range / expected_range * 100) if expected_range > 0 else 0
                 scale_report["range_utilization_pct"] = round(utilization, 1)
-                scale_report["observed_min"] = min(all_values)
-                scale_report["observed_max"] = max(all_values)
+                _obs_min, _obs_max = min(all_values), max(all_values)
+                # columns holding missing cells are float typed: keep whole numbers whole, as before
+                scale_report["observed_min"] = int(_obs_min) if float(_obs_min).is_integer() else float(_obs_min)
+                scale_report["observed_max"] = int(_obs_max) if float(_obs_max).is_integer() else float(_obs_max)
                 scale_report["observed_mean"] = round(sum(all_values) / len(all_values), 2)
 
                 # Flag if range utilization is suspiciously low for large scales

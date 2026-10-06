@@ -266,3 +266,40 @@ def test_factorial_marginal_d_matches_the_request_when_both_effects_are_given():
             sp = math.sqrt(((len(x) - 1) * x.var() + (len(y) - 1) * y.var()) / (len(x) + len(y) - 2))
             out.append((x.mean() - y.mean()) / sp)
     assert np.mean(ds_a) > 0.36 and np.mean(ds_b) > 0.36, (np.mean(ds_a), np.mean(ds_b))
+
+
+# ----------------------------------------------------------------------------------------------
+# P2: question-text cleaning must not delete prose; Metadata.json must be valid JSON
+# ----------------------------------------------------------------------------------------------
+def test_clean_question_text_keeps_prose_around_abbreviations_and_piped_text():
+    from utils.enhanced_simulation_engine import _clean_question_text as clean
+
+    assert clean("The U.S. government gave ${e://Field/amount} to you") == "The U.S. government gave ${e://Field/amount} to you"
+    assert clean("Consider Dr. Smith. He said #1 is best {sic}. OK") == "Consider Dr. Smith. He said #1 is best {sic}. OK"
+    assert clean("Visit www.example.com. {x} then answer.") == "Visit www.example.com. {x} then answer."
+
+
+def test_clean_question_text_still_removes_pasted_css_and_script_elements():
+    from utils.enhanced_simulation_engine import _clean_question_text as clean
+
+    assert clean("#QID154-7-label {display: inline-block; width: 5%;} How satisfied are you?") == "How satisfied are you?"
+    assert clean(".highlight, .other > .x {font-weight: bold} Q") == "Q"
+    assert clean("Rate the product <style>.x{color:red}</style> below <script>var a=1;</script>please") == "Rate the product below please"
+    assert clean('<style type="text/css">#QID5 .Choice {margin: 0}</style>How much do you trust the U.S. Navy?') == "How much do you trust the U.S. Navy?"
+
+
+def test_metadata_is_valid_json_when_missing_data_is_enabled():
+    scales = [_scale("Trust"), _scale("Sat", items=1)]
+    e = _engine(["A", "B"], scales, [_spec("Trust", "A", "B", 0.5)], n=120, missing_data_rate=0.1, dropout_rate=0.07)
+    _, meta = e.generate()
+    text = json.dumps(meta, allow_nan=False, default=str)      # raises on a bare NaN / Infinity
+    assert "NaN" not in text
+    assert all(np.isfinite(r.get("observed_mean", 0.0)) for r in meta["scale_verification"])
+
+
+def test_json_writer_never_emits_nan_or_infinity():
+    from utils.simulation_run_audit import _safe_json
+
+    text = _safe_json({"a": float("nan"), "b": [1.0, float("inf")], "c": np.float64("nan"), "d": {"e": -float("inf")}})
+    assert json.loads(text, parse_constant=lambda c: pytest.fail(f"bare {c} written")) == {
+        "a": None, "b": [1.0, None], "c": None, "d": {"e": None}}
