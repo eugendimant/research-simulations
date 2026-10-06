@@ -6880,6 +6880,35 @@ def _reset_generation_state() -> None:
     # v1.2.5.0: Clear legacy method flags
 
 
+# Session-state entries that belong to ONE uploaded QSF. A different survey must start from its own
+# detections, so the upload handler drops all of them. Study-level input the user typed (title,
+# description, team, preregistration, sample size, demographics, simulation context) and the
+# conversational builder's state are deliberately not listed.
+_QSF_DERIVED_STATE_KEYS: Tuple[str, ...] = (
+    # Conditions, DVs and open-ended questions the Design page confirms
+    "condition_candidates", "selected_conditions", "custom_conditions",
+    "scales_confirmed", "confirmed_scales", "confirmed_open_ended", "inferred_design",
+    "open_ended_confirmed", "_oe_version", "_dv_version",
+    # v1.2.9.1: lists the Design page fills from the QSF the first time it is shown. A second upload used to
+    # keep the first survey's copies, so its attention-check IDs and mediators reached the new survey's data.
+    "qsf_identifiers", "confirmed_attention_checks", "confirmed_manipulation_checks",
+    "confirmed_comprehension_checks", "confirmed_mediators", "variable_review_rows",
+    "_checks_version", "_med_version", "enhanced_analysis",
+)
+
+
+def _clear_qsf_derived_state() -> None:
+    """Forget everything derived from the previously uploaded QSF (see ``_QSF_DERIVED_STATE_KEYS``).
+
+    Also drops the previous survey's generated dataset so the Generate page cannot offer it as the
+    new survey's result.
+    """
+    for key in _QSF_DERIVED_STATE_KEYS:
+        st.session_state.pop(key, None)
+    if st.session_state.get("has_generated") or st.session_state.get("last_zip"):
+        _reset_generation_state()
+
+
 def _navigate_to(page_index: int) -> None:
     """Navigate to a section by index and rerun.
 
@@ -9757,9 +9786,15 @@ if active_page == 1:
         preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
         stored_preview = st.session_state.get("qsf_preview", None)
+        # v1.2.9.1: a new upload is a different NAME or different CONTENT. A Qualtrics re-export keeps the
+        # file name, so comparing names alone ignored a changed survey saved under the same name. A
+        # session that has no stored hash yet (state seeded before this check) falls back to the name.
+        _upload_hash = hashlib.sha256(qsf_file.getvalue()).hexdigest() if qsf_file is not None else ""
+        _stored_hash = st.session_state.get("qsf_file_hash")
         is_new_upload = qsf_file is not None and (
             not stored_preview or
-            st.session_state.get("qsf_file_name") != qsf_file.name
+            st.session_state.get("qsf_file_name") != qsf_file.name or
+            (bool(_stored_hash) and _stored_hash != _upload_hash)
         )
 
         if qsf_file is not None and is_new_upload:
@@ -9770,18 +9805,10 @@ if active_page == 1:
                 st.session_state["qsf_preview"] = preview
                 st.session_state["qsf_raw_content"] = payload
                 st.session_state["qsf_file_name"] = qsf_file.name
-                # v1.8.9: Clear cached condition candidates on new upload
-                st.session_state.pop("condition_candidates", None)
-                st.session_state.pop("selected_conditions", None)
-                st.session_state.pop("custom_conditions", None)
-                # v1.0.1.5: Clear stale design state from previous QSF or builder path
-                st.session_state.pop("scales_confirmed", None)
-                st.session_state.pop("confirmed_scales", None)
-                st.session_state.pop("confirmed_open_ended", None)
-                st.session_state.pop("inferred_design", None)
-                st.session_state.pop("open_ended_confirmed", None)
-                st.session_state.pop("_oe_version", None)
-                st.session_state.pop("_dv_version", None)
+                st.session_state["qsf_file_hash"] = _upload_hash
+                # v1.8.9 / v1.0.1.5: Clear cached condition candidates and stale design state from a
+                # previous QSF or the builder path; v1.2.9.1: also the Design page's other per-QSF lists.
+                _clear_qsf_derived_state()
 
                 if preview.success:
                     # Naming: YYYY_MM_DD_OriginalFilename.qsf
