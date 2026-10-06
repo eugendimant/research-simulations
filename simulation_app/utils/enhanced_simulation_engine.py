@@ -446,13 +446,20 @@ def _word_in(keyword: str, text: str) -> bool:
     Prevents false positives like 'ai' matching 'wait', 'gain' matching 'bargain',
     'own' matching 'brown', 'get' matching 'budget', etc.
 
+    The boundary is "no word character directly before or after the match" rather
+    than the regex ``\\b``. For a keyword that starts and ends with a word character
+    the two are identical; they differ for keywords that begin or end with
+    punctuation, where ``\\b`` demands a word character on the OUTER side and so never
+    matched a label such as "Norm message (Control)", "80%" or "$10".
+
     v1.0.1.3: Added to fix substring false-positive keyword matching throughout
     the semantic effect engine.
     v1.2.6.4: Compiled-pattern cache for performance.
+    v1.2.9.1: Lookaround boundaries, so labels that start or end with punctuation match.
     """
     _pat = _WORD_PATTERN_CACHE.get(keyword)
     if _pat is None:
-        _pat = re.compile(r'\b' + re.escape(keyword) + r'\b')
+        _pat = re.compile(r'(?<!\w)' + re.escape(keyword) + r'(?!\w)')
         _WORD_PATTERN_CACHE[keyword] = _pat
     return bool(_pat.search(text))
 
@@ -463,10 +470,12 @@ def _stem_in(stem: str, text: str) -> bool:
     For intentional prefix matches like 'automat' -> 'automated'/'automation',
     'reciproc' -> 'reciprocity'/'reciprocal', 'promot' -> 'promote'/'promotion'.
     v1.2.6.4: Compiled-pattern cache for performance.
+    v1.2.9.1: "No word character before" instead of ``\\b``, so a stem that starts with
+    punctuation ("$10", "(high") can match (identical for stems that start with a letter).
     """
     _pat = _STEM_PATTERN_CACHE.get(stem)
     if _pat is None:
-        _pat = re.compile(r'\b' + re.escape(stem))
+        _pat = re.compile(r'(?<!\w)' + re.escape(stem))
         _STEM_PATTERN_CACHE[stem] = _pat
     return bool(_pat.search(text))
 
@@ -474,6 +483,54 @@ def _stem_in(stem: str, text: str) -> bool:
 def _any_word_in(keywords: list, text: str) -> bool:
     """Check if any keyword from the list appears as a whole word in text."""
     return any(_word_in(kw, text) for kw in keywords)
+
+
+# v1.2.9.1: matching of user-specified effects (EffectSizeSpec) against the generated variables
+# and conditions. Compiled once, like the word/stem pattern caches above.
+_VAR_TOKEN_SPLIT = re.compile(r"[\W_]+")
+_WHITESPACE_RUN = re.compile(r"\s+")
+
+
+def _var_tokens(name: Any) -> Tuple[str, ...]:
+    """Lower-cased alphanumeric tokens of a variable name, so "Perceived_Quality",
+    "Perceived Quality" and "perceived-quality (scale)" compare on the same words."""
+    return tuple(t for t in _VAR_TOKEN_SPLIT.split(str(name if name is not None else "").lower()) if t)
+
+
+def _tokens_contain(tokens: Tuple[str, ...], run: Tuple[str, ...]) -> bool:
+    """True when ``run`` occurs as a contiguous run of WHOLE tokens inside ``tokens``
+    ("trust" in "trust score", but not in "distrust")."""
+    n = len(run)
+    return n > 0 and any(tokens[i:i + n] == run for i in range(len(tokens) - n + 1))
+
+
+def _label_norm(label: Any) -> str:
+    """A condition or level label in comparison form: non-breaking spaces and runs of
+    whitespace become one space, outer whitespace is dropped, lower case."""
+    return _WHITESPACE_RUN.sub(" ", str(label if label is not None else "").replace("\xa0", " ")).strip().lower()
+
+
+def _spec_get(effect: Any, key: str, default: Any = "") -> Any:
+    """Read a field of an EffectSizeSpec object or of a plain dict (API callers, tests)."""
+    if isinstance(effect, dict):
+        return effect.get(key, default)
+    return getattr(effect, key, default)
+
+
+def _spec_side(effect: Any, condition_norm: str) -> int:
+    """Which side of an effect spec a condition is on: +1 (the higher-scoring level), -1 (the
+    lower-scoring level) or 0 (neither). ``condition_norm`` is a `_label_norm` string. When both
+    levels occur in the label (a "no AI" condition contains "ai"), the longer, more specific level wins."""
+    level_high = _label_norm(_spec_get(effect, "level_high", ""))
+    level_low = _label_norm(_spec_get(effect, "level_low", ""))
+    is_high = bool(level_high and _word_in(level_high, condition_norm))
+    is_low = bool(level_low and _word_in(level_low, condition_norm))
+    if is_high and is_low:
+        if len(level_high) >= len(level_low):
+            is_low = False
+        else:
+            is_high = False
+    return 1 if is_high else (-1 if is_low else 0)
 
 
 def _stable_int_hash(s: str) -> int:
@@ -4426,15 +4483,78 @@ class EnhancedSimulationEngine:
         key = str(condition)
         if key in cache:
             return cache[key]
-        cond_l = key.lower().strip()
+        cond_l = _label_norm(key)
         hit = False
         for effect in getattr(self, "effect_sizes", None) or []:
             for attr in ("level_high", "level_low"):
-                lvl = str(effect.get(attr, "") if isinstance(effect, dict) else getattr(effect, attr, "")).lower().strip()
+                lvl = _label_norm(_spec_get(effect, attr, ""))
                 if lvl and _word_in(lvl, cond_l):
                     hit = True
         cache[key] = hit
         return hit
+
+    # ------------------------------------------------------------------
+    # v1.2.9.1: which generated variable does an effect spec belong to?
+    # ------------------------------------------------------------------
+    def _variable_alias_map(self) -> Dict[str, Set[Tuple[str, ...]]]:
+        """Per generated variable (its cleaned column prefix), the token tuples of every name it
+        answers to: display name, variable name and column prefix. Built once."""
+        amap = getattr(self, "_var_alias_cache", None)
+        if amap is None:
+            amap = {}
+            for sc in getattr(self, "scales", None) or []:
+                name = str(sc.get("name", "")).strip()
+                var_name = str(sc.get("variable_name", "")).strip()
+                col = _clean_column_name(var_name or name)
+                aliases = {_var_tokens(x) for x in (name, var_name, col) if x}
+                aliases.discard(())
+                amap.setdefault(col, set()).update(aliases)
+            self._var_alias_cache = amap
+        return amap
+
+    def _spec_applies_to_variable(self, spec_variable: Any, variable: str) -> bool:
+        """True when an effect spec's variable names the generated variable ``variable``.
+
+        Names are compared as lists of whole words, so "Perceived Quality" matches the column
+        "Perceived_Quality" and "Trust" matches "Trust_Score", but "Trust" no longer matches
+        "Distrust" and "DV1" no longer matches "DV10" (the old test was a substring test). A scale
+        that carries exactly the spec's name owns the spec; the word-run fallback is used only
+        when no scale has that name. A blank variable names nothing.
+        """
+        spec_tokens = _var_tokens(spec_variable)
+        if not spec_tokens:
+            return False
+        amap = self._variable_alias_map()
+        mine = amap.get(str(variable)) or ({_var_tokens(variable)} - {()})
+        if spec_tokens in mine:
+            return True
+        for col, aliases in amap.items():
+            if col != str(variable) and spec_tokens in aliases:
+                return False
+        return any(_tokens_contain(alias, spec_tokens) for alias in mine)
+
+    def _variable_has_user_spec(self, variable: str) -> bool:
+        """True when any user-specified effect targets this variable (memoised)."""
+        cache = getattr(self, "_var_spec_cache", None)
+        if cache is None:
+            cache = {}
+            self._var_spec_cache = cache
+        key = str(variable)
+        if key not in cache:
+            cache[key] = any(
+                self._spec_applies_to_variable(_spec_get(e, "variable", ""), key)
+                for e in (getattr(self, "effect_sizes", None) or [])
+            )
+        return cache[key]
+
+    def _condition_name_may_shape(self, variable: str) -> bool:
+        """Whether the condition NAME may shift this variable's baseline or response style.
+
+        Names do so only through the inferred effects: never with ``auto_effects=False`` (the true
+        null) and never for a variable the user gave an effect, where every condition, named in the
+        spec or not, must start from the same baseline so the requested d is the only difference.
+        """
+        return bool(getattr(self, "auto_effects", True)) and not self._variable_has_user_spec(variable)
 
     def _get_effect_for_condition(self, condition: str, variable: str) -> float:
         """
@@ -4519,6 +4639,28 @@ class EnhancedSimulationEngine:
             factor *= 1.07
         return factor
 
+    @staticmethod
+    def _combine_matched_effects(matched: List[Tuple[str, "frozenset", float]]) -> float:
+        """Combine the shifts of every effect spec that names one condition.
+
+        Specs that describe the SAME factor are alternatives for one dimension (two contrasts against
+        a shared control, a duplicated spec) and are averaged, so they do not stack. Specs on
+        DIFFERENT factors are the main effects of a factorial design and are added: a cell that is
+        high on A (d=0.5) and high on B (d=0.5) sits 0.5 + 0.5 above the cell that is low on both,
+        so each marginal contrast keeps its requested d (averaging halved both, d=0.5 -> 0.25-0.28).
+        Two specs are "the same factor" when their factor labels match or they share a level label.
+        """
+        groups: List[Tuple[Set[str], Set[str], List[float]]] = []
+        for factor, levels, value in matched:
+            joined = [g for g in groups if factor in g[0] or (set(levels) & g[1])]
+            merged: Tuple[Set[str], Set[str], List[float]] = (
+                {factor}.union(*[g[0] for g in joined]),
+                set(levels).union(*[g[1] for g in joined]),
+                [value] + [v for g in joined for v in g[2]],
+            )
+            groups = [g for g in groups if all(g is not j for j in joined)] + [merged]
+        return float(sum(sum(g[2]) / len(g[2]) for g in groups))
+
     def _compute_effect_for_condition(self, condition: str, variable: str) -> float:
         """v1.2.6.4: Uncached implementation of effect computation (see
         _get_effect_for_condition for memoization wrapper and docs)."""
@@ -4535,21 +4677,18 @@ class EnhancedSimulationEngine:
         COHENS_D_TO_NORMALIZED = 0.109
 
         # Check explicit effect size specifications -- accumulate ALL matching effects
-        # for factorial designs where multiple effect specs may apply to one condition
+        # for factorial designs where multiple effect specs may apply to one condition.
+        # Each entry is (factor label, the spec's two levels, shift) so effects on different
+        # factors can be added (see _combine_matched_effects).
         matched_effects: list = []
         _variable_has_spec = False  # any explicit effect spec targets this variable
-        condition_lower = str(condition).lower().strip()
-        variable_lower = str(variable).lower().strip()
+        condition_lower = _label_norm(condition)
 
         for effect in self.effect_sizes:
             # v1.1.1.5: Support both EffectSizeSpec objects AND plain dicts.
             # The app always passes EffectSizeSpec, but the engine should be
             # robust against dicts from tests, API callers, or legacy code.
-            def _eget(obj: Any, key: str, default: Any = "") -> Any:
-                """Get attribute from object or key from dict."""
-                if isinstance(obj, dict):
-                    return obj.get(key, default)
-                return getattr(obj, key, default)
+            _eget = _spec_get
 
             # v1.4.0: Safe conversion of cohens_d (could be string, dict, or NaN)
             try:
@@ -4562,45 +4701,32 @@ class EnhancedSimulationEngine:
             # Clamp to reasonable range (0-3.0 covers virtually all real effects)
             cohens_d = float(np.clip(abs(cohens_d), 0.0, 3.0))
 
-            # Check if this effect spec matches the current variable
-            # Variable names reach the generator in their column form ("Perceived_Quality")
-            # while users type display names ("Perceived Quality"); compare on a
-            # separator-insensitive form so an explicit effect is never silently
-            # dropped (it would be replaced by keyword-derived automatic effects).
-            effect_var = re.sub(r"[\s_\-]+", " ", str(_eget(effect, 'variable', '')).lower()).strip()
-            _var_norm = re.sub(r"[\s_\-]+", " ", variable_lower).strip()
-            variable_matches = (
-                effect_var == _var_norm
-                or _var_norm.startswith(effect_var)
-                or effect_var in _var_norm
-            )
+            # Check if this effect spec matches the current variable. Variable names reach the
+            # generator in their column form ("Perceived_Quality") while users type display names
+            # ("Perceived Quality"); they are compared as lists of whole words, so an explicit
+            # effect is never silently dropped (it would be replaced by keyword-derived automatic
+            # effects) and never leaks onto a variable that merely contains the name ("Distrust").
+            variable_matches = self._spec_applies_to_variable(_eget(effect, 'variable', ''), variable)
 
             if variable_matches:
                 _variable_has_spec = True
-                # v1.4.0: Improved level matching with false-positive prevention
-                level_high = str(_eget(effect, 'level_high', '')).lower().strip()
-                level_low = str(_eget(effect, 'level_low', '')).lower().strip()
                 direction = str(_eget(effect, 'direction', 'positive')).lower().strip()
 
-                # v1.0.1.3: Use word-boundary matching to prevent false positives
-                # (e.g., level "ai" matching condition "wait")
-                is_high = bool(level_high and _word_in(level_high, condition_lower))
-                is_low = bool(level_low and _word_in(level_low, condition_lower))
-
-                # Avoid double-matching (e.g., "no ai" matching both "ai" and "no ai")
-                # If both match, prefer the longer/more specific match
-                if is_high and is_low:
-                    if len(level_high) >= len(level_low):
-                        is_low = False
-                    else:
-                        is_high = False
-
-                if is_high:
+                # v1.0.1.3: word-boundary matching prevents false positives (level "ai" vs
+                # condition "wait"); v1.2.9.1: labels may start or end with punctuation
+                # ("Norm message (Control)", "80%"). When both levels occur in the label the
+                # longer, more specific one wins ("no ai" contains "ai").
+                side = _spec_side(effect, condition_lower)
+                _spec_key = (
+                    _label_norm(_eget(effect, 'factor', '')),
+                    frozenset({_label_norm(_eget(effect, 'level_high', '')), _label_norm(_eget(effect, 'level_low', ''))} - {""}),
+                )
+                if side > 0:
                     d = cohens_d if direction == "positive" else -cohens_d
-                    matched_effects.append(d * COHENS_D_TO_NORMALIZED)
-                elif is_low:
+                    matched_effects.append((_spec_key[0], _spec_key[1], d * COHENS_D_TO_NORMALIZED))
+                elif side < 0:
                     d = -cohens_d if direction == "positive" else cohens_d
-                    matched_effects.append(d * COHENS_D_TO_NORMALIZED)
+                    matched_effects.append((_spec_key[0], _spec_key[1], d * COHENS_D_TO_NORMALIZED))
 
         # v1.2.9.1: remember where each (condition, variable) effect came from so the
         # metadata can say whether a contrast was requested ("user"), inferred from the
@@ -4613,8 +4739,10 @@ class EnhancedSimulationEngine:
         _unit = COHENS_D_TO_NORMALIZED * self._explicit_effect_scale(variable)
 
         if matched_effects:
-            # Average matched effects so they don't stack unreasonably
-            _value = (sum(matched_effects) / len(matched_effects)) * self._explicit_effect_scale(variable)
+            # Effects that describe the same factor (same factor label, or a shared level such as a
+            # common control) are averaged so they do not stack; effects on different factors are
+            # main effects of a factorial design and add up.
+            _value = self._combine_matched_effects(matched_effects) * self._explicit_effect_scale(variable)
             _applied[(str(condition), str(variable))] = {"source": "user", "offset": float(_value), "unit": _unit}
             return _value
 
@@ -8752,7 +8880,13 @@ class EnhancedSimulationEngine:
         # STEP 2a: Get domain-specific calibration
         # Based on published norms for different construct types (v2.2.8)
         # =====================================================================
-        domain_calibration = self._get_domain_response_calibration(variable_name, condition)
+        # v1.2.9.1: a game word in a condition LABEL ("Dictator game", "Trust game") used to pick a
+        # per-label game baseline, so labels alone moved the mean by ~1.9 d even with inferred effects
+        # off or an explicit d. The label may inform the baseline only while inferred effects are on
+        # and this variable has no user-specified effect.
+        _name_shapes_response = self._condition_name_may_shape(variable_name)
+        domain_calibration = self._get_domain_response_calibration(
+            variable_name, condition if _name_shapes_response else "")
 
         # =====================================================================
         # STEP 2b: Get scale-type calibration
@@ -9602,8 +9736,9 @@ class EnhancedSimulationEngine:
                      'verbal_aggress', 'road_rage', 'retaliat']):
                 _sd_sensitivity = 1.45  # Strong norms against aggression
 
-            # Also check condition context for sensitivity
-            _cond_lower = condition.lower() if condition else ""
+            # Also check condition context for sensitivity (inferred effects only: with them off,
+            # or an explicit effect on this variable, the label must not change the response style)
+            _cond_lower = condition.lower() if (condition and _name_shapes_response) else ""
             if any(kw in _cond_lower for kw in ['dishonest', 'cheat', 'prejudic',
                    'discriminat', 'immoral']):
                 _sd_sensitivity = max(_sd_sensitivity, 1.3)
@@ -14343,9 +14478,67 @@ class EnhancedSimulationEngine:
 
         return df, metadata
 
+    def _effect_spec_diagnostics(self) -> Dict[str, Any]:
+        """Check every user-specified effect against the generated variables and conditions.
+
+        Returns ``{"specs": [...], "warnings": [...]}``. A spec whose variable is not generated, or
+        whose levels name no condition, builds nothing into the data (the observed d then shows
+        nothing but sampling noise); a spec where only one level names a condition moves one arm only,
+        so the contrast is about half the requested d. Reporting both is the only protection against a
+        requested effect that silently went missing. Each row carries ``matched`` (the effect reached
+        at least one condition of a generated variable), ``status`` ("applied", "one_side_only",
+        "levels_not_found" or "variable_not_found") and the variables and conditions it reached.
+        """
+        columns = list(self._variable_alias_map().keys())
+        conditions = [(str(c), _label_norm(c)) for c in (self.conditions or [])]
+        rows: List[Dict[str, Any]] = []
+        warns: List[str] = []
+        for effect in getattr(self, "effect_sizes", None) or []:
+            variable = str(_spec_get(effect, "variable", "") or "")
+            level_high = str(_spec_get(effect, "level_high", "") or "")
+            level_low = str(_spec_get(effect, "level_low", "") or "")
+            variables = [c for c in columns if self._spec_applies_to_variable(variable, c)]
+            high_conditions = [c for c, norm in conditions if _spec_side(effect, norm) > 0]
+            low_conditions = [c for c, norm in conditions if _spec_side(effect, norm) < 0]
+            if not variables:
+                status = "variable_not_found"
+                warns.append(
+                    f"Expected effect on '{variable}' was NOT applied: no generated variable has that name "
+                    f"(variables: {', '.join(columns) if columns else 'none'})."
+                )
+            elif not high_conditions and not low_conditions:
+                status = "levels_not_found"
+                warns.append(
+                    f"Expected effect on '{variable}' ('{level_high}' vs '{level_low}') was NOT applied: "
+                    f"neither level matches a condition name (conditions: {', '.join(c for c, _ in conditions)})."
+                )
+            elif not high_conditions or not low_conditions:
+                status = "one_side_only"
+                missing = level_high if not high_conditions else level_low
+                warns.append(
+                    f"Expected effect on '{variable}' ('{level_high}' vs '{level_low}') was applied to one side only: "
+                    f"'{missing}' matches no condition name, so the contrast against the other conditions is "
+                    f"about half the requested d."
+                )
+            else:
+                status = "applied"
+            raw_d = _spec_get(effect, "cohens_d", None)
+            try:
+                d_value: Optional[float] = float(raw_d)
+            except (TypeError, ValueError):
+                d_value = None
+            rows.append({
+                "variable": variable, "level_high": level_high, "level_low": level_low, "cohens_d": d_value,
+                "matched": status in ("applied", "one_side_only"), "status": status,
+                "matched_variables": variables, "high_conditions": high_conditions, "low_conditions": low_conditions,
+            })
+        return {"specs": rows, "warnings": warns}
+
     def _check_generation_warnings(self, df: pd.DataFrame) -> List[str]:
         """Return any warnings about the generated data quality."""
         warnings: List[str] = []
+        # v1.2.9.1: an expected effect that reached no variable or condition must not go missing silently
+        warnings.extend(self._effect_spec_diagnostics()["warnings"])
         if "CONDITION" in df.columns and len(self.conditions) >= 2:
             cell_counts = df["CONDITION"].value_counts()
             min_cell = int(cell_counts.min()) if len(cell_counts) > 0 else 0
@@ -14749,6 +14942,8 @@ class EnhancedSimulationEngine:
         return {
             "inferred_effects_enabled": bool(getattr(self, "auto_effects", True)),
             "contrasts": rows,
+            # v1.2.9.1: one entry per effect you specified: did it reach a variable and a condition?
+            "specs": self._effect_spec_diagnostics()["specs"],
             "note": ("Each contrast is condition_1 minus condition_2, in the order of the conditions. "
                      "intended_d is given only for effects you specified. Inferred effects are a "
                      "heuristic read of the condition names and are not calibrated to a target d."),
