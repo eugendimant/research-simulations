@@ -1,3 +1,51 @@
+## 2026-10-06 — v1.3.0.2
+### Benchmark honesty: the alpha claim and the within-person SD entry
+
+- `docs/REALISM_BENCHMARK.md` reported alpha moving 0.883 → 0.727 as a result
+  of the realism layer. That block is synthetic and its target reliability was
+  set to the reference's own value, so alpha moved because it was aimed there.
+  On real QSF paths with no stated reliability the engine draws
+  `target_alpha ~ U(0.80, 0.90)` and hits it: across twelve Qualtrics designs,
+  alpha is 0.842 before and 0.843 after. The table now says so, and the three
+  calibrated rows are marked as calibrated.
+- `item.likert.any.within_person_sd_fraction_of_span` declared keying "any" but
+  is computed on raw, un-recoded items from blocks that are all mixed-keyed —
+  which is why it exceeded the item SD, impossible for recoded items on one
+  construct. Measured over four block shapes and two seeds: mixed-keyed 0.314,
+  same-keyed 0.238. The reported "30% too low" was the benchmark stated more
+  broadly than it was measured, not an engine defect. The entry is now
+  mixed-only. No engine behaviour changes.
+
+## 2026-10-06 — v1.3.0.1
+### Recall audit of all 484 literature calibration entries
+
+Sources cannot be read from the build container (the network policy refuses
+every journal, DOI resolver and preprint host), so the 484 entries in
+`scientific_knowledge_base.py` were audited entry by entry against recalled
+knowledge of the literature: citation, design, direction, magnitude against the
+published or meta-analytic estimate, and internal consistency.
+
+Recall is not source verification, and the two are kept structurally apart:
+four new tiers (`recall_consistent`, `recall_corrected`, `recall_uncertain`,
+`unrecognized`) all weigh less than `CITED_UNCHECKED` and none grants
+`may_set_magnitude`; `register_recall()` is the only way in and refuses a tier
+above the recall band, a verdict with no note, or overwriting a record that
+rests on evidence; `doi`, `url`, `quote` and `verified_on` are empty by
+construction; every note is prefixed "RECALL, NOT SOURCE-VERIFIED"; and
+`coverage_summary()["sourced_entries"]` still counts only verified/corrected/
+partial, so this pass cannot move the verification headline.
+
+Verdicts: 200 consistent, 125 corrected, 157 uncertain, 1 unrecognized. 169
+fields across 122 entries changed, each keeping its replaced value in
+`utils/registry/recall_audit.json`, so the pass is reversible from its own
+data. The corrections fix, in kind: replication-crisis magnitudes carried at
+their original size (ego depletion, moral reminders, facial feedback, the decoy
+effect, deindividuation, the ELM); clinical-level means presented as
+general-population norms in nine instruments; `scale_points` holding an item
+count or score range rather than a response-option count; sign and moderator
+reversals; `i_squared=0.0` beside a positive tau; and k/N pasted from a
+different paper than the one supplying the effect.
+
 ## 2026-10-06 — v1.3.0.0
 ### Free-provider chain cut to four, and Google's new key shape recognised
 
