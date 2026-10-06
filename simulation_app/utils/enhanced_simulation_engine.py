@@ -579,6 +579,23 @@ def _safe_numeric(value: Any, default: float = 0.0, as_int: bool = False) -> Uni
         return int(default) if as_int else default
 
 
+_SCRIPT_CTRL_RE = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029]+")
+_SCRIPT_NAME_RE = re.compile(r"[A-Za-z0-9_.]+")
+
+
+def _script_text(value: Any) -> str:
+    """Text for a comment or a quoted literal in an exported analysis script, as one physical line.
+
+    Study titles, scale names and condition labels are typed by users, and the scripts are run by the
+    people who receive the ZIP: a line break in such text would start a new statement."""
+    return _SCRIPT_CTRL_RE.sub(" ", str(value if value is not None else "")).strip()
+
+
+def _script_name_ok(name: Any) -> bool:
+    """True for names that are safe to write unquoted or inside quotes in any exported script language."""
+    return bool(_SCRIPT_NAME_RE.fullmatch(str(name)))
+
+
 def _clean_column_name(name: str) -> str:
     """Sanitize a string for use as a DataFrame column name.
 
@@ -964,6 +981,11 @@ def _infer_numeric_answer_spec(
         hard_hi = float(nmax) if nmax not in (None, "") else None
         if hard_lo is not None and hard_hi is not None and hard_lo < hard_hi:
             lo_hi = (hard_lo, hard_hi)
+        elif hard_lo is None and hard_hi is not None and 0 < hard_hi < float("inf"):
+            # Max only (Min left blank): what these boxes ask for (counts, amounts, percentages, ages, years)
+            # is never negative, so the window is 0..Max. Without this a declared "at most 2" was ignored
+            # and the draw came from the generic count distribution (0-13), or from a "(0-100)" in the text.
+            lo_hi = (0.0, hard_hi)
     except (TypeError, ValueError):
         lo_hi = None
         hard_lo = hard_hi = None
@@ -15275,6 +15297,7 @@ class EnhancedSimulationEngine:
         """
         cols = set(df.columns) if df is not None and hasattr(df, "columns") else None
         out: List[Dict[str, Any]] = []
+        _skipped: List[str] = []
         _log = list(getattr(self, "_scale_generation_log", None) or [])
         _used: Set[int] = set()
         for scale in self.scales:
@@ -15314,9 +15337,22 @@ class EnhancedSimulationEngine:
             _sfx = "_r" if lowercase else "_R"
             _rev_cols = {f"{name}_{r}" for r in rev}
             composite_items = [(f"{it}{_sfx}" if it in _rev_cols else it) for it in items]
-            out.append({"raw": raw, "name": name, "items": items, "reverse": rev,
+            if not (_script_name_ok(name) and all(_script_name_ok(it) for it in items)):
+                # Names with quotes, brackets, spaces or line breaks cannot be written into code safely.
+                _skipped.append(_script_text(raw)[:60])
+                continue
+            out.append({"raw": _script_text(raw), "name": name, "items": items, "reverse": rev,
                         "points": points, "flip": flip, "composite_items": composite_items})
+        self._export_skipped_scales = _skipped
         return out
+
+    def _export_skipped_note(self, prefix: str, suffix: str = "") -> List[str]:
+        """Comment lines naming scales left out of an exported script because their names are unsafe in code."""
+        skipped = list(getattr(self, "_export_skipped_scales", None) or [])
+        if not skipped:
+            return []
+        names = ", ".join(skipped[:5]) + (" ..." if len(skipped) > 5 else "")
+        return [f"{prefix} Not scripted (the name has characters that cannot be written safely into code): {names}{suffix}", ""]
 
     def _export_has_gender(self, df: Optional[pd.DataFrame]) -> bool:
         if df is not None and hasattr(df, "columns"):
@@ -15331,16 +15367,16 @@ class EnhancedSimulationEngine:
         joined on ResponseId for the optional exclusion step.
         """
         def _r_quote(x: str) -> str:
-            x = str(x).replace("\\", "\\\\").replace('"', '\\"')
+            x = _script_text(x).replace("\\", "\\\\").replace('"', '\\"')
             return f'"{x}"'
 
         condition_levels = ", ".join([_r_quote(c) for c in self.conditions])
 
         lines: List[str] = [
             "# ============================================================",
-            f"# R Data Preparation Script - {self.study_title}",
+            f"# R Data Preparation Script - {_script_text(self.study_title)}",
             f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"# Run ID: {self.run_id}",
+            f"# Run ID: {_script_text(self.run_id)}",
             "# ============================================================",
             "",
             "# Load packages",
@@ -15376,6 +15412,7 @@ class EnhancedSimulationEngine:
             item_list = ", ".join([f"data${item}" for item in sc["composite_items"]])
             lines.append(f"data${sc['name']}_composite <- rowMeans(cbind({item_list}), na.rm = TRUE)")
             lines.append("")
+        lines.extend(self._export_skipped_note("#"))
 
         lines.extend(
             [
@@ -15407,16 +15444,16 @@ class EnhancedSimulationEngine:
         merged on ResponseId for the optional exclusion step.
         """
         def _py_quote(x: str) -> str:
-            x = str(x).replace("\\", "\\\\").replace("'", "\\'")
+            x = _script_text(x).replace("\\", "\\\\").replace("'", "\\'")
             return f"'{x}'"
 
         condition_levels = ", ".join([_py_quote(c) for c in self.conditions])
 
         lines: List[str] = [
             "# ============================================================",
-            f"# Python Data Preparation Script - {self.study_title}",
+            f"# Python Data Preparation Script - {_script_text(self.study_title)}",
             f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"# Run ID: {self.run_id}",
+            f"# Run ID: {_script_text(self.run_id)}",
             "# ============================================================",
             "",
             "import os",
@@ -15452,6 +15489,7 @@ class EnhancedSimulationEngine:
             item_list = ", ".join([f"'{item}'" for item in sc["composite_items"]])
             lines.append(f"data['{sc['name']}_composite'] = data[[{item_list}]].mean(axis=1)")
             lines.append("")
+        lines.extend(self._export_skipped_note("#"))
 
         lines.extend([
             "# Optional exclusion step",
@@ -15482,16 +15520,16 @@ class EnhancedSimulationEngine:
         joined on ResponseId for the optional exclusion step.
         """
         def _jl_quote(x: str) -> str:
-            x = str(x).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
+            x = _script_text(x).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
             return f'"{x}"'
 
         condition_levels = ", ".join([_jl_quote(c) for c in self.conditions])
 
         lines: List[str] = [
             "# ============================================================",
-            f"# Julia Data Preparation Script - {self.study_title}",
+            f"# Julia Data Preparation Script - {_script_text(self.study_title)}",
             f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"# Run ID: {self.run_id}",
+            f"# Run ID: {_script_text(self.run_id)}",
             "# ============================================================",
             "",
             "using CSV",
@@ -15531,6 +15569,7 @@ class EnhancedSimulationEngine:
                 f"mean(skipmissing(collect(r))) for r in eachrow(data[:, [{item_syms}]])]"
             )
             lines.append("")
+        lines.extend(self._export_skipped_note("#"))
 
         lines.extend([
             "# Optional exclusion step",
@@ -15565,9 +15604,9 @@ class EnhancedSimulationEngine:
         """
         lines: List[str] = [
             "* ============================================================.",
-            f"* SPSS Data Preparation Syntax - {self.study_title}.",
+            f"* SPSS Data Preparation Syntax - {_script_text(self.study_title)}.",
             f"* Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.",
-            f"* Run ID: {self.run_id}.",
+            f"* Run ID: {_script_text(self.run_id)}.",
             "* ============================================================.",
             "",
             "* Load the data first using:",
@@ -15600,6 +15639,7 @@ class EnhancedSimulationEngine:
             lines.append(f"COMPUTE {sc['name']}_composite = MEAN({' '.join(sc['composite_items'])}).")
             lines.append("EXECUTE.")
             lines.append("")
+        lines.extend(self._export_skipped_note("*", "."))
 
         lines.extend([
             "* Optional exclusion step.",
@@ -15637,14 +15677,15 @@ class EnhancedSimulationEngine:
         exclusion step.
         """
         def _stata_quote(x: str) -> str:
-            x = str(x).replace('"', "'")
+            # Stata expands `macros' and $globals inside double quotes, so neither may survive in a label
+            x = _script_text(x).replace('"', "'").replace("`", "'").replace("$", "")
             return f'"{x}"'
 
         lines: List[str] = [
             "// ============================================================",
-            f"// Stata Data Preparation Do-File - {self.study_title}",
+            f"// Stata Data Preparation Do-File - {_script_text(self.study_title)}",
             f"// Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"// Run ID: {self.run_id}",
+            f"// Run ID: {_script_text(self.run_id)}",
             "// ============================================================",
             "",
             "// Load the data (Qualtrics-style export; one header row)",
@@ -15679,6 +15720,7 @@ class EnhancedSimulationEngine:
             lines.append(f"// Create {sc['raw']} composite from the item columns")
             lines.append(f"egen {sc['name']}_composite = rowmean({' '.join(sc['composite_items'])})")
             lines.append("")
+        lines.extend(self._export_skipped_note("//"))
 
         lines.extend([
             "// Optional exclusion step",
