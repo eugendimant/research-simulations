@@ -2998,7 +2998,9 @@ class EnhancedSimulationEngine:
         else:
             self.seed = int(seed) % (2**31)
 
-        self.run_id = f"{self.mode.upper()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{self.seed % 10000:04d}"
+        # Deterministic run id: the same seed must give a byte-identical dataset, so the
+        # id carries no wall-clock time. The generation timestamp lives in metadata only.
+        self.run_id = f"{self.mode.upper()}_S{self.seed:010d}"
 
         # v1.2.7.5: Do NOT seed the GLOBAL np.random / random here. All generation
         # uses per-call seeded RandomState/random.Random(self.seed + ...) instances,
@@ -9234,9 +9236,15 @@ class EnhancedSimulationEngine:
                         if attn > 0.5:
                             # This participant shouldn't be straight-lining
                             # Mild repair: add small noise to 2-3 items
-                            _items_to_jitter = min(3, len(existing_cols))
+                            # Only jitter items this participant actually answered:
+                            # missing-data simulation leaves NaN cells that cannot be
+                            # cast to int (crashed generation with missingness > 0).
+                            _answered_cols = [c for c in existing_cols if pd.notna(df.iloc[i][c])]
+                            _items_to_jitter = min(3, len(_answered_cols))
+                            if _items_to_jitter == 0:
+                                continue
                             _rng = np.random.RandomState((self.seed + i * 31) % (2**31))
-                            _jitter_cols = _rng.choice(existing_cols, _items_to_jitter, replace=False)
+                            _jitter_cols = _rng.choice(_answered_cols, _items_to_jitter, replace=False)
                             for jc in _jitter_cols:
                                 _old_val = int(df.at[i, jc]) if i in df.index else int(data[jc][i])
                                 _noise = int(_rng.choice([-1, 1]))

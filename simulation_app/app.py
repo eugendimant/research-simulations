@@ -1253,6 +1253,14 @@ def _generate_preview_data(
     """
     preview_data = {}
     difficulty_settings = _get_difficulty_settings(difficulty)
+    # Local RNG: the preview must not touch (or depend on) the process-global NumPy
+    # RNG that other Streamlit sessions share. Seeded from the study + chosen seed so
+    # the same inputs give the same preview.
+    _prng = np.random.RandomState(
+        int(hashlib.sha256(
+            f"{study_title}|{study_description}|{st.session_state.get('_user_seed_value', 0)}".encode("utf-8")
+        ).hexdigest()[:8], 16)
+    )
 
     # Add participant ID (matches actual engine output column name)
     preview_data['PARTICIPANT_ID'] = [f"P{i+1:03d}" for i in range(n_rows)]
@@ -1320,21 +1328,21 @@ def _generate_preview_data(
                 if _is_bipolar_preview and _is_econ_preview:
                     # v1.0.8.6: Realistic bipolar economic game preview
                     # Show diverse subpopulations: some give, some keep, some take
-                    _preview_roll = np.random.random()
+                    _preview_roll = _prng.random()
                     if _preview_roll < 0.35:
-                        val = int(np.random.uniform(_s_max * 0.3, _s_max * 0.6))  # Giver
+                        val = int(_prng.uniform(_s_max * 0.3, _s_max * 0.6))  # Giver
                     elif _preview_roll < 0.55:
-                        val = int(np.random.uniform(-2, 2))  # Zero/selfish
+                        val = int(_prng.uniform(-2, 2))  # Zero/selfish
                     elif _preview_roll < 0.75:
-                        val = int(np.random.uniform(_s_min * 0.4, _s_min * 0.1))  # Taker
+                        val = int(_prng.uniform(_s_min * 0.4, _s_min * 0.1))  # Taker
                     else:
-                        val = int(np.random.uniform(_s_max * 0.05, _s_max * 0.25))  # Moderate giver
+                        val = int(_prng.uniform(_s_max * 0.05, _s_max * 0.25))  # Moderate giver
                 elif _is_bipolar_preview:
                     # General bipolar: center near zero with full range spread
-                    val = int(np.random.normal(0, (_s_max - _s_min) / 4))
+                    val = int(_prng.normal(0, (_s_max - _s_min) / 4))
                     val = max(_s_min, min(_s_max, val))
                 else:
-                    val = np.random.randint(_s_min, _s_max + 1)
+                    val = _prng.randint(_s_min, _s_max + 1)
                 # v1.0.1.3: Apply condition-aware shifts to preview data
                 # so researchers see realistic between-condition differences
                 if conditions:
@@ -1357,13 +1365,13 @@ def _generate_preview_data(
             mean_values = []
             for row_idx in range(n_rows):
                 if _is_bipolar_preview:
-                    val1 = int(np.random.normal(0, (_s_max - _s_min) / 4))
+                    val1 = int(_prng.normal(0, (_s_max - _s_min) / 4))
                     val1 = max(_s_min, min(_s_max, val1))
-                    val_mean = float(np.random.normal(0, (_s_max - _s_min) / 5))
+                    val_mean = float(_prng.normal(0, (_s_max - _s_min) / 5))
                     val_mean = max(float(_s_min), min(float(_s_max), val_mean))
                 else:
-                    val1 = np.random.randint(_s_min, _s_max + 1)
-                    val_mean = np.random.uniform(_s_min, _s_max)
+                    val1 = _prng.randint(_s_min, _s_max + 1)
+                    val_mean = _prng.uniform(_s_min, _s_max)
                 # v1.0.1.3: Apply condition-aware shifts to preview data
                 # so researchers see realistic between-condition differences
                 if conditions:
@@ -1420,12 +1428,12 @@ def _generate_preview_data(
             preview_data[_var] = _oe_responses
 
     # Add demographics
-    preview_data['age'] = [np.random.randint(18, 65) for _ in range(n_rows)]
-    preview_data['gender'] = [np.random.choice(['Male', 'Female', 'Other']) for _ in range(n_rows)]
+    preview_data['age'] = [_prng.randint(18, 65) for _ in range(n_rows)]
+    preview_data['gender'] = [_prng.choice(['Male', 'Female', 'Other']) for _ in range(n_rows)]
 
     # Add attention check
     preview_data['attention_check_pass'] = [
-        1 if np.random.random() < difficulty_settings['attention_rate'] else 0
+        1 if _prng.random() < difficulty_settings['attention_rate'] else 0
         for _ in range(n_rows)
     ]
 
@@ -13241,6 +13249,22 @@ if active_page == 3:
                     _reset_generation_state()
                     _navigate_to(3)
         else:
+            _seed_c1, _seed_c2 = st.columns([2, 2])
+            with _seed_c1:
+                st.number_input(
+                    "Random seed (optional)",
+                    min_value=0, max_value=2**31 - 1,
+                    value=int(st.session_state.get("_user_seed_value", 0) or 0), step=1,
+                    key="user_random_seed",
+                    on_change=lambda: st.session_state.__setitem__(
+                        "_user_seed_value", int(st.session_state.get("user_random_seed", 0) or 0)),
+                    help=(
+                        "0 draws a fresh random seed each run. Enter any other number to make "
+                        "the run exactly repeatable: the same seed with the same design and "
+                        "settings reproduces the same dataset. The seed actually used is always "
+                        "written to the SIMULATION_SEED column and to Metadata.json."
+                    ),
+                )
             _gen_c1, _gen_c2 = st.columns([2, 2])
             with _gen_c1:
                 if st.button("Generate simulated dataset", type="primary", disabled=not can_generate, use_container_width=True, key="generate_dataset_btn"):
@@ -13689,6 +13713,12 @@ if active_page == 3:
             # v1.0.7.1: Clear previous exhaustion note
             st.session_state.pop("_gen_llm_exhaustion_note", None)
 
+            # User-chosen seed (0 / unset = fresh random seed, recorded in the output)
+            try:
+                _user_seed = int(st.session_state.get("_user_seed_value", 0) or 0) or None
+            except (TypeError, ValueError):
+                _user_seed = None
+
             # v1.8.8.0: Retrieve correlation matrix and missing data settings
             _engine_corr_matrix = None
             _raw_corr = inferred.get("correlation_matrix")
@@ -14052,7 +14082,7 @@ if active_page == 3:
                 open_ended_questions=open_ended_questions_for_engine,
                 study_context=_engine_study_context,
                 condition_allocation=condition_allocation,
-                seed=None,
+                seed=_user_seed,
                 mode="pilot" if not st.session_state.get("advanced_mode", False) else "final",
                 precomputed_visibility=inferred.get("condition_visibility_map", {}),
                 correlation_matrix=_engine_corr_matrix,
