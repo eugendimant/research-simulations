@@ -36,7 +36,9 @@ lookup) is untouched; only the text post-processing after a response is drawn ch
   variation code, the template engine, the stylometric engine and the validator).
 - Numeric text boxes (2,698 of the 4,668 open-ended questions in the 302-file corpus) get numbers that
   respect Qualtrics validation: ages, years, counts, amounts, percentages, ZIP codes, and
-  MTurk/Prolific/participant IDs. A text box that repeats a numeric DV is skipped.
+  MTurk/Prolific/participant IDs. A text box that repeats a numeric DV is skipped. These boxes are
+  exempt from every later text pass (stylometric, validator, tidy-up): before, 27 of 60 generated
+  MTurk IDs were rewritten ("perhaps a6O1VU1998UHS"), and a ZIP-code box was answered with a state name.
 - Stylometric engine and validator: "it's" -> "it has", "(2)" counters on duplicates and mid-phrase
   truncation fixed.
 
@@ -51,6 +53,11 @@ lookup) is untouched; only the text post-processing after a response is drawn ch
 - Piped-text placeholders (`{e://Field/...}`) are not detected as conditions; "age" no longer matches
   "average" in ID-box detection; landing copy no longer promises regressions/mediation or
   "publication-ready" data.
+- The instructor HTML report escapes user-entered text (study title, team, abstract, condition and
+  factor names, scale names, question text), no longer imports a web font from Google, and passes
+  through `utils/html_safety.py`, which turns any script, iframe, form, event handler, external URL or
+  `javascript:` link into visible text. A title such as `<script>...</script>` can no longer run in the
+  file the owner opens, and mail filters no longer see active content in the attachment.
 - New root README, `docs/guide/how-effects-work.md`, `docs/guide/limitations.md`, `LICENSE`
   (PolyForm Noncommercial 1.0.0) and `CITATION.cff`.
 
@@ -69,6 +76,19 @@ lookup) is untouched; only the text post-processing after a response is drawn ch
   cannot exhaust the mail account's daily quota that the instructor notification depends on; the ZIP button accepts a
   single address.
 - Each run's instructor analyses are archived with the run, so they survive a failed email.
+- The notification is sent as two messages by default: a summary with no attachments (headline numbers
+  and the full analysis in the body) and a second message in the same thread with the report, the
+  analysis and the student ZIP. A mail filter that holds or quarantines attachments (Microsoft 365 can do
+  this with HTML files and ZIPs) can then delay the second message but not the analysis.
+  `INSTRUCTOR_EMAIL_MODE=single` sends one message. If the summary fails for a reason that would stop
+  the second message as well (authentication, daily quota, configuration, recipient), the second is
+  skipped and the log says so.
+- Each delivery writes one masked line to the app's standard error (`EMAIL-DELIVERY instructor OK
+  to=['o***@...'] attempts=1 ...`), which the hosting platform's "Manage app" log shows even though the
+  JSONL log lives on an ephemeral disk.
+- The admin test email can carry a chosen content type (body only, `.md`, inert `.html`, `.zip`, or an
+  incompressible 3 MB / 10 MB attachment), so three or four tests show which type or size the mail
+  system holds back.
 
 **Tests:** `tests/test_effect_fidelity_v1291.py` (recovery on long/binary scales, true null, game DVs,
 metadata, seeds, reverse scoring) and `tests/test_quality_v1291.py` (text safety, numeric text
