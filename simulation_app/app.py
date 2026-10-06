@@ -11046,10 +11046,9 @@ if active_page == 2:
                     # The old "= max" understated 0-based sliders (0-100 -> 100) and bipolar scales (-3..3 -> 3).
                     scale_points = max(2, new_scale_max - new_scale_min + 1)  # Used for data generation
                     if (new_scale_min, new_scale_max) == (current_min, current_max):
-                        try:
-                            scale_points = max(2, int(scale.get("scale_points") or scale_points))
-                        except (TypeError, ValueError):
-                            pass  # keep max - min + 1 when the stored count is not a number
+                        _arrived_points = _design_page_bound(scale.get("scale_points"), 0)
+                        if _arrived_points >= 2:  # a missing or non-numeric count keeps max - min + 1
+                            scale_points = _arrived_points
 
                     with col4:
                         # v1.2.5.3: Editable DV type dropdown
