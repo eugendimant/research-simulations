@@ -15032,12 +15032,16 @@ class EnhancedSimulationEngine:
                     mult[c] = float(np.clip(mult[c] * 2.0, 0.2, 8.0))
         for j, col in enumerate(cols):
             data[col] = result[:, j].astype(int).tolist()
-        return {
+        log: Dict[str, Any] = {
             "variable": scale_name, "method": "applied to the finished item responses",
             "targets_sd": {c: round(t, 4) for c, t in targets.items()},
             "within_condition_sd": round(float(sd), 4), "iterations": int(iterations),
             "multiplier": {c: round(v, 3) for c, v in mult.items()},
         }
+        if rev.any():
+            # share of the requested move that survives careless reverse-item answering, per condition
+            log["reverse_key_attenuation"] = {c: round(v, 3) for c, v in shrink.items()}
+        return log
 
     def _reapply_user_effects_after_game_model(self, df: pd.DataFrame, socsim_meta: Dict[str, Any]) -> None:
         """Restore the effect the user specified on a DV that the game model overwrote.
