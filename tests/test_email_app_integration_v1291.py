@@ -384,20 +384,73 @@ def test_the_daily_instructor_budget_applies_across_sessions(app_env, monkeypatc
     _clean_limiters()
 
 
-def test_access_codes_lock_after_twenty_wrong_guesses_across_sessions(app_env, monkeypatch):
+def test_the_right_access_code_always_works_and_wrong_guesses_are_counted_once_each(app_env, monkeypatch):
     app, st, _tmp = app_env
     _clean_limiters()
+    sleeps = []
+    monkeypatch.setattr("time.sleep", sleeps.append)
     right = "adm" + "in-code-" + "9x"
     monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
     monkeypatch.delenv("ADMIN_PASSWORD_SHA256", raising=False)
     monkeypatch.setattr(st, "secrets", {"ADMIN_PASSWORD": right})
-    assert app._access_code_matches(right, "ADMIN_PASSWORD") is True
-    for i in range(20):
-        monkeypatch.setattr(st, "session_state", {})  # new sessions do not reset the guess budget
+    for _ in range(30):  # Streamlit re-evaluates the same wrong text on every rerun: one guess, not thirty
+        assert app._access_code_matches("same-wrong-text", "ADMIN_PASSWORD") is False
+    assert app._wrong_access_guesses_last_day()["ADMIN_PASSWORD"] == 1 and sleeps == []
+    for i in range(40):  # many distinct wrong guesses from many sessions
+        monkeypatch.setattr(st, "session_state", {})
         assert app._access_code_matches(f"wrong-{i}", "ADMIN_PASSWORD") is False
-    assert app._access_code_matches(right, "ADMIN_PASSWORD") is False  # locked, even for the right code
+    assert app._wrong_access_guesses_last_day()["ADMIN_PASSWORD"] == 41
+    assert sleeps and max(sleeps) <= 2.0  # friction for a guessing run, never a refusal
+    assert app._access_code_matches(right, "ADMIN_PASSWORD") is True  # the owner is never locked out
+    assert app._wrong_access_guesses_last_day()["ANALYTICS_DASHBOARD_PASSWORD"] == 0  # gates are counted separately
     _clean_limiters()
-    assert app._access_code_matches(right, "ADMIN_PASSWORD") is True  # the window passed
+
+
+def test_one_students_wrong_analytics_code_does_not_affect_the_owners_admin_login(app_env, monkeypatch):
+    app, st, _tmp = app_env
+    _clean_limiters()
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
+    monkeypatch.delenv("ANALYTICS_DASHBOARD_PASSWORD", raising=False)
+    right = "owner-" + "pass-1"
+    monkeypatch.setattr(st, "secrets", {"ADMIN_PASSWORD": right, "ANALYTICS_DASHBOARD_PASSWORD": "dash-" + "board-1"})
+    for _ in range(200):  # the analytics field keeps its wrong text across 200 interactions
+        app._access_code_matches("typo", "ANALYTICS_DASHBOARD_PASSWORD")
+    assert app._access_code_matches(right, "ADMIN_PASSWORD") is True
+    _clean_limiters()
+
+
+def test_equivalent_gmail_spellings_share_one_recipient_budget(app_env):
+    app, _st, _tmp = app_env
+    forms = ["victim.person@gmail.com", "victimperson+a@gmail.com", "Victim.Person@GoogleMail.com", "v.i.c.t.i.m.person@gmail.com"]
+    assert len({app._canonical_mailbox(f) for f in forms}) == 1
+    assert app._canonical_mailbox("Ann+x@Example.org") == "ann@example.org"  # tags are dropped elsewhere too, dots are kept
+
+
+def test_an_error_while_preparing_the_instructor_mail_is_a_visible_log_row(app_env):
+    app, _st, tmp = app_env
+    _clean_limiters()
+    bad_metadata = {**_metadata(), "conditions": 5, "open_ended_questions": 7}  # not iterables
+    assert app._notify_instructor(title="t", metadata=bad_metadata, files={}, zip_bytes=b"PK", html_bytes=b"h",
+                                  md_bytes=b"m", summary_bytes=b"s") is None
+    entry = json.loads((tmp / "email_delivery_log.jsonl").read_text(encoding="utf-8").split("\n")[-2])
+    assert entry["kind"] == "instructor_error" and entry["ok"] is False and entry["error_class"]
+
+
+def test_skipped_runs_are_logged_at_most_three_times_an_hour(app_env, monkeypatch):
+    app, st, tmp = app_env
+    _clean_limiters()
+    monkeypatch.setattr(st, "secrets", {**SECRETS, "INSTRUCTOR_EMAIL_MAX_PER_DAY": 1})
+    for _ in range(20):
+        monkeypatch.setattr(st, "session_state", {})
+        thread = app._notify_instructor(title="t", metadata=_metadata(), files={}, zip_bytes=b"PK", html_bytes=b"h",
+                                        md_bytes=b"m", summary_bytes=b"s")
+        if thread is not None:
+            thread.join(30)
+    rows = [json.loads(line) for line in (tmp / "email_delivery_log.jsonl").read_text(encoding="utf-8").split("\n") if line]
+    assert sum(1 for r in rows if r["kind"] == "instructor_skipped") == 3
+    assert sum(1 for r in rows if r["kind"] in ("instructor_summary", "instructor_package")) == 2
+    _clean_limiters()
 
 
 def test_labels_built_from_student_text_cannot_form_links_or_images(app_env):

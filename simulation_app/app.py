@@ -3426,14 +3426,16 @@ def _render_feedback_button() -> None:
         user_email = st.text_input(
             "Your email (optional, for follow-up)",
             placeholder="your.email@example.com",
-            key="feedback_user_email"
+            key="feedback_user_email",
+            max_chars=200,
         )
 
         feedback_message = st.text_area(
             "Describe the bug or your recommendation",
             placeholder="Please provide as much detail as possible. For bugs: what were you trying to do? What happened instead? For recommendations: what feature would you like to see?",
             height=150,
-            key="feedback_message"
+            key="feedback_message",
+            max_chars=5000,
         )
 
         if st.button("📧 Send Feedback", type="primary", key="send_feedback_btn"):
@@ -3682,6 +3684,15 @@ def _send_email(
     return _send_email_with_smtp(to_email, subject, body_text, attachments, **kwargs)
 
 
+def _canonical_mailbox(address: str) -> str:
+    """One spelling per mailbox: lower case, no +tag, and no dots or googlemail.com for Gmail addresses."""
+    local, _, domain = str(address or "").strip().lower().partition("@")
+    local = local.split("+", 1)[0]
+    if domain in ("gmail.com", "googlemail.com"):
+        local, domain = local.replace(".", ""), "gmail.com"
+    return f"{local}@{domain}"
+
+
 def _user_email_allowed(recipient: str = "") -> Tuple[bool, str]:
     """Limit student-triggered emails (per session, per recipient and app-wide) so they cannot use up
     the mail account's daily quota, which the instructor notification depends on, or be used to
@@ -3701,7 +3712,7 @@ def _user_email_allowed(recipient: str = "") -> Tuple[bool, str]:
         # limiters inside the imported module outlive Streamlit's per-interaction script reruns (a new
         # browser tab is a new session, so session counters alone prove nothing)
         if recipient:
-            key = hashlib.sha256(recipient.strip().lower().encode("utf-8")).hexdigest()[:16]
+            key = hashlib.sha256(_canonical_mailbox(recipient).encode("utf-8")).hexdigest()[:16]
             if not _email_delivery.shared_limiter("user-emails-recipient", 2, 86400.0).allow(key):
                 return False, "That address already received the maximum number of emails today. Please download the ZIP instead."
         try:
@@ -3721,14 +3732,15 @@ def _instructor_email_blocked() -> str:
     """Return a reason when this run's instructor notification must be skipped to protect the mail
     account (one session looping, or the whole app over its daily budget); empty when allowed.
     Limits (0 disables a limit): INSTRUCTOR_EMAIL_MAX_PER_SESSION_PER_HOUR (default 12) and
-    INSTRUCTOR_EMAIL_MAX_PER_DAY (default 300 runs, two messages each)."""
+    INSTRUCTOR_EMAIL_MAX_PER_DAY (default 200 runs, two messages each, below a consumer mailbox's
+    500 messages a day; raise it for a Workspace or institutional account)."""
     if _email_delivery is None:
         return ""
     try:
         per_session = int(_secret("INSTRUCTOR_EMAIL_MAX_PER_SESSION_PER_HOUR", 12) or 0)
-        per_day = int(_secret("INSTRUCTOR_EMAIL_MAX_PER_DAY", 300) or 0)
+        per_day = int(_secret("INSTRUCTOR_EMAIL_MAX_PER_DAY", 200) or 0)
     except (TypeError, ValueError):
-        per_session, per_day = 12, 300
+        per_session, per_day = 12, 200
     if per_session > 0:
         session_key = st.session_state.get("_session_email_key")
         if not session_key:
@@ -3770,12 +3782,14 @@ def _notify_instructor(
         blocked = _instructor_email_blocked()
         if blocked and _email_delivery is not None:
             # Visible in the admin log; the run's analyses stay in the archive and can be re-sent from there.
-            _email_delivery.record_delivery(
-                EMAIL_DELIVERY_LOG,
-                _email_delivery.DeliveryResult(ok=False, message=blocked, error_kind="rate_limited",
-                                               error_class="RateLimited", error_detail=blocked),
-                kind="instructor_skipped", subject=f"Output - {title}", recipients=recipients,
-                host=_email_config().server)
+            # Logged at most three times an hour so a flood of skipped runs cannot push real history out of the log.
+            if _email_delivery.shared_limiter("instructor-skip-log", 3, 3600.0).allow("app"):
+                _email_delivery.record_delivery(
+                    EMAIL_DELIVERY_LOG,
+                    _email_delivery.DeliveryResult(ok=False, message=blocked, error_kind="rate_limited",
+                                                   error_class="RateLimited", error_detail=blocked),
+                    kind="instructor_skipped", subject=f"Output - {str(title)[:100]}", recipients=recipients,
+                    host=_email_config().server)
             return None
         if _email_delivery is None:  # legacy best effort
             body = f"Study: {title}\nGeneration Method: {label}\nSample Size: N={metadata.get('sample_size', 'N/A')}\n"
@@ -3823,6 +3837,16 @@ def _notify_instructor(
         return thread
     except Exception as _notify_err:  # noqa: BLE001 - never break generation
         _app_logging.getLogger(__name__).error("Instructor notification could not be queued: %s", _notify_err)
+        try:
+            if _email_delivery is not None:
+                _email_delivery.record_delivery(
+                    EMAIL_DELIVERY_LOG,
+                    _email_delivery.DeliveryResult(ok=False, message="The instructor notification could not be prepared.",
+                                                   error_kind="permanent", error_class=type(_notify_err).__name__,
+                                                   error_detail=str(_notify_err)[:300]),
+                    kind="instructor_error", subject=f"Output - {str(title)[:100]}", recipients=[], host="")
+        except Exception as _log_err:  # noqa: BLE001
+            _app_logging.getLogger(__name__).warning("Could not record the notification error: %s", _log_err)
         return None
 
 
@@ -7781,12 +7805,6 @@ def _access_code_matches(supplied: str, secret_name: str) -> bool:
     import hmac
     if not supplied:
         return False
-    # Guess limit shared by every session (a new browser tab is a new session): after 20 wrong codes in
-    # 10 minutes all access-code gates refuse everything, the right code included, until the window passes.
-    _limits = globals().get("_email_delivery")  # None when the helper module is missing (or in an isolated test namespace)
-    guard = _limits.shared_limiter("access-code-failures", 20, 600.0) if _limits is not None else None
-    if guard is not None and guard.remaining("app") <= 0:
-        return False
     plain, digest = "", ""
     for key, target in ((secret_name, "plain"), (secret_name + "_SHA256", "digest")):
         value = os.environ.get(key, "")
@@ -7803,9 +7821,35 @@ def _access_code_matches(supplied: str, secret_name: str) -> bool:
         return True
     if digest and hmac.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(), digest):
         return True
-    if guard is not None:
-        guard.allow("app")  # record the failed guess
+    # A wrong code. The right code is never refused, so nobody can lock the owner out by guessing. Distinct
+    # wrong guesses are counted per gate (Streamlit re-evaluates the same text on every rerun, which counts
+    # once), shown to the owner on the admin page, and slowed down by a short delay once there are many.
+    _limits = globals().get("_email_delivery")  # None when the helper module is missing (or in an isolated test namespace)
+    if _limits is not None:
+        try:
+            guess_id = hashlib.sha256(supplied.encode()).hexdigest()[:16]
+            if _limits.shared_limiter("access-guess-seen-" + secret_name, 1, 600.0).allow(guess_id):
+                _limits.shared_limiter("access-guess-day-" + secret_name, 100000, 86400.0).allow("app")
+                recent = _limits.shared_limiter("access-guess-recent-" + secret_name, 100000, 600.0)
+                recent.allow("app")
+                burst = 100000 - recent.remaining("app")
+                if burst > 10:
+                    import time as _t
+                    _t.sleep(min(2.0, 0.1 * (burst - 10)))
+        except Exception as _guard_err:  # noqa: BLE001 - bookkeeping must never decide who gets in
+            _app_logging.getLogger(__name__).warning("Access-code bookkeeping failed: %s", _guard_err)
     return False
+
+
+def _wrong_access_guesses_last_day() -> Dict[str, int]:
+    """Distinct wrong access-code guesses in the last 24 hours, per gate (empty when unavailable)."""
+    out: Dict[str, int] = {}
+    if _email_delivery is None:
+        return out
+    for name in ("ADMIN_PASSWORD", "ANALYTICS_DASHBOARD_PASSWORD"):
+        limiter = _email_delivery.shared_limiter("access-guess-day-" + name, 100000, 86400.0)
+        out[name] = 100000 - limiter.remaining("app")
+    return out
 
 
 VALIDITY_NOTICE = (
@@ -8108,6 +8152,17 @@ def _render_admin_email_tab() -> None:
 
     st.markdown("#### Recent deliveries")
     entries = _email_delivery.read_delivery_log(EMAIL_DELIVERY_LOG, limit=50)
+    try:
+        from datetime import timedelta, timezone
+        _cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        _recent = [e for e in entries if datetime.fromisoformat(str(e.get("ts", ""))) >= _cutoff]
+    except (ValueError, TypeError):
+        _recent = entries
+    _failed = [e for e in _recent if not e.get("ok") and e.get("kind") not in ("test", "instructor_skipped")]
+    _skipped = [e for e in _recent if e.get("kind") == "instructor_skipped"]
+    if _failed or _skipped:
+        st.error(f"Last 24 hours: {len(_failed)} delivery failure(s) and {len(_skipped)} run(s) skipped by the sending limits. "
+                 "The analyses of those runs are in the stored packages below and can be re-sent.")
     if entries:
         rows = []
         for e in entries:
@@ -8179,8 +8234,14 @@ def _render_admin_dashboard() -> None:
                     st.session_state["_admin_authenticated"] = True
                     st.rerun()
                 else:
-                    st.error("Invalid password, or too many wrong attempts in the last 10 minutes.")
+                    st.error("Invalid password.")
         return
+
+    _guesses = _wrong_access_guesses_last_day()
+    if any(_guesses.values()):
+        st.warning(f"Wrong access-code guesses in the last 24 hours: admin page {_guesses.get('ADMIN_PASSWORD', 0)}, "
+                   f"analytics dashboard {_guesses.get('ANALYTICS_DASHBOARD_PASSWORD', 0)}. "
+                   "Use a long random password for both (or its SHA-256 in the *_SHA256 secret).")
 
     # ── Top metrics bar ───────────────────────────────────────────────
     # v1.2.2.5: ALL-TIME counters from the persistent file-based usage
