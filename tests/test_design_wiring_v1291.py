@@ -565,3 +565,21 @@ def test_the_builder_path_is_unchanged(app_test):
     _no_exception(at)
     assert not _button(at, "generate_dataset_btn").disabled
     assert [s["variable_name"] for s in at.session_state["confirmed_scales"]] == built
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# QSF-supplied names now reach the Design page, so they must be escaped wherever raw HTML is built
+# ---------------------------------------------------------------------------------------------------------------------
+def test_a_qsf_variable_name_with_markup_is_escaped_in_the_construct_badges(app_test):
+    at = app_test
+    _start(at)
+    at.session_state["advanced_mode"] = True
+    payload = "Trust<img src=x onerror=alert(1)>"
+    _upload(at, "markup.qsf", make_qsf("Markup", [likert_matrix("QID1", payload, ["a", "b", "c"]),
+                                                  likert_matrix("QID2", "Satisfaction", ["x", "y", "z"])]))
+    _open_design(at)
+    _confirm(at)
+    assert [r[0] for r in _dv_rows(at)] == [payload, "Satisfaction"]
+    badges = [m.value for m in at.markdown if "&lt;img src=x" in str(m.value)]
+    assert badges, "the construct badges were not rendered"
+    assert not [m.value for m in at.markdown if "<img src=x" in str(m.value)]

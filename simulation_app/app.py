@@ -12500,7 +12500,7 @@ if active_page == 2:
                                         f"<span style='background:#E8F4FD;padding:2px 8px;border-radius:4px;"
                                         f"font-size:0.78rem;margin-right:4px;display:inline-block;"
                                         f"margin-bottom:4px;'>"
-                                        f"<b>{_sn}</b> → {_ct.replace('_', ' ')}</span>"
+                                        f"<b>{html_escape(str(_sn))}</b> → {html_escape(str(_ct).replace('_', ' '))}</span>"
                                     )
                             if _badge_parts:
                                 st.markdown(
