@@ -424,7 +424,13 @@ def _kw_hit(keyword: str, text: str) -> bool:
     """Keyword match for condition labels that respects word boundaries: short keywords
     ("ai", "low") must be whole words; longer ones may be word prefixes ("sustainab" ->
     "sustainable"). Plain substring tests matched "ai" in "wait" and "low" in "follow-up",
-    which silently changed response styles for unrelated conditions."""
+    which silently changed response styles for unrelated conditions.
+
+    v1.2.9.1: an underscore separates words here ("High_Threat" == "High Threat"). The regex word
+    character class includes "_", so snake_case labels ("No_AI", "Loss_Frame") matched nothing and
+    lost every name-based modifier."""
+    keyword = keyword.replace("_", " ")
+    text = text.replace("_", " ")
     return _word_in(keyword, text) if len(keyword) <= 4 else _stem_in(keyword, text)
 
 
@@ -4886,7 +4892,9 @@ class EnhancedSimulationEngine:
         CRITICAL: This method NEVER uses condition index/position for effects.
         Effects are determined ONLY by semantic content matching these literature findings.
         """
-        condition_lower = str(condition).lower().strip()
+        # v1.2.9.1: "_" separates words in a label ("Loss_Frame" reads as "loss frame"); as a regex
+        # word character it hid every keyword in snake_case labels from the inferred effects.
+        condition_lower = str(condition).lower().strip().replace("_", " ")
         variable_lower = str(variable).lower().strip()
 
         # Build study context string from all conditions + title for relational parsing
