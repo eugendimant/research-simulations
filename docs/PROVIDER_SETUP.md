@@ -48,6 +48,11 @@ Secret name to use: **`GOOGLE_API_KEY`**
 Free tier: Gemini Flash Lite at 30 requests/minute, Gemini Flash at 15
 requests/minute, 1M tokens/minute. No card required.
 
+Caveats: limits are per project, not per key, so a second key in the same
+project does not double anything. AI Studio's free tier is not offered in every
+country; if the key page refuses to issue one, that is a region block rather
+than a fault, and the next five providers still work.
+
 ---
 
 ## Step 2 — Groq
@@ -61,7 +66,10 @@ Very high daily volume, and the fastest responses of the six.
 
 Secret name: **`GROQ_API_KEY`**
 
-Free tier: ~30 requests/minute, ~14,400 requests/day.
+Free tier: ~30 requests/minute, ~14,400 requests/day. No card required.
+
+Caveat: the key is shown exactly once, on creation. There is no way to read it
+back later — if it is not in your password manager, create a new one.
 
 ---
 
@@ -75,7 +83,11 @@ Free tier: ~30 requests/minute, ~14,400 requests/day.
 
 Secret name: **`CEREBRAS_API_KEY`**
 
-Free tier: ~1M tokens/day, ~30 requests/minute.
+Free tier: ~1M tokens/day, ~30 requests/minute. No card required.
+
+Caveat: the per-minute limit is tight and is enforced hard rather than queued,
+so Cerebras is the first provider to start refusing on a large run. That is
+expected; the chain moves on.
 
 ---
 
@@ -89,6 +101,10 @@ Free tier: ~1M tokens/day, ~30 requests/minute.
 Secret name: **`SAMBANOVA_API_KEY`**
 
 Free tier: persistent free tier, ~20 requests/minute.
+
+Caveat: sign-up requires email verification before the key page will issue
+anything, and the free allowance is credit-based, so it can run out rather than
+merely rate-limit.
 
 ---
 
@@ -104,6 +120,11 @@ works as a deep fallback rather than a primary.
 
 Secret name: **`MISTRAL_API_KEY`**
 
+Caveats: the free "Experiment" plan requires **phone-number verification** and
+accepting the data-use terms before a key can be created — it is the only one of
+the six that asks for a phone number. The rate limit is about 1 request/second,
+which is why it sits late in the chain.
+
 ---
 
 ## Step 6 — OpenRouter
@@ -116,6 +137,11 @@ Last resort in the chain; useful because it fronts several free models.
 4. Copy the key (starts with `sk-or-v1-`) and save it.
 
 Secret name: **`OPENROUTER_API_KEY`**
+
+Caveats: only models whose name ends in `:free` cost nothing, and their daily
+cap is low (and lower still on an account that has never had credit on it). A
+`402` from OpenRouter means the model was not a free one, not that the key is
+bad.
 
 ---
 
@@ -192,3 +218,13 @@ built-in engine and runs still complete.
 4. Click **Test providers now** to confirm the new one answers.
 
 Keys are never stored anywhere else, so there is nothing else to clean up.
+
+---
+
+## The rules that keep this from breaking again
+
+Keys belong only in the deployment and in your password manager; never in the
+repository, a commit message, an issue or a chat. Never drop a provider from
+the chain without adding one in its place, and run **Test providers now** after
+any change to the LLM code. The full policy, and the list of tests that enforce
+each rule in CI, is in [`KEY_POLICY.md`](KEY_POLICY.md).

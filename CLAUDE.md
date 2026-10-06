@@ -123,6 +123,45 @@ smoke test before pushing.
 
 ---
 
+## ABSOLUTE RULE: API Keys — Never in the Repository
+
+**Six provider API keys were once committed to this public repository.** They
+were readable by anyone, several were auto-revoked by their provider's
+secret-scanning partnership with GitHub, and all six had to be rotated. A
+public repository keeps a deleted secret in its history forever, so this is not
+recoverable by deleting the line. It MUST NEVER happen again.
+
+### Hard rules
+1. **A key lives in the deployment and a password manager, nowhere else.**
+   Streamlit **Settings → Secrets**, an environment variable, or the
+   git-ignored `.streamlit/secrets.toml`. Never a module, a comment, a test
+   fixture, a commit message, a PR body or a chat message. Never XOR-encoded,
+   base64'd or split across lines — obfuscation is still committing it.
+   Guarded by `tests/test_no_secrets_in_repo.py`; never work around that test.
+2. **Never remove a provider from the chain without adding a replacement.**
+   `BUILTIN_PROVIDER_SECRETS` and the `_builtin_providers` list in
+   `llm_response_generator.py` ARE the redundancy. Shortening the chain is
+   silent until the next rate limit, when there is nothing left to fall to.
+3. **Run "Test providers now" after ANY change to the LLM chain** (`?admin=1`
+   → LLM tab). Tests stub the network, so a change can pass CI and still have
+   broken every live call. The button sends one real request per configured
+   provider and prints OK / Failed / Not configured without ever showing key
+   material.
+4. **A missing key is never an error.** With none configured the built-in
+   engine writes the open-ended text, the run completes, numeric data is
+   identical, and the user sees a notice — not a banner. Turning a missing key
+   into a failure is a bug: `tests/test_free_path_never_errors.py` and
+   `test_no_keys_reports_not_configured_not_unreachable` hold that line.
+5. **Docs and chain must agree.** `docs/PROVIDER_SETUP.md` lists the providers
+   in the order the chain tries them; `tests/test_provider_docs_match_chain.py`
+   fails if either side moves alone. Adding a provider means adding its setup
+   step and its row in that test's `_SLOT_DOC_NAMES`.
+
+Full policy, with the test that enforces each rule: `docs/KEY_POLICY.md`.
+Setup walkthrough for all six providers: `docs/PROVIDER_SETUP.md`.
+
+---
+
 ## ABSOLUTE RULE: Page Layout — Next at Top, Scroll at Bottom
 
 - **"Continue to..." button**: TOP of page only, right under the stepper (1-2-3-4). Never at the bottom.

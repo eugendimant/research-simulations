@@ -7768,14 +7768,30 @@ def _render_admin_dashboard() -> None:
                 builtin_provider_key_status as _bpks,
             )
             _key_status = _bpks()
+            # Slot names are internal identifiers; show the provider's own name
+            # so a missing key is obvious to someone reading the table against
+            # docs/PROVIDER_SETUP.md, which uses these names.
+            _SLOT_LABELS = {
+                "google_ai": "Google AI Studio (Gemini)",
+                "groq": "Groq",
+                "cerebras": "Cerebras",
+                "sambanova": "SambaNova",
+                "mistral": "Mistral",
+                "openrouter": "OpenRouter",
+            }
             _key_rows = [
                 {
-                    "Provider": _slot,
+                    "Provider": _SLOT_LABELS.get(_slot, _slot),
                     "Secret name": " or ".join(_BPS[_slot]),
-                    "Configured": "Yes" if _configured else "No",
+                    "Configured": "\u2705 Yes" if _configured else "\u2014 No",
                 }
                 for _slot, _configured in _key_status.items()
             ]
+            _n_set = sum(1 for _v in _key_status.values() if _v)
+            st.caption(
+                f"{_n_set} of {len(_key_status)} providers configured. "
+                "Setup steps: docs/PROVIDER_SETUP.md. Key rules: docs/KEY_POLICY.md."
+            )
             st.dataframe(_key_rows, use_container_width=True, hide_index=True)
             if not any(_key_status.values()):
                 st.info(
