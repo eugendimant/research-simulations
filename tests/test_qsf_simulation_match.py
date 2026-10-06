@@ -19,6 +19,8 @@ import os
 import json
 import traceback
 import io
+
+import pytest
 import zipfile
 
 # Path setup: works both via pytest (conftest.py) and direct script execution
@@ -286,11 +288,12 @@ def verify_simulation(qsf_file_path, verbose=False):
     return issues
 
 
-def run_full_verification(qsf_dir, verbose=True, max_files=None):
-    """Run verification against all QSF files in a directory."""
+def run_full_verification(qsf_dir, verbose=True, max_files=None, qsf_files=None):
+    """Run verification against all QSF files in a directory (or an explicit list)."""
     import glob
 
-    qsf_files = sorted(glob.glob(os.path.join(qsf_dir, "*.qsf")))
+    if qsf_files is None:
+        qsf_files = sorted(glob.glob(os.path.join(qsf_dir, "*.qsf")))
     if max_files:
         qsf_files = qsf_files[:max_files]
 
@@ -368,6 +371,35 @@ def run_full_verification(qsf_dir, verbose=True, max_files=None):
         "warning_issues": warning_issues,
         "info_issues": info_issues,
     }
+
+
+_QSF_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "simulation_app", "example_files")
+
+
+def _assert_clean(results):
+    assert results["total"] > 0, "no QSF files verified"
+    crit = [f"[{i['file']}] {i['issue']}" for i in results["critical_issues"][:5]]
+    assert results["failed"] == 0 and results["errored"] == 0, (
+        f"{results['failed']} failed, {results['errored']} errored of {results['total']}; "
+        f"first critical issues: {crit}"
+    )
+
+
+def _smallest_qsfs(k):
+    import glob
+    files = sorted(glob.glob(os.path.join(_QSF_DIR, "*.qsf")), key=lambda f: (os.path.getsize(f), f))
+    return files[:k]
+
+
+def test_qsf_simulation_match_sample():
+    """Parsed QSF structure must match simulated output (4 smallest example files)."""
+    _assert_clean(run_full_verification(_QSF_DIR, verbose=False, qsf_files=_smallest_qsfs(4)))
+
+
+@pytest.mark.slow
+def test_qsf_simulation_match_all_files():
+    """Same check across every example QSF (slow)."""
+    _assert_clean(run_full_verification(_QSF_DIR, verbose=False))
 
 
 if __name__ == "__main__":

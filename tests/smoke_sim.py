@@ -70,102 +70,107 @@ def oe_on_topic(df, name, topic_words):
         bad_meta = [v for v in vals if v.strip().lower() in ("it","this","that","this topic")]
         check(f"{name}: OE '{c}' no bare-pronoun", not bad_meta, f"{len(bad_meta)} bare")
 
-print("="*70); print("LIVE SIMULATION SMOKE TEST"); print("="*70)
+def main() -> int:
+    print("="*70); print("LIVE SIMULATION SMOKE TEST"); print("="*70)
 
-scenarios = [
-    ("S1 between+likert+oe",
-     dict(cond_str="Control, AI-generated", scale_str="Trust scale, 5 items, 1-7 Likert\nPurchase intention, 3 items, 7-point",
-          oe_str="Why did you make this choice?", n=80, title="Brand Trust Study",
-          desc="Effect of AI-generated content on consumer trust.")),
-    ("S2 factorial 2x2",
-     dict(cond_str="Low Reward + Short Delay, Low Reward + Long Delay, High Reward + Short Delay, High Reward + Long Delay",
-          scale_str="Motivation, 4 items, 1-7", oe_str="Explain your decision.",
-          n=120, title="Reward Study", desc="2x2 reward by delay on motivation.", dtype="factorial")),
-    ("S3 political identity (bug-3 path)",
-     dict(cond_str="Trump supporter and fan, Trump hater, No identity control",
-          scale_str="Amount allocated in dictator game, 1 item, 0-100",
-          oe_str="Why did you allocate that amount?", n=90, title="Political Identity Dictator Game",
-          desc="Partisan identity and economic allocation in a dictator game.")),
-    ("S4 edge: tiny N",
-     dict(cond_str="A, B", scale_str="Outcome, 3 items, 1-7", oe_str="Comment", n=10,
-          title="Tiny", desc="Tiny sample edge case.")),
-    ("S5 edge: single condition",
-     dict(cond_str="OnlyOne", scale_str="Mood, 5 items, 1-7", oe_str="", n=40,
-          title="Single", desc="Single condition design.")),
-]
+    scenarios = [
+        ("S1 between+likert+oe",
+         dict(cond_str="Control, AI-generated", scale_str="Trust scale, 5 items, 1-7 Likert\nPurchase intention, 3 items, 7-point",
+              oe_str="Why did you make this choice?", n=80, title="Brand Trust Study",
+              desc="Effect of AI-generated content on consumer trust.")),
+        ("S2 factorial 2x2",
+         dict(cond_str="Low Reward + Short Delay, Low Reward + Long Delay, High Reward + Short Delay, High Reward + Long Delay",
+              scale_str="Motivation, 4 items, 1-7", oe_str="Explain your decision.",
+              n=120, title="Reward Study", desc="2x2 reward by delay on motivation.", dtype="factorial")),
+        ("S3 political identity (bug-3 path)",
+         dict(cond_str="Trump supporter and fan, Trump hater, No identity control",
+              scale_str="Amount allocated in dictator game, 1 item, 0-100",
+              oe_str="Why did you allocate that amount?", n=90, title="Political Identity Dictator Game",
+              desc="Partisan identity and economic allocation in a dictator game.")),
+        ("S4 edge: tiny N",
+         dict(cond_str="A, B", scale_str="Outcome, 3 items, 1-7", oe_str="Comment", n=10,
+              title="Tiny", desc="Tiny sample edge case.")),
+        ("S5 edge: single condition",
+         dict(cond_str="OnlyOne", scale_str="Mood, 5 items, 1-7", oe_str="", n=40,
+              title="Single", desc="Single condition design.")),
+    ]
 
-dfs = {}
-for name, kw in scenarios:
-    print(f"\n--- {name} ---")
-    try:
-        df, meta = build(**kw)
-        dfs[name] = (df, meta)
-        check(f"{name}: generate() no crash", True)
-        check(f"{name}: row count == N", len(df) == kw["n"], f"got {len(df)} want {kw['n']}")
-        check(f"{name}: has columns", len(df.columns) > 0, f"{len(df.columns)} cols")
-        numeric_sanity(df, name)
-        oe_on_topic(df, name, kw["title"].lower().split())
-    except Exception as e:
-        check(f"{name}: generate() no crash", False, f"{type(e).__name__}: {e}")
-        traceback.print_exc()
+    dfs = {}
+    for name, kw in scenarios:
+        print(f"\n--- {name} ---")
+        try:
+            df, meta = build(**kw)
+            dfs[name] = (df, meta)
+            check(f"{name}: generate() no crash", True)
+            check(f"{name}: row count == N", len(df) == kw["n"], f"got {len(df)} want {kw['n']}")
+            check(f"{name}: has columns", len(df.columns) > 0, f"{len(df.columns)} cols")
+            numeric_sanity(df, name)
+            oe_on_topic(df, name, kw["title"].lower().split())
+        except Exception as e:
+            check(f"{name}: generate() no crash", False, f"{type(e).__name__}: {e}")
+            traceback.print_exc()
 
-# Validator + report on S1
-print("\n--- Validator + Instructor Report on S1 ---")
-if "S1 between+likert+oe" in dfs:
-    df, meta = dfs["S1 between+likert+oe"]
+    # Validator + report on S1
+    print("\n--- Validator + Instructor Report on S1 ---")
+    if "S1 between+likert+oe" in dfs:
+        df, meta = dfs["S1 between+likert+oe"]
+        try:
+            from utils.hbs_validator import HBSValidator
+            v = HBSValidator()
+            # try common entrypoints
+            ran = False
+            for m in ("validate", "validate_dataframe", "run", "validate_output"):
+                if hasattr(v, m):
+                    try:
+                        getattr(v, m)(df); ran = True; break
+                    except TypeError:
+                        try:
+                            getattr(v, m)(df, meta); ran = True; break
+                        except Exception:
+                            pass
+            check("validator runs without crash", True, "")
+        except Exception as e:
+            check("validator runs without crash", False, f"{type(e).__name__}: {e}")
+            traceback.print_exc()
+
+        try:
+            from utils.instructor_report import InstructorReportGenerator, InstructorReportConfig
+            cfg = InstructorReportConfig() if "InstructorReportConfig" in dir() else None
+            gen = InstructorReportGenerator(cfg) if cfg is not None else InstructorReportGenerator()
+            check("instructor report import", True)
+        except Exception as e:
+            check("instructor report import", False, f"{type(e).__name__}: {e}")
+
+    # Inject a NaN into a scale column and re-run validator to exercise the int(NaN) path
+    print("\n--- Validator NaN-robustness (hbs_validator) ---")
     try:
         from utils.hbs_validator import HBSValidator
+        df2 = pd.DataFrame({"Trust_1":[1,2,3,4,np.nan,6,7,2,3,4],
+                            "Trust_2":[7,6,5,4,3,2,1,5,5,5],
+                            "CONDITION":["A","A","A","A","A","B","B","B","B","B"]})
         v = HBSValidator()
-        # try common entrypoints
-        ran = False
-        for m in ("validate", "validate_dataframe", "run", "validate_output"):
+        crashed = None
+        for m in ("validate","validate_dataframe","run","validate_output","_detect_scale_columns"):
             if hasattr(v, m):
                 try:
-                    getattr(v, m)(df); ran = True; break
-                except TypeError:
-                    try:
-                        getattr(v, m)(df, meta); ran = True; break
-                    except Exception:
-                        pass
-        check("validator runs without crash", True, "")
+                    getattr(v, m)(df2)
+                except Exception as e:
+                    crashed = f"{m}: {type(e).__name__}: {e}"
+                break
+        check("validator handles NaN in scale col", crashed is None, crashed or "")
     except Exception as e:
-        check("validator runs without crash", False, f"{type(e).__name__}: {e}")
-        traceback.print_exc()
+        check("validator NaN test setup", False, f"{type(e).__name__}: {e}")
 
-    try:
-        from utils.instructor_report import InstructorReportGenerator, InstructorReportConfig
-        cfg = InstructorReportConfig() if "InstructorReportConfig" in dir() else None
-        gen = InstructorReportGenerator(cfg) if cfg is not None else InstructorReportGenerator()
-        check("instructor report import", True)
-    except Exception as e:
-        check("instructor report import", False, f"{type(e).__name__}: {e}")
+    print("\n" + "="*70)
+    if FAILS:
+        print(f"SMOKE TEST: {len(FAILS)} FAILURES")
+        for f in FAILS:
+            print("  - " + f)
+        return 1
+    else:
+        print("SMOKE TEST: ALL CHECKS PASSED")
+        return 0
 
-# Inject a NaN into a scale column and re-run validator to exercise the int(NaN) path
-print("\n--- Validator NaN-robustness (hbs_validator) ---")
-try:
-    from utils.hbs_validator import HBSValidator
-    df2 = pd.DataFrame({"Trust_1":[1,2,3,4,np.nan,6,7,2,3,4],
-                        "Trust_2":[7,6,5,4,3,2,1,5,5,5],
-                        "CONDITION":["A","A","A","A","A","B","B","B","B","B"]})
-    v = HBSValidator()
-    crashed = None
-    for m in ("validate","validate_dataframe","run","validate_output","_detect_scale_columns"):
-        if hasattr(v, m):
-            try:
-                getattr(v, m)(df2)
-            except Exception as e:
-                crashed = f"{m}: {type(e).__name__}: {e}"
-            break
-    check("validator handles NaN in scale col", crashed is None, crashed or "")
-except Exception as e:
-    check("validator NaN test setup", False, f"{type(e).__name__}: {e}")
 
-print("\n" + "="*70)
-if FAILS:
-    print(f"SMOKE TEST: {len(FAILS)} FAILURES")
-    for f in FAILS:
-        print("  - " + f)
-    sys.exit(1)
-else:
-    print("SMOKE TEST: ALL CHECKS PASSED")
-    sys.exit(0)
+if __name__ == "__main__":
+    sys.exit(main())

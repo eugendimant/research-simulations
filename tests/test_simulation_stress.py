@@ -43,6 +43,8 @@ import io
 import zipfile
 import re
 import glob
+
+import pytest
 from collections import Counter, defaultdict
 
 # Path setup: works both via pytest (conftest.py) and direct script execution
@@ -602,10 +604,12 @@ def iteration_3_edge_cases():
     check("structural_condition_preserved",
           set(df["CONDITION"].unique()) == {"A", "B"},
           f"CONDITION values: {df['CONDITION'].unique()}")
-    # Gender should still be numeric
+    # Gender must remain the categorical demographic (a handful of labels such as
+    # "Male"/"Female"), NOT overwritten by free-text open-ended responses.
+    # (Previously asserted numeric; the engine emits string labels by design.)
     check("structural_gender_preserved",
-          _is_numeric_col(df["Gender"]),
-          f"Gender dtype: {df['Gender'].dtype}")
+          _is_numeric_col(df["Gender"]) or df["Gender"].nunique() <= 5,
+          f"Gender dtype: {df['Gender'].dtype}, n_unique={df['Gender'].nunique()}")
 
     # TEST 3.13: Scale with special characters in name
     print("  Testing scale with special characters in name...")
@@ -615,9 +619,8 @@ def iteration_3_edge_cases():
     ]
     inputs["open_ended_details"] = []
     df, _ = run_engine(inputs, sample_size=30)
-    # Column name should be cleaned
-    expected_prefix = "How_satisfied_are_you?_(1-7)_"
-    matching_cols = [c for c in df.columns if c.startswith("How_satisfied")]
+    # Item columns are named from variable_name ("Satisfaction"), not the long label
+    matching_cols = [c for c in df.columns if c.startswith("Satisfaction_") and c[-1].isdigit()]
     check("special_chars_columns_exist", len(matching_cols) >= 3,
           f"Found columns: {matching_cols}")
 
@@ -950,6 +953,50 @@ def _print_results(label, stats, issues):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
+_QSF_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "simulation_app", "example_files")
+_SMOKE_FILES = 3  # per-iteration file cap for the default (fast) run
+
+
+def _qsf_files(smallest=None):
+    files = sorted(glob.glob(os.path.join(_QSF_DIR, "*.qsf")))
+    assert files, f"no example QSF files found in {_QSF_DIR}"
+    if smallest:
+        files = sorted(files, key=lambda f: (os.path.getsize(f), f))[:smallest]
+    return files
+
+
+def _assert_no_issues(label, issues):
+    assert not issues, (
+        f"{label}: {len(issues)} issue(s); first 5: "
+        + "; ".join(f"[{i.get('file')}] {i.get('issue')}" for i in issues[:5])
+    )
+
+
+_ITERATIONS = {
+    "iter1_data_quality": iteration_1_data_quality,
+    "iter2_scale_integrity": iteration_2_scale_integrity,
+    "iter4_statistical_validity": iteration_4_statistical_validity,
+    "iter5_comprehensive": iteration_5_comprehensive,
+}
+
+
+@pytest.mark.parametrize("name", list(_ITERATIONS))
+def test_stress_iteration_sample(name):
+    """Each file-based iteration on a small deterministic sample (smallest QSFs)."""
+    _assert_no_issues(name, _ITERATIONS[name](_qsf_files(smallest=_SMOKE_FILES)))
+
+
+def test_stress_iter3_edge_cases():
+    _assert_no_issues("iter3_edge_cases", iteration_3_edge_cases())
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("name", list(_ITERATIONS))
+def test_stress_iteration_all_files(name):
+    """Each file-based iteration across ALL example QSFs (very slow)."""
+    _assert_no_issues(name, _ITERATIONS[name](_qsf_files()))
+
 
 if __name__ == "__main__":
     qsf_dir = os.path.join(os.path.dirname(__file__), "..", "simulation_app", "example_files")

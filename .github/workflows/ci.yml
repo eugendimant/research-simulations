@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1"   # weekly: run the slow suite
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: simulation_app/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r simulation_app/requirements.txt pytest ruff
+      - name: Version sync (all locations from CLAUDE.md)
+        run: python scripts/check_version_sync.py
+      - name: Lint (ruff F,B,S - see pyproject.toml)
+        run: ruff check simulation_app tests scripts --exclude simulation_app/experimental_features
+      - name: Tests (fast suite)
+        run: python -m pytest tests -m "not slow" -q -p no:cacheprovider
+
+  slow:
+    # Long-running stress / full-matrix tests: weekly schedule or manual dispatch only.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: simulation_app/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r simulation_app/requirements.txt pytest
+      - name: Tests (slow suite)
+        run: python -m pytest tests -m slow -q -p no:cacheprovider

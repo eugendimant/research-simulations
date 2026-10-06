@@ -10,6 +10,8 @@ This tests that:
 5. No crashes during generation for any method
 """
 import sys, os
+
+import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "simulation_app"))
 os.environ.setdefault("STREAMLIT_RUNTIME", "0")
 
@@ -152,11 +154,36 @@ def main():
         print(f"\n  ERRORS ({len(errors)}):")
         for e in errors:
             print(f"    {e}")
-        sys.exit(1)
     else:
         print(f"\n  ALL {len(results)} methods passed callback validation!")
-        sys.exit(0)
+    return errors
+
+
+def _assert_phases(label, allow_template, use_socsim, forbidden=()):
+    phases, df, _meta = run_with_callbacks(label, allow_template, use_socsim)
+    assert "generating" in phases, f"{label}: 'generating' phase never fired: {phases}"
+    assert "complete" in phases, f"{label}: 'complete' phase never fired: {phases}"
+    for bad in forbidden:
+        assert bad not in phases, f"{label}: must not fire '{bad}': {phases}"
+    assert df.shape[0] == 10, f"{label}: expected 10 rows, got {df.shape[0]}"
+
+
+def test_progress_callbacks_template_engine():
+    _assert_phases("Template Engine", True, False,
+                   forbidden=("llm_prefill", "socsim_enrichment"))
+
+
+def test_progress_callbacks_experimental_engine():
+    _assert_phases("Adaptive Behavioral Engine", True, True,
+                   forbidden=("llm_prefill",))
+
+
+@pytest.mark.slow
+def test_progress_callbacks_all_methods():
+    """Full 4-method check (AI paths wait on dead LLM providers: ~5 min)."""
+    errors = main()
+    assert not errors, f"progress callback errors: {errors}"
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(1 if main() else 0)
