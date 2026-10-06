@@ -14982,7 +14982,26 @@ if active_page == 3:
                 _log(f"Schema validation error: {_schema_err}", level="warning")
                 schema_results = {"passed": True, "checks": [], "warnings": [f"Schema validation encountered an error: {_schema_err}"], "errors": []}
 
+            # Delivered data looks like a real Qualtrics export; simulator-internal columns go to a
+            # diagnostics sidecar. Analysis/reporting keeps using the engine df. Any failure here
+            # falls back to the plain engine CSV so a bug can never block the download.
             csv_bytes = df.to_csv(index=False).encode("utf-8")
+            diagnostics_bytes = None
+            qualtrics_raw_bytes = None
+            try:
+                from utils.qualtrics_export import (
+                    build_qualtrics_export as _build_qx,
+                    export_to_csv_bytes as _qx_csv_bytes,
+                    to_qualtrics_raw_csv as _qx_raw_csv,
+                )
+                _qx_df, _qx_diag_df = _build_qx(df, metadata)
+                _qx_labels = metadata.get("column_descriptions", {}) if isinstance(metadata, dict) else {}
+                _qx_main = _qx_csv_bytes(_qx_df)
+                _qx_diag = _qx_diag_df.to_csv(index=False).encode("utf-8")
+                _qx_raw = _qx_raw_csv(_qx_df, _qx_labels)
+                csv_bytes, diagnostics_bytes, qualtrics_raw_bytes = _qx_main, _qx_diag, _qx_raw
+            except Exception as _qx_err:
+                _log(f"Qualtrics-style export failed, delivering plain engine CSV: {_qx_err}", level="error")
             meta_bytes = _safe_json(metadata).encode("utf-8")
             explainer_bytes = explainer.encode("utf-8")
             r_bytes = r_script.encode("utf-8")
@@ -15067,6 +15086,11 @@ if active_page == 3:
                 "User_Study_Summary.html": instructor_html_bytes,  # Same summary in HTML (easy to view in browser)
             }
 
+            if diagnostics_bytes is not None:
+                files["Simulation_Diagnostics.csv"] = diagnostics_bytes
+            if qualtrics_raw_bytes is not None:
+                files["Simulated_Data_Qualtrics_Raw.csv"] = qualtrics_raw_bytes
+
             # Include uploaded source files in "Source_Files" subfolder
             qsf_content = st.session_state.get("qsf_raw_content")
             if qsf_content:
@@ -15142,7 +15166,10 @@ if active_page == 3:
                 _log(f"ZIP creation failed: {_zip_exc}", level="warning")
                 # Create minimal ZIP with just the CSV
                 try:
-                    zip_bytes = _bytes_to_zip({"Simulated_Data.csv": csv_bytes})
+                    _min_files = {"Simulated_Data.csv": csv_bytes}
+                    if diagnostics_bytes is not None:
+                        _min_files["Simulation_Diagnostics.csv"] = diagnostics_bytes
+                    zip_bytes = _bytes_to_zip(_min_files)
                 except Exception:
                     zip_bytes = csv_bytes  # Last resort: raw CSV as download
 
@@ -15205,7 +15232,9 @@ if active_page == 3:
                     + (f"OE Data Sources: {', '.join(metadata.get('oe_data_sources', []))}\n" if metadata.get('oe_data_sources') else "")
                     + "\n"
                     "Files in ZIP (what students see):\n"
-                    "- Simulated_Data.csv (the data)\n"
+                    "- Simulated_Data.csv (the data, Qualtrics export layout)\n"
+                    "- Simulated_Data_Qualtrics_Raw.csv (same data with the 3-row Qualtrics header)\n"
+                    "- Simulation_Diagnostics.csv (simulator-internal columns, keyed by ResponseId)\n"
                     "- Data_Codebook_Handbook.txt (variable coding)\n"
                     "- User_Study_Summary.md (study summary in Markdown)\n"
                     "- User_Study_Summary.html (same summary - opens in any browser)\n"
@@ -15470,7 +15499,17 @@ if active_page == 3:
                     unsafe_allow_html=True,
                 )
                 try:
-                    _recovery_csv = _recovery_df.to_csv(index=False)
+                    try:
+                        from utils.qualtrics_export import (
+                            build_qualtrics_export as _build_qx_rec,
+                            export_to_csv_bytes as _qx_csv_rec,
+                        )
+                        _recovery_csv = _qx_csv_rec(
+                            _build_qx_rec(_recovery_df, st.session_state.get("last_metadata") or {})[0]
+                        ).decode("utf-8")
+                    except Exception as _qx_rec_err:
+                        _log(f"Recovery export fell back to plain CSV: {_qx_rec_err}", level="error")
+                        _recovery_csv = _recovery_df.to_csv(index=False)
                     st.download_button(
                         label="Download recovered data (CSV)",
                         data=_recovery_csv,
@@ -15650,7 +15689,8 @@ if active_page == 3:
 
         # v1.4.16: ZIP contents list
         st.caption(
-            "Includes: Simulated_Data.csv, Data_Codebook_Handbook.txt, "
+            "Includes: Simulated_Data.csv, Simulated_Data_Qualtrics_Raw.csv, "
+            "Simulation_Diagnostics.csv, Data_Codebook_Handbook.txt, "
             "User_Study_Summary.html, R/Python/Julia/SPSS/Stata scripts, "
             "Metadata.json, Schema_Validation.json"
         )
@@ -15716,7 +15756,7 @@ if active_page == 3:
                     _track_user_email(to_email, source="zip_download")
                     subject = f"[Behavioral Simulation] Output: {st.session_state.get('study_title','Untitled Study')}"
                     body = (
-                        "Attached is the simulation output ZIP (Simulated.csv, metadata, analysis scripts).\n\n"
+                        "Attached is the simulation output ZIP (Simulated_Data.csv, Simulation_Diagnostics.csv, metadata, analysis scripts).\n\n"
                         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
                     )
                     ok, msg = _send_email(
