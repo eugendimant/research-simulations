@@ -94,6 +94,7 @@ def _assert_clean(md: str, html: str):
     visible = _text_of_html(html)
     for label, text in (("markdown", md), ("html", visible)):
         assert not NAN_INF.search(text), f"{label}: {NAN_INF.search(text).group(0)!r} in {text[max(0, NAN_INF.search(text).start() - 80):NAN_INF.search(text).end() + 40]!r}"
+        assert not re.search(r"\bp\s*=\s*0\.0{3,4}(?![0-9])", text), f"{label}: p = 0.0000"
     assert "Report Error" not in html and "Report generation encountered an error" not in md
 
 
@@ -195,6 +196,130 @@ def test_scale_without_any_numeric_column_is_reported_not_dropped_or_crashed():
     md, html = _both_reports(df, _meta(df, [_scale("Q7", 1)], {"Q7": ["Q7_1"]}))
     assert "| Q7 | 0 |" in md and "no columns found" in md
     assert "Report Error" not in html
+
+
+# ---------------------------------------------------------------------------
+# 4. Constant-sum / rank-order composites and other zero-variance cells
+# ---------------------------------------------------------------------------
+def _constant_sum_frame(n_per=30, total=100, k=4, seed=4):
+    df = _base_frame(n_per, seed=seed)
+    rng = np.random.RandomState(seed)
+    shares = rng.dirichlet(np.ones(k), size=len(df)) * total
+    alloc = np.floor(shares).astype(int)
+    for i in range(len(df)):
+        alloc[i, int(rng.randint(k))] += total - alloc[i].sum()
+    cols = []
+    for j in range(k):
+        df[f"QID5_{j + 1}"] = alloc[:, j]
+        cols.append(f"QID5_{j + 1}")
+    return df, cols
+
+
+def test_constant_sum_composite_is_not_tested_and_options_are_compared(stats_mode):
+    df, cols = _constant_sum_frame()
+    meta = _meta(df, [_scale("QID5", 4, "constant_sum", 0, 100)], {"QID5": cols})
+    md, html = _both_reports(df, meta)
+    _assert_clean(md, html)
+    text = _text_of_html(html)
+    assert "shares of one fixed total" in text and "shares of one fixed total" in md
+    assert "t = 2500000" not in text and "Independent Samples t-test" not in html.split("QID5", 1)[1]
+    # each option is compared across conditions instead (one row per option, p-values not corrected)
+    for col in cols:
+        assert col in text and col in md
+    assert "not corrected for the 4 comparisons" in text
+    assert "Executive Summary" in html and "could not be tested as a composite" in text
+
+
+def test_constant_sum_with_float_noise_in_the_mean_is_still_constant(stats_mode):
+    df, cols = _constant_sum_frame(k=3)  # 100 / 3 carries ~1e-14 of float noise per participant
+    assert ir._composite_has_no_variation(df[cols].mean(axis=1), df["CONDITION"])
+    md, html = _both_reports(df, _meta(df, [_scale("QID5", 3, "constant_sum", 0, 100)], {"QID5": cols}))
+    _assert_clean(md, html)
+
+
+def test_rank_order_composite_is_not_tested(stats_mode):
+    df = _base_frame(30)
+    rng = np.random.RandomState(8)
+    ranks = np.array([rng.permutation(4) + 1 for _ in range(len(df))])
+    cols = []
+    for j in range(4):
+        df[f"RK_{j + 1}"] = ranks[:, j]
+        cols.append(f"RK_{j + 1}")
+    md, html = _both_reports(df, _meta(df, [_scale("RK", 4, "rank_order", 1, 4)], {"RK": cols}))
+    _assert_clean(md, html)
+    assert "items of this question are ranks" in _text_of_html(html)
+
+
+def test_a_dv_with_no_variation_at_all_gets_one_sentence_and_no_nan(stats_mode):
+    df = _base_frame(20)
+    df["Flat_1"] = 5
+    df["Flat_2"] = 5
+    md, html = _both_reports(df, _meta(df, [_scale("Flat", 2)], {"Flat": ["Flat_1", "Flat_2"]}))
+    _assert_clean(md, html)
+    assert "has the same score on this measure (M = 5.00)" in _text_of_html(html)
+
+
+def test_constant_cells_with_different_means_do_not_give_infinite_t_or_a_significant_yes(stats_mode):
+    """Three conditions, each constant but at different levels: t is +/-inf for every pair."""
+    df = _base_frame(10, conditions=("A", "B", "C"))
+    df["Const_1"] = df["CONDITION"].map({"A": 2, "B": 4, "C": 6})
+    df["Const_2"] = df["Const_1"]
+    md, html = _both_reports(df, _meta(df, [_scale("Const", 2)], {"Const": ["Const_1", "Const_2"]}))
+    _assert_clean(md, html)
+    assert "Significant</th>" not in html  # no pairwise table is built from undefined tests
+
+
+def test_pairs_of_constant_groups_are_left_out_but_the_rest_of_the_block_stays(stats_mode):
+    df = _base_frame(20, conditions=("A", "B", "C"))
+    rng = np.random.RandomState(1)
+    df["Mix_1"] = np.where(df["CONDITION"] == "C", rng.randint(1, 8, len(df)), 4)  # A and B constant and equal
+    df["Mix_2"] = df["Mix_1"]
+    md, html = _both_reports(df, _meta(df, [_scale("Mix", 2)], {"Mix": ["Mix_1", "Mix_2"]}))
+    _assert_clean(md, html)
+    assert "One-way ANOVA" in html  # the omnibus test is still defined and still shown
+
+
+def test_tiny_p_values_are_written_as_less_than_001(stats_mode):
+    df = _base_frame(80)
+    cols = _likert_items(df, "Big", {"Treatment": 2.5})
+    md, html = _both_reports(df, _meta(df, [_scale("Big", 3)], {"Big": cols}))
+    _assert_clean(md, html)
+    assert re.search(r"p (?:&lt;|<) \.001|(?:&lt;|<) \.001", html)
+
+
+# ---------------------------------------------------------------------------
+# Helper units
+# ---------------------------------------------------------------------------
+def test_helper_units():
+    assert ir._fnum(float("nan")) == "n/a" and ir._fnum(float("inf")) == "n/a" and ir._fnum(None) == "n/a"
+    assert ir._fnum(1.2345, ".2f") == "1.23" and ir._fnum(0.5, ".0%") == "50%"
+    assert ir._report_p_text(0.00001) == "p < .001" and ir._report_p_text(0.00001, html=True) == "p &lt; .001"
+    assert ir._report_p_text(0.0432) == "p = 0.0432" and ir._report_p_text(float("nan")) == "p n/a"
+    assert ir._report_p_cell(0.0) == "< .001" and ir._report_p_cell(None) == "n/a"
+    assert ir._hypothesis_text({"text": " a b "}) == "a b" and ir._hypothesis_text(None) == "" and ir._hypothesis_text(7) == "7"
+
+    cond = pd.Series(["A"] * 4 + ["B"] * 4)
+    assert ir._composite_has_no_variation(pd.Series([5.0] * 8), cond)
+    assert ir._composite_has_no_variation(pd.Series([100 / 3] * 4 + [(100 + 3e-14) / 3] * 4), cond)  # float noise
+    assert not ir._composite_has_no_variation(pd.Series([5.0, 5.0, 5.0, 5.0, 4.0, 5.0, 5.0, 5.0]), cond)
+    assert ir._composite_has_no_variation(pd.Series([5.0] * 4 + [np.nan] * 4), cond)  # only one group has two values
+    assert not ir._composite_has_no_variation(pd.Series([5.0, np.nan, np.nan, np.nan, 3.0, np.nan, np.nan, np.nan]), cond)  # n < 2
+    assert not ir._composite_has_no_variation(pd.Series([np.nan] * 8), cond)
+    assert ir._composite_has_no_variation(pd.Series([2.0, 2.0, 2.0]), None)
+    assert not ir._composite_has_no_variation(pd.Series(["a", "b", "c"]), None)  # text never counts as a constant composite
+
+    results = {
+        "t_test": {"statistic": float("nan"), "p_value": float("nan")},
+        "anova": {"f_statistic": 3.2, "p_value": 0.04, "significant": True},
+        "pairwise_comparisons": [{"t_stat": float("inf"), "p_value": 0.0}, {"t_stat": 2.0, "p_value": 0.03}],
+        "coefficients": {"intercept": {"estimate": 25.0, "t_stat": float("inf")}, "x": {"estimate": 1.0, "t_stat": 2.0}},
+        "scipy_used": True, "error": "text stays",
+    }
+    cleaned = ir._finite_results_only(results)
+    assert "t_test" not in cleaned and cleaned["anova"]["f_statistic"] == 3.2
+    assert cleaned["pairwise_comparisons"] == [{"t_stat": 2.0, "p_value": 0.03}]
+    assert list(cleaned["coefficients"]) == ["x"] and cleaned["scipy_used"] is True and cleaned["error"] == "text stays"
+    assert ir._finite_results_only("not a dict") == "not a dict"
 
 
 # ---------------------------------------------------------------------------

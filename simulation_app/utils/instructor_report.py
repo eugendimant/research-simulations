@@ -187,6 +187,148 @@ def _is_finite_number(value: Any) -> bool:
         return False
 
 
+def _report_p_cell(p: Any, html: bool = False) -> str:
+    """p-value for a table cell: ``< .001`` below .001, ``0.0432`` otherwise, ``n/a`` if unusable."""
+    if not _is_finite_number(p):
+        return "n/a"
+    value = float(p)
+    if value < 0.001:
+        return "&lt; .001" if html else "< .001"
+    return f"{value:.4f}"
+
+
+def _report_p_text(p: Any, html: bool = False) -> str:
+    """Format a p-value for running text: ``p < .001`` below .001, ``p = 0.0432`` otherwise, ``p n/a`` if unusable.
+
+    A p-value that rounds to 0.0000 must never be printed as ``p = 0.0000``, and NaN/inf never reach the page.
+    ``html=True`` writes the less-than sign as ``&lt;``.
+    """
+    cell = _report_p_cell(p, html=html)
+    if cell == "n/a":
+        return "p n/a"
+    return f"p {cell}" if cell.startswith(("<", "&lt;")) else f"p = {cell}"
+
+
+def _fnum(value: Any, fmt: str = ".2f", na: str = "n/a") -> str:
+    """Format ``value`` with ``fmt``; return ``na`` when it is missing or not finite (never prints nan/inf)."""
+    if not _is_finite_number(value):
+        return na
+    return format(float(value), fmt)
+
+
+# DV types whose item columns are tied together: a ranking uses each rank once, a constant-sum question splits
+# a fixed total. The mean of such items is the same for every participant, so it says nothing about conditions.
+_JOINT_ITEM_SCALE_TYPES = frozenset({"rank_order", "ranking", "rank_order_scale", "constant_sum", "constantsum"})
+
+
+def _is_joint_item_scale(scale: Dict[str, Any]) -> bool:
+    """True when the scale is a constant-sum or rank-order question (items sum to a constant)."""
+    kind = re.sub(r"[\s\-]+", "_", str(scale.get("type", "") or "").strip().lower())
+    return kind in _JOINT_ITEM_SCALE_TYPES
+
+
+def _composite_has_no_variation(composite: Any, condition: Any = None) -> bool:
+    """True when every condition group (with 2+ valid values) is constant, so no test can be computed.
+
+    With zero variance in every group a t-test or ANOVA divides by zero: scipy answers NaN or +/-inf with
+    p = NaN or 0, and the numpy fallbacks answer t = 0, p = 1; none of it is a result. The check uses the
+    range of each group with a relative tolerance, because a constant-sum mean such as 100 / 3 carries float
+    noise of about 1e-14 that would otherwise look like variation and give t = 2,500,000.
+    """
+    try:
+        values = pd.to_numeric(pd.Series(composite), errors="coerce")
+        valid = values.notna()
+        if int(valid.sum()) < 2:
+            return False
+
+        def _flat(group: "pd.Series") -> bool:
+            arr = group.to_numpy(dtype=float)
+            spread = float(np.nanmax(arr) - np.nanmin(arr))
+            return spread <= 1e-9 * max(1.0, float(np.nanmax(np.abs(arr))))
+
+        if condition is None:
+            return _flat(values[valid])
+        cond = pd.Series(condition).reindex(values.index)
+        groups = [values[valid & (cond == c)] for c in cond[valid].dropna().unique()]
+        sized = [g for g in groups if len(g) >= 2]
+        return bool(sized) and all(_flat(g) for g in sized)
+    except (TypeError, ValueError):
+        logger.warning("Could not check the composite for variation", exc_info=True)
+        return False
+
+
+def _finite_results_only(results: Any) -> Any:
+    """Copy of a statistics result dict without any test, row or comparison whose numbers are not finite.
+
+    A zero-variance pair gives t = NaN or +/-inf with p = NaN or 0, and +/-inf is not "significant".
+    A test like that says nothing, so it is left out instead of printing ``t = nan`` or ``p = 0.0000``.
+    Non-dict input is returned unchanged.
+    """
+    if not isinstance(results, dict):
+        return results
+
+    def _all_finite(node: Any) -> bool:
+        if isinstance(node, dict):
+            return all(_all_finite(v) for v in node.values())
+        if isinstance(node, (list, tuple)):
+            return all(_all_finite(v) for v in node)
+        if isinstance(node, (float, np.floating)):
+            return bool(np.isfinite(node))
+        return True
+
+    cleaned: Dict[str, Any] = {}
+    for key, value in results.items():
+        if isinstance(value, dict):
+            nested = [v for v in value.values() if isinstance(v, dict)]
+            if nested and len(nested) == len(value):  # rows keyed by name (coefficients, cell statistics, ...)
+                kept = {k: v for k, v in value.items() if _all_finite(v)}
+                if kept:
+                    cleaned[key] = kept
+            elif _all_finite(value):
+                cleaned[key] = value
+        elif isinstance(value, list) and value and all(isinstance(v, dict) for v in value):
+            kept_rows = [v for v in value if _all_finite(v)]
+            if kept_rows:
+                cleaned[key] = kept_rows
+        elif _all_finite(value):
+            cleaned[key] = value
+    return cleaned
+
+
+_P_ZERO_TEXT = re.compile(r"\bp\s*=\s*0\.0{3,4}(?![0-9])")
+_P_ZERO_CELL = re.compile(r"(<td class=['\"](?:sig|marginal|nonsig)['\"]>)\s*0\.0{3,4}\s*(</td>)")
+
+
+def _finalize_p_text(text: str, html: bool) -> str:
+    """Last-line guard for a finished report: a p-value that prints as 0.0000 (or 0.000) is written ``< .001``.
+
+    The statistics boxes, chart annotations and p columns format p with a fixed number of decimals, which turns
+    every p below .00005 into ``p = 0.0000``. Only the unambiguous forms are rewritten: the phrase ``p = 0.000(0)``
+    and, in HTML, the significance-coloured p cells of the tables (``<td class='sig'>0.0000</td>``).
+    """
+    less = "&lt;" if html else "<"
+    text = _P_ZERO_TEXT.sub(f"p {less} .001", text)
+    if html:
+        text = _P_ZERO_CELL.sub(r"\1&lt; .001\2", text)
+    return text
+
+
+def _no_variation_note(scale: Dict[str, Any], n_items: int, mean: Any) -> str:
+    """One truthful sentence (plain text) for a measure whose composite cannot be tested."""
+    kind = re.sub(r"[\s\-]+", "_", str(scale.get("type", "") or "").strip().lower())
+    m = _fnum(mean, ".2f")
+    if kind in ("constant_sum", "constantsum"):
+        return (f"The {n_items} options of this question are shares of one fixed total, so their mean is fixed by design "
+                f"({m} for everyone who answered all of them) and cannot differ between conditions. The composite is not "
+                "analysed; each option is compared across conditions instead.")
+    if _is_joint_item_scale(scale):
+        return (f"The {n_items} items of this question are ranks, so their mean rank is fixed by design "
+                f"({m} for everyone who ranked all of them) and cannot differ between conditions. The composite is not "
+                "analysed; each item is compared across conditions instead.")
+    return (f"Every participant in every condition has the same score on this measure (M = {m}), so there is no variation "
+            "to analyse and no test can be computed.")
+
+
 # ---------------------------------------------------------------------------
 # Embedded analysis-script helpers (v1.2.8.9)
 #
@@ -2675,7 +2817,7 @@ class ComprehensiveInstructorReport:
                 for col in scale_cols[:10]:  # Limit to first 10 items
                     if col in df_clean.columns:
                         stats = df_clean[col].describe()
-                        lines.append(f"| {col} | {stats['mean']:.2f} | {stats['std']:.2f} | {stats['min']:.0f} | {stats['max']:.0f} |")
+                        lines.append(f"| {col} | {_fnum(stats['mean'], '.2f')} | {_fnum(stats['std'], '.2f')} | {_fnum(stats['min'], '.0f')} | {_fnum(stats['max'], '.0f')} |")
                 lines.append("")
 
                 # v1.0.5.4: Compute composite for multi-item scales, use raw values for single-item DVs
@@ -2684,13 +2826,22 @@ class ComprehensiveInstructorReport:
                     lines.append("#### Composite Score (Mean)")
                     lines.append("")
                     comp_stats = composite.describe()
-                    lines.append(f"- Mean: {comp_stats['mean']:.3f}")
-                    lines.append(f"- SD: {comp_stats['std']:.3f}")
-                    lines.append(f"- Range: [{comp_stats['min']:.2f}, {comp_stats['max']:.2f}]")
+                    lines.append(f"- Mean: {_fnum(comp_stats['mean'], '.3f')}")
+                    lines.append(f"- SD: {_fnum(comp_stats['std'], '.3f')}")
+                    lines.append(f"- Range: [{_fnum(comp_stats['min'], '.2f')}, {_fnum(comp_stats['max'], '.2f')}]")
                     lines.append("")
                 else:
                     # Single-item DV — use the column directly (no composite needed)
                     composite = df_clean[scale_cols[0]]
+
+                # v1.2.9.1: a composite that cannot differ between participants (constant-sum or rank-order items,
+                # or no variation at all) is not analysed: SD = 0 in every group makes the by-condition table and
+                # Cohen's d meaningless. Say so and compare the items instead.
+                if _is_joint_item_scale(scale) or _composite_has_no_variation(
+                        composite, df_clean["CONDITION"] if "CONDITION" in df_clean.columns else None):
+                    lines.extend(self._no_variation_block(scale, scale_cols, df_clean, composite, conditions, html=False))
+                    lines.append("")
+                    continue
 
                 # v1.0.5.4: By-condition analysis runs for ALL DVs (single-item and multi-item)
                 if "CONDITION" in df_clean.columns:
@@ -3070,7 +3221,7 @@ class ComprehensiveInstructorReport:
         lines.append("END OF COMPREHENSIVE INSTRUCTOR REPORT")
         lines.append("-" * 80)
 
-        return "\n".join(lines)
+        return _finalize_p_text("\n".join(lines), html=False)
 
     def _get_detailed_impact(self, persona: str) -> str:
         """Get detailed impact description for instructor understanding."""
@@ -4092,6 +4243,11 @@ class ComprehensiveInstructorReport:
         Returns:
             HTML string with executive summary
         """
+        # Measures whose composite could not be tested (constant-sum or rank-order items, or no variation at all)
+        # are listed below, not counted as null results.
+        untested = [str(r.get("scale_name", "Unknown Scale")) for r in all_scale_results if r.get("not_tested")]
+        all_scale_results = [r for r in all_scale_results if not r.get("not_tested")]
+
         html = ["<h2>2. Executive Summary</h2>"]
         html.append("<div class='section-block' style='background:#f0f7ff;border-left:4px solid #3498db;'>")
 
@@ -4122,6 +4278,9 @@ class ComprehensiveInstructorReport:
                 p_val = stats["anova"]["p_value"]
                 is_sig = stats["anova"]["significant"]
                 is_marginal = stats["anova"].get("marginally_significant", False)
+            if p_val is not None and not _is_finite_number(p_val):
+                # an undefined test (for example zero variance in every group) is no finding either way
+                p_val, is_sig, is_marginal = None, False, False
 
             # Get effect size
             if "cohens_d" in stats:
@@ -4130,6 +4289,8 @@ class ComprehensiveInstructorReport:
             elif "eta_squared" in stats:
                 effect_val = stats["eta_squared"]["value"]
                 effect_type = "η²"
+            if effect_type is not None and not _is_finite_number(effect_val):
+                effect_val, effect_type = 0, None
 
             # Get means for condition comparison
             if chart_data:
@@ -4182,6 +4343,15 @@ class ComprehensiveInstructorReport:
             f"{', '.join(str(c) for c in conditions)}. "
         )
         html.append(f"The analysis examined {n_scales} dependent variable{'s' if n_scales > 1 else ''}.")
+        if untested:
+            html.append(
+                f" {len(untested)} further measure{'s' if len(untested) > 1 else ''} could not be tested as a composite "
+                f"(a constant-sum or rank-order question, or no variation at all): {_html_lib.escape(', '.join(untested[:8]))}"
+                f"{' and more' if len(untested) > 8 else ''}. See the Statistical Analysis section for the item-by-item comparison where one applies."
+            )
+        if not all_scale_results:
+            html.append("</p></div>")
+            return "\n".join(html)
 
         # Main Findings
         html.append("<br><br><strong style='color:#2c3e50;font-size:15px;'>Key Results:</strong><br>")
@@ -4202,7 +4372,8 @@ class ComprehensiveInstructorReport:
                     html.append(
                         f"{finding['highest_cond']} (M = {finding['highest_mean']:.2f}) > {finding['lowest_cond']} (M = {finding['lowest_mean']:.2f}), "
                     )
-                html.append(f"p = {finding['p_value']:.4f}, {effect_desc} effect ({finding['effect_type']} = {finding['effect_size']:.2f})<br>")
+                _effect_txt = f", {effect_desc} effect ({finding['effect_type']} = {finding['effect_size']:.2f})" if finding['effect_type'] else ""
+                html.append(f"{_report_p_text(finding['p_value'], html=True)}{_effect_txt}<br>")
 
             if largest_effect:
                 html.append(
@@ -4220,7 +4391,7 @@ class ComprehensiveInstructorReport:
                     html.append(
                         f"{finding['highest_cond']} (M = {finding['highest_mean']:.2f}) > {finding['lowest_cond']} (M = {finding['lowest_mean']:.2f}), "
                     )
-                html.append(f"p = {finding['p_value']:.4f}<br>")
+                html.append(f"{_report_p_text(finding['p_value'], html=True)}<br>")
 
         if n_sig == 0 and not marginal_findings:
             html.append(
@@ -4231,7 +4402,7 @@ class ComprehensiveInstructorReport:
             if all_effects:
                 closest = min(all_effects, key=lambda x: x['p_value'] if x['p_value'] else 1)
                 if closest['p_value']:
-                    html.append(f"The closest to significance was <strong>{closest['scale']}</strong> (p = {closest['p_value']:.4f}).")
+                    html.append(f"The closest to significance was <strong>{closest['scale']}</strong> ({_report_p_text(closest['p_value'], html=True)}).")
         elif n_sig == 0:
             # Had marginal but no sig findings
             html.append(
@@ -4378,6 +4549,111 @@ class ComprehensiveInstructorReport:
             requested["correlation"] = True
 
         return requested
+
+    def _item_comparisons(
+        self,
+        df: pd.DataFrame,
+        item_cols: List[str],
+        conditions: List[Any],
+    ) -> List[Dict[str, Any]]:
+        """Compare each item column across conditions (the analysis for a composite that cannot vary).
+
+        Returns one dict per item: ``item``, ``cells`` (clean condition name -> (mean, sd, n)), ``varies``
+        and ``test`` (the finite results of ``_run_statistical_tests``; empty when no test is defined).
+        """
+        rows: List[Dict[str, Any]] = []
+        if "CONDITION" not in df.columns:
+            return rows
+        for col in item_cols:
+            frame = pd.DataFrame({
+                "CONDITION": df["CONDITION"].to_numpy(),
+                "_item": pd.to_numeric(df[col], errors="coerce").to_numpy(),
+            })
+            cells: Dict[str, Tuple[float, float, int]] = {}
+            for cond in conditions:
+                group = frame.loc[frame["CONDITION"] == cond, "_item"].dropna()
+                if len(group) > 0:
+                    cells[_clean_condition_name(cond)] = (
+                        float(group.mean()), float(group.std()) if len(group) > 1 else float("nan"), int(len(group)))
+            varies = not _composite_has_no_variation(frame["_item"], frame["CONDITION"])
+            test: Dict[str, Any] = {}
+            if varies and len(cells) >= 2:
+                test = _finite_results_only(self._run_statistical_tests(frame, "_item", "CONDITION"))
+            rows.append({"item": str(col), "cells": cells, "varies": varies, "test": test})
+        return rows
+
+    @staticmethod
+    def _item_test_cells(row: Dict[str, Any], html: bool = False) -> Tuple[str, str, str, str]:
+        """(test statistic, p-value, effect size, significance class) for one ``_item_comparisons`` row."""
+        res = row.get("test") or {}
+        if len(row.get("cells", {})) == 2 and "t_test" in res:
+            t = res["t_test"]
+            d = res.get("cohens_d", {}).get("value")
+            effect = f"d = {_fnum(d, '.2f')}" if _is_finite_number(d) else "n/a"
+            return (f"t = {_fnum(t.get('statistic'), '.2f')}", _report_p_cell(t.get("p_value"), html=html), effect,
+                    "sig" if t.get("significant") else ("marginal" if t.get("marginally_significant") else "nonsig"))
+        if "anova" in res:
+            a = res["anova"]
+            eta = res.get("eta_squared", {}).get("value")
+            effect = f"η² = {_fnum(eta, '.3f')}" if _is_finite_number(eta) else "n/a"
+            return (f"F = {_fnum(a.get('f_statistic'), '.2f')}", _report_p_cell(a.get("p_value"), html=html), effect,
+                    "sig" if a.get("significant") else ("marginal" if a.get("marginally_significant") else "nonsig"))
+        return ("no variation within conditions" if not row.get("varies", True) else "not computed", "n/a", "n/a", "nonsig")
+
+    def _item_comparison_html(self, rows: List[Dict[str, Any]]) -> List[str]:
+        """HTML table for ``_item_comparisons`` rows (all text escaped)."""
+        esc = lambda value: _html_lib.escape(str(value), quote=True)  # noqa: E731
+        out = ["<table><tr><th>Item</th><th>Mean (SD) by condition</th><th>Test</th><th>p</th><th>Effect size</th></tr>"]
+        for row in rows:
+            cells = "<br>".join(f"{esc(c)}: {_fnum(m, '.2f')} ({_fnum(sd, '.2f')})" for c, (m, sd, _n) in row["cells"].items())
+            test, p_cell, effect, cls = self._item_test_cells(row, html=True)
+            out.append(f"<tr><td>{esc(row['item'])}</td><td>{cells}</td><td>{test}</td><td class='{cls}'>{p_cell}</td><td>{effect}</td></tr>")
+        out.append("</table>")
+        return out
+
+    def _item_comparison_markdown(self, rows: List[Dict[str, Any]]) -> List[str]:
+        """Markdown table for ``_item_comparisons`` rows."""
+        cell = lambda value: str(value).replace("|", "\\|")  # noqa: E731
+        out = ["| Item | Mean (SD) by condition | Test | p | Effect size |", "|------|------------------------|------|---|-------------|"]
+        for row in rows:
+            cells = "; ".join(f"{cell(c)}: {_fnum(m, '.2f')} ({_fnum(sd, '.2f')})" for c, (m, sd, _n) in row["cells"].items())
+            test, p_cell, effect, _cls = self._item_test_cells(row)
+            out.append(f"| {cell(row['item'])} | {cells} | {test} | {p_cell} | {effect} |")
+        return out
+
+    def _no_variation_block(
+        self,
+        scale: Dict[str, Any],
+        scale_cols: List[str],
+        df: pd.DataFrame,
+        composite: Any,
+        conditions: List[Any],
+        html: bool,
+    ) -> List[str]:
+        """Lines/HTML for a DV whose composite cannot be tested (constant-sum, rank-order, zero variance).
+
+        Says why in one sentence and, when the measure has several items, compares each item across
+        conditions instead. Never computes a test on the constant composite.
+        """
+        mean = float(np.nanmean(pd.to_numeric(pd.Series(composite), errors="coerce"))) if len(df) else float("nan")
+        note = _no_variation_note(scale, len(scale_cols), mean)
+        rows: List[Dict[str, Any]] = []
+        if len(scale_cols) >= 2:
+            rows = [r for r in self._item_comparisons(df, scale_cols, conditions) if r["cells"]]
+        out: List[str] = []
+        if html:
+            out.append(f"<div class='warning-box'>{_html_lib.escape(note)}</div>")
+            if rows:
+                out.extend(self._item_comparison_html(rows))
+                out.append(f"<p style='font-size:0.85em;color:#64748b;'>p-values are not corrected for the {len(rows)} comparisons.</p>")
+            return out
+        out.append(f"**Note:** {note}")
+        out.append("")
+        if rows:
+            out.extend(self._item_comparison_markdown(rows))
+            out.append("")
+            out.append(f"*p-values are not corrected for the {len(rows)} comparisons.*")
+        return out
 
     def _create_bar_chart(
         self,
@@ -5333,6 +5609,16 @@ class ComprehensiveInstructorReport:
                 df_analysis = df_clean.copy()
                 df_analysis["_composite"] = composite
 
+                # v1.2.9.1: a composite that cannot differ between participants (constant-sum or rank-order items,
+                # or no variation at all) gets no tests and no charts: with SD = 0 in every group scipy answers
+                # t = nan / p = nan (or t = +/-inf, p = 0) and the numpy fallbacks t = 0, p = 1. Say so and compare
+                # the items instead.
+                if _is_joint_item_scale(scale) or _composite_has_no_variation(
+                        df_analysis["_composite"], df_analysis["CONDITION"] if "CONDITION" in df_analysis.columns else None):
+                    html_parts.extend(self._no_variation_block(scale, scale_cols, df_analysis, df_analysis["_composite"], conditions, html=True))
+                    all_scale_results.append({"scale_name": scale_name, "chart_data": {}, "stats_results": {}, "not_tested": True})
+                    continue
+
                 # Descriptive stats table
                 html_parts.append("<h4>Descriptive Statistics</h4>")
                 html_parts.append("<table><tr><th>Condition</th><th>N</th><th>Mean</th><th>SD</th><th>95% CI</th></tr>")
@@ -5383,6 +5669,7 @@ class ComprehensiveInstructorReport:
                 stats_results = {}
                 if len(conditions) >= 2 and "CONDITION" in df_analysis.columns:
                     stats_results = self._run_statistical_tests(df_analysis, "_composite", "CONDITION")
+                    stats_results = _finite_results_only(stats_results)  # v1.2.9.1: no nan/inf test ever reaches the page
 
                 # Extract effect size and p-value for bar chart annotation
                 effect_size_val = stats_results.get("cohens_d", {}).get("value") if "cohens_d" in stats_results else None
@@ -5713,6 +6000,7 @@ class ComprehensiveInstructorReport:
                         include_controls=True,
                         prereg_controls=prereg_controls
                     )
+                    reg_results = _finite_results_only(reg_results)
 
                     # Only show regression if it worked (no warnings for failures)
                     if "error" not in reg_results and "model_fit" in reg_results:
@@ -5753,6 +6041,7 @@ class ComprehensiveInstructorReport:
                     factors = metadata.get("factors", [])
                     if len(factors) >= 2 and len(conditions) >= 4:
                         factorial_results = self._run_factorial_anova(df_analysis, "_composite", factors, "CONDITION")
+                        factorial_results = _finite_results_only(factorial_results)
 
                         # Only show factorial ANOVA if it worked (no warnings for failures)
                         if ("error" not in factorial_results or factorial_results.get("single_factor")) and \
@@ -6184,4 +6473,4 @@ class ComprehensiveInstructorReport:
         # Safety net: whatever user-controlled text reached the markup, the finished report contains no
         # script, iframe, form, event handler, external resource or javascript: link, and the browser
         # that opens the file is told to run no script and load nothing from the network.
-        return _harden_report_html("\n".join(html_parts))
+        return _harden_report_html(_finalize_p_text("\n".join(html_parts), html=True))
