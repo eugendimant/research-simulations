@@ -871,8 +871,8 @@ class HBSValidator:
         _multi_item_bases = {b for b, c in _base_counts.items() if c >= 2}
 
         for col in columns:
-            # Skip protected columns
-            if col in self._PROTECTED_COL_PATTERNS:
+            # Skip protected columns (structured text boxes such as counts/ages are never Likert items)
+            if col in self._PROTECTED_COL_PATTERNS or col in self._protected_columns:
                 continue
             if any(col.startswith(p) for p in self._PROTECTED_COL_PREFIXES):
                 continue

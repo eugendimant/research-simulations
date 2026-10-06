@@ -37,7 +37,7 @@ from typing import Any, Dict, List, Optional, Tuple
 try:
     from .text_cleanup import (
         apply_contractions, drop_one_optional_word, finalize_generated_text, has_opener,
-        insert_filler, lower_first, swap_one_word,
+        insert_filler, lower_first, swap_one_word, split_sentences, is_probably_non_english,
     )
 except ImportError:  # imported as a top-level module (scripts, some test layouts)
     from text_cleanup import (  # type: ignore[no-redef]
@@ -456,7 +456,9 @@ _FORMAL_ELABORATIONS = [
 _DEPENDENT_SENTENCE_START = re.compile(
     r"^(?:and|but|so|also|plus|because|which|then|still|however|though|yet|that|this|it|its|"
     r"they|he|she|these|those|there|overall|anyway|honestly|basically|in short|in general|"
-    r"on top of that)\b", re.IGNORECASE)
+    r"on top of that|first|second|third|finally|lastly|next|moreover|additionally|furthermore|therefore|thus|"
+    r"instead|otherwise|nevertheless|nonetheless|meanwhile|similarly|likewise|for example|for instance|"
+    r"in addition|as a result|in conclusion|on the other hand|on the one hand|such|the latter|the former)\b", re.IGNORECASE)
 _GOING_TO_NOUN = (r"(?!\s+(?:the|a|an|my|our|your|their|his|her|this|that|these|those|school|"
                   r"work|class|bed|town)\b)")
 _REGISTER_PHRASE_SWAPS_CASUAL = [
@@ -3369,6 +3371,8 @@ class LLMResponseGenerator:
         """
         if not text or len(text) < 5:
             return text
+        if is_probably_non_english(text):   # English openers/tags/elaborations must not be added to other languages
+            return text.strip()
 
         # --- Extract behavioral signals for layer modulation ---
         _straight_lined = False
@@ -3390,7 +3394,7 @@ class LLMResponseGenerator:
 
         # --- BEHAVIORAL OVERRIDE: straight-liners get minimal text ---
         if _straight_lined:
-            first_sent = re.split(r'(?<=[.!?])\s+', text)[0]
+            first_sent = split_sentences(text)[0]
             _truncated = " ".join(first_sent.split()[:8])
             if rng.random() < 0.6:
                 _disengage = [
@@ -3400,7 +3404,7 @@ class LLMResponseGenerator:
                 _truncated = rng.choice(_disengage) + " " + _truncated
             return finalize_generated_text(_truncated.lower().strip())
 
-        sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = split_sentences(text)
 
         # --- Layer 0: micro-variation (grammar-safe) ---
         words = text.split()
@@ -3418,12 +3422,13 @@ class LLMResponseGenerator:
                 _openers = _FORMAL_OPENERS if _formal else _CASUAL_OPENERS
                 text = rng.choice(_openers) + " " + lower_first(text)
             # Close with a short tag ("..., I guess.") on the final sentence.
-            if rng.random() < 0.25 and text.rstrip().endswith((".", "!")) and len(text.split()) > 6:
+            if (rng.random() < 0.25 and text.rstrip().endswith((".", "!")) and len(text.split()) > 6
+                    and not re.search(r"(?:\.\.\.|[!?]{2,}|\b(?:etc|vs|e\.g|i\.e|Dr|Mr|Mrs|Ms|Prof|U\.S|a\.m|p\.m)\.)\s*$", text)):
                 _tag = rng.choice(_FORMAL_TAGS if _formal else _CASUAL_TAGS)
                 _last = re.sub(r"[^\w']", "", text.split()[-1]).lower()
                 if _last not in _PREPOSITION_ENDINGS and _tag.strip(", ") not in text[-40:]:
                     text = text.rstrip()[:-1] + _tag + text.rstrip()[-1]
-            sentences = re.split(r'(?<=[.!?])\s+', text)
+            sentences = split_sentences(text)
 
         # --- Layer 1: Sentence-level restructuring (only sentences that stand alone) ---
         def _stands_alone(sent: str) -> bool:
@@ -3489,7 +3494,7 @@ class LLMResponseGenerator:
 
         # --- Layer 4: Engagement modulation ---
         if engagement < 0.2:
-            cur_sents = re.split(r'(?<=[.!?])\s+', text)
+            cur_sents = split_sentences(text)
             if len(cur_sents) > 1:
                 text = cur_sents[0]
             if rng.random() < 0.5:
@@ -3520,7 +3525,10 @@ class LLMResponseGenerator:
                     ]
                 # Always AFTER the content ("... fair. 100% behind this."), so "this" has something
                 # to point at; as a prefix it read as a stray one-liner.
-                text = text.rstrip(".!? ") + ". " + rng.choice(_emphatics)
+                _emph = rng.choice(_emphatics)
+                if formality >= 0.5:
+                    _emph = _emph[:1].upper() + _emph[1:]     # a formal writer starts the sentence with a capital
+                text = text.rstrip(".!? ") + ". " + _emph
 
         # --- Layer 4c: Social desirability hedging ---
         if behavioral_profile and _trait_sd > 0.7 and rng.random() < 0.4 and not has_opener(text):

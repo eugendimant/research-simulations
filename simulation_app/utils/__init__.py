@@ -113,7 +113,11 @@ def detect_oe_columns(df, known_oe_names=None):
         _names = set(known_oe_names) if not isinstance(known_oe_names, set) else known_oe_names
         _names.discard("")
         if _names:
-            return [col for col in df.columns if col in _names]
+            # the protected-column guards also apply here: an open-ended question that happens to be
+            # named "Gender"/"CONDITION"/"Age" must never make the engine treat that SYSTEM column as text
+            return [col for col in df.columns
+                    if col in _names and col not in _PROTECTED_COLUMNS
+                    and not any(str(col).startswith(p) for p in _PROTECTED_PREFIXES)]
 
     # Fallback: heuristic detection with strict safety guards
     oe_cols = []

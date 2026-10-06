@@ -28,9 +28,9 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 try:
-    from .text_cleanup import apply_contractions, clause_boundary_indices, has_opener, lower_first
+    from .text_cleanup import apply_contractions, clause_boundary_indices, has_opener, lower_first, split_sentences
 except ImportError:  # imported as a top-level module (scripts, some test layouts)
-    from text_cleanup import apply_contractions, clause_boundary_indices, has_opener, lower_first  # type: ignore[no-redef]
+    from text_cleanup import apply_contractions, clause_boundary_indices, has_opener, lower_first, split_sentences  # type: ignore[no-redef]
 
 __all__ = ["StylometricFingerprint", "HBSStylometricEngine"]
 
@@ -120,6 +120,12 @@ _HEDGE_WORDS = [
     "I think", "maybe", "probably", "it seems like", "I guess",
     "in my opinion,", "I feel like", "perhaps",
 ]
+
+_DEPENDENT_SENTENCE_RE = re.compile(
+    r"^\W*(?:and|but|so|also|plus|because|which|then|still|however|though|yet|that|this|it|its|they|he|she|these|"
+    r"those|there|overall|anyway|first|second|third|finally|lastly|moreover|additionally|furthermore|therefore|thus|"
+    r"instead|otherwise|nevertheless|nonetheless|meanwhile|similarly|likewise|for example|for instance|in addition|"
+    r"as a result|in conclusion|on the other hand|on the one hand)\b", re.IGNORECASE)
 
 # Simple word substitutions (complex -> simple)
 _SIMPLIFICATIONS = {
@@ -434,7 +440,7 @@ class HBSStylometricEngine:
             return text
 
         # Only inject at the start of the text or at sentence starts
-        sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = split_sentences(text)
         if not sentences:
             return text
 
@@ -443,8 +449,12 @@ class HBSStylometricEngine:
             if s and rng.random() < fp.hedge_word_rate * 10:
                 hedge = rng.choice(_HEDGE_WORDS)
                 # Don't double-hedge or stack an opener on an existing one
-                if (not has_opener(s)
+                if (not has_opener(s) and not _DEPENDENT_SENTENCE_RE.match(s)
                         and not any(h in s.lower()[:30] for h in [hw.lower() for hw in _HEDGE_WORDS])):
+                    if fp.capitalization == "all_lower":
+                        hedge = hedge.lower()
+                    elif fp.capitalization == "standard":
+                        hedge = hedge[:1].upper() + hedge[1:]       # a sentence start is capitalised
                     s = hedge + " " + lower_first(s)
             modified.append(s)
 
