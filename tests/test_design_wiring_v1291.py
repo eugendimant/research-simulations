@@ -228,7 +228,11 @@ def app_test(monkeypatch, tmp_path):
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.chdir(tmp_path)
-    return AppTest.from_file(str(_APP_DIR / "app.py"), default_timeout=300)
+    usage_counter = _APP_DIR / ".usage_counter.json"   # written next to app.py after a generation
+    existed = usage_counter.exists()
+    yield AppTest.from_file(str(_APP_DIR / "app.py"), default_timeout=300)
+    if not existed and usage_counter.exists():
+        usage_counter.unlink()
 
 
 def _button(at, key):
