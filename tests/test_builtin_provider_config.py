@@ -17,6 +17,7 @@ These tests pin down three things:
 
 import os
 import re
+import sys
 import types
 
 import pytest
@@ -398,3 +399,77 @@ def test_bundled_module_imports_cleanly_when_present():
         "builtin_free_keys.py is missing the names the loader reads, so those "
         "slots load no key: %s" % missing
     )
+
+
+# ---------------------------------------------------------------------------
+# Deployment secrets that live ONLY in st.secrets (Streamlit Community Cloud)
+# ---------------------------------------------------------------------------
+
+class _FakeSecrets(dict):
+    """Stand-in for st.secrets, which is a Mapping with .get()."""
+
+
+def _install_fake_streamlit_secrets(monkeypatch, **secrets):
+    """Make `import streamlit` yield a module whose .secrets holds `secrets`.
+
+    This is the Streamlit Community Cloud path: the key is readable through
+    st.secrets and is NOT in os.environ.
+    """
+    fake = types.ModuleType("streamlit")
+    fake.secrets = _FakeSecrets(secrets)
+    monkeypatch.setitem(sys.modules, "streamlit", fake)
+    return fake
+
+
+@pytest.mark.parametrize("slot", sorted(BUILTIN_PROVIDER_SECRETS))
+def test_secrets_only_key_builds_a_provider_for_every_slot(
+        no_keys, monkeypatch, slot):
+    """A key set only in st.secrets must build that slot's provider.
+
+    Guards the v1.2.9.1 defect where the per-slot override blocks read
+    os.environ directly: a deployment that set its keys the documented
+    Streamlit way had them silently ignored for those slots.
+    """
+    secret_name = BUILTIN_PROVIDER_SECRETS[slot][0]
+    _install_fake_streamlit_secrets(monkeypatch, **{secret_name: "secrets-%s" % slot})
+
+    gen = LLMResponseGenerator()
+    keys = {p.api_key for p in gen._providers}
+    assert "secrets-%s" % slot in keys, (
+        "a key readable only through st.secrets was dropped for slot %r" % slot
+    )
+
+
+@pytest.mark.parametrize("slot", sorted(BUILTIN_PROVIDER_SECRETS))
+def test_secrets_key_survives_a_bundled_key_on_the_same_slot(
+        no_keys, monkeypatch, slot):
+    """Bundled first, st.secrets behind it — the secret is not swallowed.
+
+    The bundled key wins the built-in slot by design. The override blocks are
+    what keep the deployment's own key in the chain behind it; reading
+    os.environ there meant a st.secrets key vanished entirely, so once the
+    bundled key was exhausted generation fell to the non-LLM engine instead of
+    trying the configured credential.
+    """
+    attr = lrg._BUNDLED_KEY_ATTRS[slot]
+    secret_name = BUILTIN_PROVIDER_SECRETS[slot][0]
+    _install_fake_bundle(monkeypatch, **{attr: "bundled-%s" % slot})
+    _install_fake_streamlit_secrets(monkeypatch, **{secret_name: "secrets-%s" % slot})
+
+    gen = LLMResponseGenerator()
+    keys = [p.api_key for p in gen._providers]
+
+    assert keys[0] == "bundled-%s" % slot, "the bundled key is not tried first"
+    assert "secrets-%s" % slot in keys, (
+        "the st.secrets key was dropped for slot %r" % slot
+    )
+    assert keys.index("bundled-%s" % slot) < keys.index("secrets-%s" % slot)
+
+
+def test_identical_bundled_and_secret_key_is_not_duplicated(no_keys, monkeypatch):
+    """Same key from both sources must not be added to the chain twice."""
+    _install_fake_bundle(monkeypatch, _DEFAULT_MISTRAL_KEY="same-key")
+    _install_fake_streamlit_secrets(monkeypatch, MISTRAL_API_KEY="same-key")
+
+    gen = LLMResponseGenerator()
+    assert [p.api_key for p in gen._providers].count("same-key") == 1

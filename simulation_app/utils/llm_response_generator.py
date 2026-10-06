@@ -2585,8 +2585,11 @@ class LLMResponseGenerator:
                     max_rpm=rpm, max_rpd=rpd, max_batch_size=max_bs,
                 ))
 
-        # Env-var Google AI key (user's own key — may have different limits)
-        _google_ai_key = os.environ.get("GOOGLE_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
+        # Deployment/env Google AI key (may have different limits).
+        # v1.2.9.2: read via _load_deployment_key, not os.environ — a key set
+        # only in st.secrets (the documented Streamlit Cloud path) was dropped
+        # here whenever a bundled key already held the built-in slot.
+        _google_ai_key = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["google_ai"])
         if _google_ai_key and _google_ai_key != _k_google:
             _or_idx = next((i for i, p in enumerate(self._providers)
                            if p.name == "groq_builtin"), len(self._providers))
@@ -2596,8 +2599,22 @@ class LLMResponseGenerator:
                 max_rpm=8, max_rpd=20,
             ))
 
-        # SambaNova Cloud — env-var override (user's own key, may have different limits)
-        _sambanova_key = os.environ.get("SAMBANOVA_API_KEY", "")
+        # Groq — deployment/env override (may have different limits).
+        # v1.2.9.2: groq had no override block at all; its deployment key only
+        # reached the chain via the user_key path, which reads os.environ and
+        # skips any key already held by a built-in slot. A GROQ_API_KEY set in
+        # st.secrets behind a bundled groq key was therefore dropped.
+        _groq_key = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["groq"])
+        if _groq_key and _groq_key != _k_groq:
+            _or_idx = next((i for i, p in enumerate(self._providers)
+                           if p.name == "openrouter_builtin"), len(self._providers))
+            self._providers.insert(_or_idx, _LLMProvider(
+                name="groq_env", api_url=GROQ_API_URL, model=GROQ_MODEL,
+                api_key=_groq_key, max_rpm=28, max_rpd=0, max_batch_size=20,
+            ))
+
+        # SambaNova Cloud — deployment/env override (may have different limits)
+        _sambanova_key = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["sambanova"])
         if _sambanova_key and _sambanova_key != _k_sambanova:
             _or_idx = next((i for i, p in enumerate(self._providers)
                            if p.name == "openrouter_builtin"), len(self._providers))
@@ -2607,8 +2624,8 @@ class LLMResponseGenerator:
                 max_rpm=20, max_rpd=0, max_batch_size=20,
             ))
 
-        # Mistral AI — env-var override (user's own key, may have different limits)
-        _mistral_key = os.environ.get("MISTRAL_API_KEY", "")
+        # Mistral AI — deployment/env override (may have different limits)
+        _mistral_key = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["mistral"])
         if _mistral_key and _mistral_key != _k_mistral:
             _or_idx = next((i for i, p in enumerate(self._providers)
                            if p.name == "openrouter_builtin"), len(self._providers))
@@ -2618,12 +2635,12 @@ class LLMResponseGenerator:
                 max_rpm=2, max_rpd=0, max_batch_size=20,
             ))
 
-        # Extra env-var providers (if someone configures them manually)
-        for env_var, name, url, model in [
-            ("CEREBRAS_API_KEY", "cerebras_env", CEREBRAS_API_URL, CEREBRAS_MODEL),
-            ("OPENROUTER_API_KEY", "openrouter_env", OPENROUTER_API_URL, OPENROUTER_MODEL),
+        # Extra deployment-configured providers (env vars or st.secrets)
+        for _slot, name, url, model in [
+            ("cerebras", "cerebras_env", CEREBRAS_API_URL, CEREBRAS_MODEL),
+            ("openrouter", "openrouter_env", OPENROUTER_API_URL, OPENROUTER_MODEL),
         ]:
-            env_key = os.environ.get(env_var, "")
+            env_key = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS[_slot])
             if env_key and not any(p.api_key == env_key for p in self._providers):
                 self._providers.append(_LLMProvider(
                     name=name, api_url=url, model=model, api_key=env_key,

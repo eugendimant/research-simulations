@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.2.9.1** — a Streamlit app that turns a Qualtrics survey export into a realistic synthetic pilot dataset.
+**Version 1.2.9.2** — a Streamlit app that turns a Qualtrics survey export into a realistic synthetic pilot dataset.
 
 ## What it does
 
@@ -29,7 +29,7 @@ The 100-participant cap on Built-in AI exists to keep shared free-tier keys from
 
 Built-in provider chain, tried in order until one responds: Google Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Gemini 2.5 Flash Lite → Groq GPT-OSS 120B → Groq Qwen3.6 27B → Cerebras GPT-OSS 120B → SambaNova Llama 3.3 70B → Mistral Small → OpenRouter Mistral Small 3.1.
 
-## The behavioral engine (v1.2.9.1)
+## The behavioral engine (v1.2.9.2)
 
 **Numeric responses.** Each participant is one person with a persistent identity: eight response-style traits and a latent attitude vector, which together drive their answers. Condition effects are applied as deterministic mean shifts; individual variance is applied separately.
 
@@ -175,6 +175,6 @@ Email delivery is optional. Set these Streamlit secrets to enable it: `SMTP_SERV
 Created by Dr. Eugen Dimant. For academic and educational use.
 
 ```
-Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 1.2.9.1) [Computer software].
+Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 1.2.9.2) [Computer software].
 https://github.com/eugendimant/research-simulations
 ```

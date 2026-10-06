@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.9.1"
-BUILD_ID = "20261006-v12901-builtin-ai-not-configured"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.9.2"
+BUILD_ID = "20261006-v12902-secrets-fallback-providers"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.9.1"  # v1.2.9.1: Tell users when Built-in AI has no provider key configured instead of claiming the free providers are not responding
+APP_VERSION = "1.2.9.2"  # v1.2.9.2: Tell users when Built-in AI has no provider key configured instead of claiming the free providers are not responding
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -7755,7 +7755,7 @@ def _render_admin_dashboard() -> None:
     with _tab_llm:
         st.markdown("### LLM Provider Chain")
 
-        # v1.2.9.1: Which built-in provider slots actually have a key right now.
+        # v1.2.9.2: Which built-in provider slots actually have a key right now.
         # This is the first thing to check when Built-in AI reports that it is
         # not configured: it confirms whether the deployment secrets landed,
         # without ever showing key material.
@@ -13016,7 +13016,7 @@ if active_page == 3:
             )
 
         elif _current_method == "free_llm":
-            # v1.2.9.1: No warning banner and no dead-end buttons here. Built-in
+            # v1.2.9.2: No warning banner and no dead-end buttons here. Built-in
             # AI always produces data: it tries every configured provider in
             # order, and whatever it cannot get from them comes from the built-in
             # text engine instead. A neutral one-liner is all the user needs up
@@ -13039,7 +13039,7 @@ if active_page == 3:
             st.session_state["allow_template_fallback_once"] = True
             st.session_state["_use_abe_v2"] = _current_method in ("abe_v2")
         elif _current_method == "free_llm":
-            # v1.2.9.1: Built-in AI must ALWAYS be able to produce data. When no
+            # v1.2.9.2: Built-in AI must ALWAYS be able to produce data. When no
             # provider key is configured, or every provider fails mid-run, the
             # engine falls through to the built-in (non-LLM) text cascade instead
             # of blocking the run or raising LLMExhaustedMidGeneration. The
@@ -14250,7 +14250,7 @@ if active_page == 3:
                 _health = engine.llm_generator.health_check(timeout=12)
                 _preflight_method = st.session_state.get(_gen_method_key, "free_llm")
                 if not _health["ok"] and _preflight_method == "free_llm":
-                    # v1.2.9.1: Built-in AI never dead-ends. The providers were
+                    # v1.2.9.2: Built-in AI never dead-ends. The providers were
                     # tried in order and none answered (or none is configured),
                     # so carry on and let the built-in text engine supply the
                     # open-ended responses. The post-generation data-source
@@ -14272,7 +14272,7 @@ if active_page == 3:
                         "generation finishes."
                     )
                 elif not _health["ok"]:
-                    # v1.2.9.1: Only "AI (your API key)" reaches this branch —
+                    # v1.2.9.2: Only "AI (your API key)" reaches this branch —
                     # Built-in AI falls through to the built-in engine above. A
                     # user who supplied their own key DOES need to be told it is
                     # not working, rather than silently getting template text.
@@ -14791,7 +14791,7 @@ if active_page == 3:
                         # Simplified notification for non-advanced users
                         _brief_msg = "Your data was generated successfully."
                         if _ai_count == 0:
-                            # v1.2.9.1: Say WHY accurately. "Temporarily
+                            # v1.2.9.2: Say WHY accurately. "Temporarily
                             # unavailable" is wrong when this deployment simply
                             # has no provider key configured.
                             if st.session_state.get("_builtin_ai_fell_back") == "not_configured":
