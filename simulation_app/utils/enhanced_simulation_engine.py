@@ -3879,6 +3879,7 @@ class EnhancedSimulationEngine:
         # Check explicit effect size specifications -- accumulate ALL matching effects
         # for factorial designs where multiple effect specs may apply to one condition
         matched_effects: list = []
+        _variable_has_spec = False  # any explicit effect spec targets this variable
         condition_lower = str(condition).lower().strip()
         variable_lower = str(variable).lower().strip()
 
@@ -3912,6 +3913,7 @@ class EnhancedSimulationEngine:
             )
 
             if variable_matches:
+                _variable_has_spec = True
                 # v1.4.0: Improved level matching with false-positive prevention
                 level_high = str(_eget(effect, 'level_high', '')).lower().strip()
                 level_low = str(_eget(effect, 'level_low', '')).lower().strip()
@@ -3941,9 +3943,19 @@ class EnhancedSimulationEngine:
             # Average matched effects so they don't stack unreasonably
             return (sum(matched_effects) / len(matched_effects)) * self._explicit_effect_scale(variable)
 
+        # The user configured effects for this variable but none involves this
+        # condition (e.g. a Control group): it is the reference level. Do not add
+        # keyword-derived automatic effects on top of an explicit design.
+        if _variable_has_spec:
+            return 0.0
+
         # AUTO-GENERATE effect if no explicit specification
-        # This ensures conditions ALWAYS produce different means
-        return self._get_automatic_condition_effect(condition, variable)
+        # This ensures conditions ALWAYS produce different means.
+        # Automatic effects are expressed in the same normalised-shift currency as
+        # explicit ones (nominal d = gap / 0.25 of range), so they get the same
+        # item-count correction: otherwise a 4+ item composite shows d ~1.3-2x the
+        # literature value the keyword rule encodes (valence 1.3 vs ~0.6).
+        return self._get_automatic_condition_effect(condition, variable) * self._explicit_effect_scale(variable)
 
     def _get_automatic_condition_effect(self, condition: str, variable: str) -> float:
         """
@@ -7704,18 +7716,14 @@ class EnhancedSimulationEngine:
             calibration['positivity_bias'] = 0.10
             calibration['variance_adjustment'] = -0.02
 
-        # ===== CONDITION-BASED ADJUSTMENTS =====
-        # Adjust based on experimental condition keywords
-        if 'positive' in condition_lower or 'high' in condition_lower:
-            calibration['mean_adjustment'] += 0.03
-        elif 'negative' in condition_lower or 'low' in condition_lower:
-            calibration['mean_adjustment'] -= 0.03
-        elif 'control' in condition_lower or 'neutral' in condition_lower:
-            pass  # No adjustment for control/neutral conditions
-
-        # Longoni et al. (2019): AI-related conditions produce slightly negative shift
-        if any(kw in condition_lower for kw in ['ai', 'algorithm', 'robot', 'automat', 'machine']):
-            calibration['mean_adjustment'] -= 0.02
+        # ===== CONDITION-BASED ADJUSTMENTS: intentionally NONE =====
+        # Condition effects belong exclusively to the effect pipeline
+        # (_get_effect_for_condition: user-specified d, or the literature-grounded
+        # automatic rules). This calibration used to add +/-0.03 (and -0.02 for any
+        # condition containing the substring 'ai') from bare substring checks on the
+        # condition name, a second, uncontrolled condition effect: d=0 between
+        # "High" and "Low" conditions still showed d ~0.24, a configured d got an
+        # unrequested boost, and names like "Paid"/"Fair"/"Maintain" matched 'ai'.
 
         return calibration
 

@@ -137,3 +137,58 @@ def test_reverse_keyed_composite_recovers_effect():
     pooled = np.sqrt(((len(a) - 1) * a.var() + (len(b) - 1) * b.var()) / (len(a) + len(b) - 2))
     d = float((a.mean() - b.mean()) / pooled)
     assert 0.6 * 0.5 <= d <= 1.3 * 0.5, f"reverse-keyed composite d={d:.2f} vs target 0.5"
+
+
+# ---------------------------------------------------------------------------
+# Condition NAMES must not create effects of their own.
+# ---------------------------------------------------------------------------
+def _named_run(cond_hi, cond_lo, target_d, extra_conds=(), n=1200, seed=3, with_spec=True):
+    scales = [{"name": "Attitude", "variable_name": "Attitude", "num_items": 4,
+               "scale_points": 7, "scale_min": 1, "scale_max": 7,
+               "reverse_items": [], "type": "likert"}]
+    specs = [EffectSizeSpec(variable="Attitude", factor="condition", level_high=cond_hi,
+                            level_low=cond_lo, cohens_d=target_d, direction="positive")] if with_spec else []
+    eng = EnhancedSimulationEngine(
+        study_title="Message Framing and Attitudes",
+        study_description="A survey study of attitudes under different message versions.",
+        sample_size=n, conditions=[cond_hi, cond_lo, *extra_conds], factors=[],
+        scales=scales, additional_vars=[],
+        demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        effect_sizes=specs, seed=seed)
+    df, _ = eng.generate()
+    return df
+
+
+def _pair_d(df, c1, c2, col="Attitude_mean"):
+    a = df.loc[df["CONDITION"] == c1, col].astype(float)
+    b = df.loc[df["CONDITION"] == c2, col].astype(float)
+    pooled = np.sqrt(((len(a) - 1) * a.var() + (len(b) - 1) * b.var()) / (len(a) + len(b) - 2))
+    return float((a.mean() - b.mean()) / pooled)
+
+
+@pytest.mark.parametrize("hi,lo", [("High stakes", "Low stakes"),
+                                   ("Paid", "Free"),
+                                   ("Maintain", "Keep"),
+                                   ("Positive framing", "Negative framing")])
+def test_condition_names_do_not_create_effects(hi, lo):
+    """d=0 configured: keywords such as high/low/positive/negative/'ai' in the
+    condition names must not shift the means (old calibration added ~0.24 d)."""
+    d = _pair_d(_named_run(hi, lo, 0.0), hi, lo)
+    assert abs(d) < 0.20, f"{hi} vs {lo}: d=0 configured but recovered d={d:.2f}"
+
+
+def test_control_sits_between_levels_of_configured_effect():
+    """A condition matching neither level of a configured effect is the reference
+    level: it must sit near the midpoint, not receive keyword effects."""
+    df = _named_run("Version A", "Version B", 0.6, extra_conds=("Control",))
+    ac, cb = _pair_d(df, "Version A", "Control"), _pair_d(df, "Control", "Version B")
+    assert abs(ac - cb) < 0.22, f"control not centred: A-C={ac:.2f}, C-B={cb:.2f}"
+    assert ac > 0.1 and cb > 0.1
+
+
+def test_automatic_valence_effect_is_literature_sized():
+    """With no d configured, a positive-vs-negative valence manipulation should give
+    a moderate effect (~0.6; Balliet/valence literature), not the old ~1.3."""
+    df = _named_run("Positive feedback", "Negative feedback", 0.0, with_spec=False)
+    d = _pair_d(df, "Positive feedback", "Negative feedback")
+    assert 0.3 <= d <= 0.9, f"automatic valence effect d={d:.2f}"
