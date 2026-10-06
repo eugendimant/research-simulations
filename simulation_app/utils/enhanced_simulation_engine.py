@@ -2873,9 +2873,207 @@ class ExclusionCriteria:
     exclude_careless_responders: bool = False  # If True, flags but doesn't exclude
 
 
+def _attenuate_inter_item_correlation(
+    item_matrix: np.ndarray,
+    current_alpha: float,
+    target_alpha: float,
+    scale_min: int,
+    scale_max: int,
+    seed: int,
+) -> np.ndarray:
+    """Lower an implausibly high Cronbach's alpha by adding item-specific noise.
+
+    Items generated from a strong shared person tendency can reach alpha ~0.95+,
+    above what real multi-item attitude scales show (typically 0.80-0.92) and a
+    "too clean" tell. Classical test theory: adding independent noise with
+    variance lam * var(item) scales the inter-item correlation by 1/(1+lam), so
+    lam = r_now / r_target - 1. Each item is then rescaled by 1/sqrt(1+lam) around
+    its own mean, which preserves per-item means and SDs. ``item_matrix`` must be in
+    the CONSTRUCT direction (reverse items already recoded).
+    """
+    n, k = item_matrix.shape
+    if k < 3 or n < 10 or current_alpha <= target_alpha:
+        return item_matrix
+
+    def _r_bar(alpha: float) -> float:
+        return alpha / (k - alpha * (k - 1))
+
+    r_now, r_tgt = _r_bar(min(current_alpha, 0.995)), _r_bar(target_alpha)
+    if r_tgt <= 0 or r_now <= r_tgt:
+        return item_matrix
+    lam = r_now / r_tgt - 1.0
+    rng = np.random.RandomState(int(seed) & 0x7FFFFFFF)
+    X = np.asarray(item_matrix, dtype=float)
+    mu = X.mean(axis=0, keepdims=True)
+    C = X - mu
+    noise = rng.normal(0.0, 1.0, size=X.shape) * np.sqrt(lam) * C.std(axis=0, keepdims=True)
+    out = mu + (C + noise) / np.sqrt(1.0 + lam)
+    return np.clip(np.round(out), scale_min, scale_max).astype(int)
+
+
+# ---------------------------------------------------------------------------
+# Economic-game outcome distributions (knowledge-base driven)
+# ---------------------------------------------------------------------------
+_GAME_QFN_CACHE: Dict[Any, Any] = {}
+
+
+def _parse_subpop_band(name: str) -> Optional[Tuple[float, float]]:
+    """Map a knowledge-base subpopulation name to an allocation band (proportions).
+
+    Understands the numeric naming used for dictator/ultimatum types:
+    'pure_selfish_zero' -> (0, 0); 'low_giver_1_20' -> (.01, .20);
+    'fair_split_50' -> (.5, .5); 'generous_51_plus' -> (.51, .75);
+    'low_offer_below_25' -> (0, .25); 'hyper_fair_above_50' -> (.5, .65).
+    Returns None when the name carries no parseable range.
+    """
+    n = str(name).lower()
+    if "zero" in n or n.endswith("selfish"):
+        return (0.0, 0.0)
+    m = re.search(r"(\d+)_(\d+)$", n)
+    if m:
+        return (int(m.group(1)) / 100.0, int(m.group(2)) / 100.0)
+    m = re.search(r"(\d+)_plus$", n)
+    if m:
+        lo = int(m.group(1)) / 100.0
+        return (lo, min(1.0, lo + 0.30))
+    m = re.search(r"above_(\d+)$", n)
+    if m:
+        lo = int(m.group(1)) / 100.0
+        return (lo, min(1.0, lo + 0.15))
+    m = re.search(r"below_(\d+)$", n)
+    if m:
+        return (0.0, int(m.group(1)) / 100.0)
+    m = re.search(r"_(\d+)$", n)
+    if m:
+        v = int(m.group(1)) / 100.0
+        return (v, v)
+    return None
+
+
+def _game_quantile_fn(dist: Dict[str, Any]):
+    """Return q in (0,1) -> allocation proportion in [0,1] for a game distribution.
+
+    Subpopulation mixtures (zero spike / fair-split spike / bands) are used when
+    every subpopulation name is parseable; otherwise a Beta matched to the
+    published mean/SD (shape-agnostic). Returns None if neither is feasible.
+    Deterministic (seeded empirical grid), numpy-only.
+    """
+    key = (str(dist.get("game")), str(dist.get("variant")))
+    if key in _GAME_QFN_CACHE:
+        return _GAME_QFN_CACHE[key]
+    fn = None
+    subpops = dist.get("subpops") or {}
+    bands = []
+    if subpops:
+        for name, w in subpops.items():
+            b = _parse_subpop_band(name)
+            if b is None or w <= 0:
+                bands = []
+                break
+            bands.append((b[0], b[1], float(w)))
+    if bands:
+        bands.sort(key=lambda t: (t[0], t[1]))
+        total = sum(b[2] for b in bands)
+        cum, edges = 0.0, []
+        for lo, hi, w in bands:
+            edges.append((cum / total, (cum + w) / total, lo, hi))
+            cum += w
+
+        _edges = tuple(edges)
+
+        def _eval(q: float, gamma: float) -> float:
+            q = min(max(q, 0.0), 1.0 - 1e-12)
+            for c0, c1, lo, hi in _edges:
+                if q < c1:
+                    if hi <= lo:
+                        return lo
+                    t = (q - c0) / max(c1 - c0, 1e-12)
+                    return lo + (t ** gamma) * (hi - lo)
+            return _edges[-1][3]
+
+        # The published mean and the subpopulation shares are not always mutually
+        # consistent (dictator: shares imply ~0.23, Engel's mean is 0.28). Tilt mass
+        # inside the continuous bands (one exponent, solved by bisection) so the
+        # mixture hits the published mean while spikes and shares stay intact.
+        _target = float(dist.get("mean", 0.0))
+        _grid = np.linspace(0.0005, 0.9995, 2000)
+        _lo_g, _hi_g = 0.25, 1.0
+        gamma = 1.0
+        if _target > 0:
+            if np.mean([_eval(q, 1.0) for q in _grid]) < _target:
+                for _ in range(30):
+                    gamma = 0.5 * (_lo_g + _hi_g)
+                    if np.mean([_eval(q, gamma) for q in _grid]) < _target:
+                        _hi_g = gamma
+                    else:
+                        _lo_g = gamma
+                gamma = 0.5 * (_lo_g + _hi_g)
+
+        def fn(q: float, _g=gamma) -> float:
+            return _eval(q, _g)
+    else:
+        m, sd = float(dist.get("mean", 0.5)), float(dist.get("sd", 0.2))
+        if 0.04 < m < 0.96 and sd > 0.01:
+            sd = min(sd, 0.95 * float(np.sqrt(m * (1.0 - m))))
+            nu = m * (1.0 - m) / (sd * sd) - 1.0
+            if nu > 0.2:
+                grid = np.sort(np.random.RandomState(12345).beta(m * nu, (1.0 - m) * nu, 20001))
+                qs = np.linspace(0.0, 1.0, grid.size)
+
+                def fn(q: float, _g=grid, _q=qs) -> float:
+                    return float(np.interp(q, _q, _g))
+    _GAME_QFN_CACHE[key] = fn
+    return fn
+
+
 # Population mean of the persona x condition interaction multiplier in
 # _generate_scale_response (measured empirically; see tests/test_effect_size_recovery.py).
 _INTERACTION_MULTIPLIER_POP_MEAN = 1.12
+# Latent-shift gain for game DVs (calibrated so recovered d on bounded, zero-inflated
+# allocations tracks the configured d; see tests/test_effect_size_recovery.py).
+_GAME_Z_GAIN = 0.9
+# Observed scale-score correlation produced by the pipeline for a latent correlation t:
+#   r_obs ~= _XCORR_FLOOR + _XCORR_SLOPE * t
+# The floor is common-method variance between unrelated scales (Podsakoff et al. 2003:
+# r ~0.10-0.20); the slope is attenuation from imperfect scale reliability (alpha ~0.85)
+# plus within-person noise. Fitted on a grid of targets (-0.6..+0.8, 4-item scales).
+_XCORR_FLOOR = 0.10
+_XCORR_SLOPE = 0.76
+
+
+def _calibrate_latent_correlation(corr: Any) -> Any:
+    """Invert the pipeline's attenuation so configured correlations are reproduced.
+
+    Configured/inferred cross-DV correlations are treated as the OBSERVED correlation
+    between scale scores. The latent matrix handed to the generator is
+    t = (r - floor) / slope for every off-diagonal, clipped, then repaired to the
+    nearest positive-definite correlation matrix (eigenvalue floor + rescale).
+    """
+    C = np.asarray(corr, dtype=float).copy()
+    k = C.shape[0]
+    if C.ndim != 2 or C.shape[0] != C.shape[1] or k < 2:
+        return corr
+    T = np.clip((C - _XCORR_FLOOR) / _XCORR_SLOPE, -0.95, 0.95)
+    np.fill_diagonal(T, 1.0)
+    T = (T + T.T) / 2.0
+    w, V = np.linalg.eigh(T)
+    if w.min() < 1e-3:
+        w = np.clip(w, 1e-3, None)
+        T = V @ np.diag(w) @ V.T
+        d = np.sqrt(np.diag(T))
+        T = T / np.outer(d, d)
+        np.fill_diagonal(T, 1.0)
+    return T
+
+
+# Cross-scale coupling knobs (calibrated against a grid of target correlations;
+# see tests/test_effect_size_recovery.py::test_cross_scale_correlation_*).
+_SHARED_TENDENCY_WEIGHT = 0.10   # weight of the persona-wide response tendency in each scale's base
+_INDEP_TENDENCY_SD = 0.06        # SD of the per-scale independent tendency draw
+_LATENT_WEIGHT_MULT = 1.6        # multiplier on the correlated-latent weight
+_G_FACTOR_MULT = 0.5             # multiplier on the common-method g-factor strength
+_COHERENCE_MULT = 0.3            # multiplier on the running-mean cross-DV coherence pull
+_INERTIA_MULT = 0.2              # multiplier on the recent-item anchoring pull (Schwarz & Strack)
 
 class EnhancedSimulationEngine:
     """
@@ -3838,7 +4036,7 @@ class EnhancedSimulationEngine:
 
     # Effective between-item correlation of the simulated response pipeline used
     # to relate single-item d to scale-mean d (fitted on a 5/7/11-pt, k=1..8 grid).
-    _EFFECT_ITEM_RHO = 0.24
+    _EFFECT_ITEM_RHO = 0.20
 
     def _explicit_effect_scale(self, variable: str) -> float:
         """Multiplier that makes a configured Cohen's d refer to the scale MEAN.
@@ -3874,7 +4072,7 @@ class EnhancedSimulationEngine:
         #   _explicit_effect_scale() so d refers to the scale MEAN.
         # Earlier values (0.30-0.40 per side) ignored the two-sided application and
         # the real SD, inflating observed d ~4x (d=0.5 -> ~2.1).
-        COHENS_D_TO_NORMALIZED = 0.125
+        COHENS_D_TO_NORMALIZED = 0.109
 
         # Check explicit effect size specifications -- accumulate ALL matching effects
         # for factorial designs where multiple effect specs may apply to one condition
@@ -3905,11 +4103,16 @@ class EnhancedSimulationEngine:
             cohens_d = float(np.clip(abs(cohens_d), 0.0, 3.0))
 
             # Check if this effect spec matches the current variable
-            effect_var = str(_eget(effect, 'variable', '')).lower().strip()
+            # Variable names reach the generator in their column form ("Perceived_Quality")
+            # while users type display names ("Perceived Quality"); compare on a
+            # separator-insensitive form so an explicit effect is never silently
+            # dropped (it would be replaced by keyword-derived automatic effects).
+            effect_var = re.sub(r"[\s_\-]+", " ", str(_eget(effect, 'variable', '')).lower()).strip()
+            _var_norm = re.sub(r"[\s_\-]+", " ", variable_lower).strip()
             variable_matches = (
-                effect_var == variable_lower
-                or variable_lower.startswith(effect_var)
-                or effect_var in variable_lower
+                effect_var == _var_norm
+                or _var_norm.startswith(effect_var)
+                or effect_var in _var_norm
             )
 
             if variable_matches:
@@ -7194,6 +7397,14 @@ class EnhancedSimulationEngine:
                     calibration['positivity_bias'] = -0.05 if _kb_game.mean_proportion < 0.40 else 0.0
                     calibration['_game_variant'] = f"{_kb_game.game_type}_{_kb_game.variant}"
                     calibration['_kb_source'] = _kb_game.source
+                    # Full empirical distribution (shape, subpopulation shares) so the
+                    # generator can reproduce the real outcome distribution, not just
+                    # shift a tendency toward the published mean.
+                    calibration['_kb_dist'] = {
+                        'game': _kb_game.game_type, 'variant': _kb_game.variant,
+                        'mean': _kb_game.mean_proportion, 'sd': _kb_game.sd_proportion,
+                        'subpops': dict(_kb_game.subpopulations or {}),
+                    }
                     return calibration
             # v1.0.8.6: Detect game VARIANTS (taking, punishment, etc.)
             _has_taking = any(kw in _full_ctx for kw in [
@@ -8027,8 +8238,8 @@ class EnhancedSimulationEngine:
         # behavior). At w=0.0 they are fully independent. Target: w ≈ 0.35
         # to match real human data where demographics/traits explain ~15-25%
         # of cross-scale variance.
-        _SHARED_WEIGHT = 0.35
-        _independent_tendency = _scale_noise_rng.normal(0.58, 0.15)
+        _SHARED_WEIGHT = _SHARED_TENDENCY_WEIGHT
+        _independent_tendency = _scale_noise_rng.normal(0.58, _INDEP_TENDENCY_SD)
         _independent_tendency = float(np.clip(_independent_tendency, 0.10, 0.90))
         _secondary_z = traits.get('_secondary_diversity_z', 0.0)
         _independent_tendency += _secondary_z * 0.06
@@ -8314,6 +8525,32 @@ class EnhancedSimulationEngine:
 
             condition_effect *= _interaction_multiplier
 
+        # =====================================================================
+        # STEP 4-GAME: Economic-game DVs are drawn from the published outcome
+        # distribution (zero spike, 50/50 spike, bands; Engel 2011 etc.) instead
+        # of a Likert-style normal around a shifted tendency. A person-level latent
+        # (prosociality traits + noise) fixes WHERE in that distribution this
+        # participant sits; the condition effect shifts that latent, so group
+        # differences and discrimination effects still operate. Gated to
+        # allocation-sized, unipolar scales with a recognised KB game.
+        # =====================================================================
+        _kb_dist = domain_calibration.get('_kb_dist')
+        if (_kb_dist and not is_reverse and scale_range >= 10 and not _scale_geom['is_bipolar']
+                and domain_calibration.get('_game_variant') not in ('dictator_taking', 'dictator_third_party')):
+            _qfn = _game_quantile_fn(_kb_dist)
+            if _qfn is not None:
+                import math
+                _grng = np.random.RandomState((participant_seed * 7919 + 13) % (2**31))
+                _coop = _safe_trait_value(modified_traits.get("cooperation_tendency"), 0.5)
+                _emp = _safe_trait_value(modified_traits.get("empathy"), 0.5)
+                _zt = float(np.clip(((_coop - 0.5) + (_emp - 0.5)) / 2.0 / 0.2, -2.5, 2.5))
+                _w = 0.35
+                _z = _w * _zt + math.sqrt(1.0 - _w * _w) * float(_grng.normal())
+                _z_shift = condition_effect / (self._explicit_effect_scale(variable_name) * 0.25)
+                _q = 0.5 * (1.0 + math.erf((_z + _z_shift * _GAME_Z_GAIN) / math.sqrt(2.0)))
+                _val = scale_min + _qfn(_q) * scale_range
+                return int(max(scale_min, min(scale_max, int(round(_val)))))
+
         # Apply effect to tendency (normalized to 0-1 scale)
         # v1.0.8.6: Use dynamic bounds from scale geometry (wider for bipolar/novel)
         adjusted_tendency = float(np.clip(base_tendency + condition_effect, _bound_low, _bound_high))
@@ -8344,7 +8581,7 @@ class EnhancedSimulationEngine:
             # Base weight 0.15, boosted up to 0.22 for highly consistent/attentive,
             # reduced down to 0.08 for careless/inattentive
             _latent_weight = 0.15 + (_consistency - 0.5) * 0.10 + (_attention - 0.5) * 0.06
-            _latent_weight = float(np.clip(_latent_weight, 0.08, 0.22))
+            _latent_weight = float(np.clip(_latent_weight, 0.08, 0.22)) * _LATENT_WEIGHT_MULT
             _latent_effect = _latent_z * _latent_weight
             adjusted_tendency = float(np.clip(adjusted_tendency + _latent_effect, _bound_low, _bound_high))
 
@@ -8368,7 +8605,7 @@ class EnhancedSimulationEngine:
         # =====================================================================
         _g_factor_z = traits.get("_g_factor_z", 0.0)
         if _g_factor_z != 0.0:
-            _g_strength = traits.get("_g_factor_strength", 0.12)
+            _g_strength = traits.get("_g_factor_strength", 0.12) * _G_FACTOR_MULT
             # Determine construct-type-specific loading based on variable name
             # Podsakoff et al. (2003) meta-analytic loadings
             _var_lower = variable_name.lower()
@@ -8461,7 +8698,7 @@ class EnhancedSimulationEngine:
                 adjusted_tendency, scale_min, scale_max,
             )
             adjusted_tendency = float(np.clip(
-                adjusted_tendency + _inertia_pull, _bound_low, _bound_high
+                adjusted_tendency + _inertia_pull * _INERTIA_MULT, _bound_low, _bound_high
             ))
 
         # =====================================================================
@@ -8482,7 +8719,7 @@ class EnhancedSimulationEngine:
                     _consistency = _safe_trait_value(traits.get("response_consistency"), 0.60)
                     # Weight increases with consistency: careless participants are less coherent
                     _coherence_weight = 0.05 + (_consistency - 0.5) * 0.06
-                    _coherence_weight = float(np.clip(_coherence_weight, 0.02, 0.10))
+                    _coherence_weight = float(np.clip(_coherence_weight, 0.02, 0.10)) * _COHERENCE_MULT
                     # v1.0.8.6: Stronger coherence pull for economic game DVs
                     # A taker on one game should be selfish on another (Fehr & Schmidt 1999)
                     if _scale_geom['is_economic_game_allocation']:
@@ -8627,9 +8864,15 @@ class EnhancedSimulationEngine:
         if rng.random() < extremity * 0.45:  # Calibrated to produce ~15-20% endpoints for ERS
             # Use proportional noise near endpoints (scales to range)
             endpoint_noise = max(0.5, scale_range * 0.02)  # 2% of range, min 0.5
-            if response > (scale_min + scale_max) / 2.0:
+            # Extreme responders snap to an endpoint only when the item is at least
+            # moderately favourable/unfavourable to them (>= 15% of the range beyond
+            # the midpoint). Snapping EVERY response past the midpoint turned slight
+            # leaners into 7s and produced a ceiling spike taller than the 6 bin.
+            _mid = (scale_min + scale_max) / 2.0
+            _ers_margin = 0.15 * scale_range
+            if response > _mid + _ers_margin:
                 response = scale_max - float(rng.uniform(0, endpoint_noise))
-            else:
+            elif response < _mid - _ers_margin:
                 response = scale_min + float(rng.uniform(0, endpoint_noise))
 
         # =====================================================================
@@ -11742,7 +11985,7 @@ class EnhancedSimulationEngine:
 
         if _corr_matrix is not None and len(_scale_names) > 1:
             try:
-                _latent_scores = generate_latent_scores(n, _corr_matrix, self.seed)
+                _latent_scores = generate_latent_scores(n, _calibrate_latent_correlation(_corr_matrix), self.seed)
                 # Store latent z-scores in each participant's traits
                 for i in range(n):
                     all_traits[i]["_latent_dvs"] = {
@@ -11989,27 +12232,38 @@ class EnhancedSimulationEngine:
                 # Items already share condition effects + traits + per-scale
                 # tendency, so they may already exceed the target. Only inject
                 # additional correlation if current alpha is below target.
-                target_alpha = float(scale.get("reliability", 0.75))
+                # Target reliability: honour an explicit value (e.g. 0.85 from the
+                # scale builder); otherwise draw a realistic per-scale alpha
+                # (0.80-0.90, seeded by scale name so scales differ but runs are
+                # reproducible) instead of one fixed 0.75 for every scale.
+                _rel_user = scale.get("reliability")
+                try:
+                    target_alpha = float(_rel_user) if _rel_user is not None else None
+                except (TypeError, ValueError):
+                    target_alpha = None
+                if target_alpha is None or not (0.3 <= target_alpha <= 0.99):
+                    target_alpha = float(np.random.RandomState(
+                        _stable_int_hash(f"{scale_name}|target_alpha") & 0x7FFFFFFF).uniform(0.80, 0.90))
                 item_col_names = [f"{scale_name}_{j+1}" for j in range(num_items)]
                 try:
-                    _item_matrix = np.array(
-                        [data[c] for c in item_col_names], dtype=float
-                    ).T  # shape (n, num_items)
-                    # Alpha/correlation must be judged in the CONSTRUCT direction:
-                    # recode reverse-keyed columns on a working copy.
                     _rev_idx0 = [r - 1 for r in sorted(reverse_items) if 1 <= r <= num_items]
-                    _item_matrix_cd = _item_matrix.copy()
-                    if _rev_idx0:
-                        _item_matrix_cd[:, _rev_idx0] = (scale_min + scale_max) - _item_matrix_cd[:, _rev_idx0]
-                    # v1.2.6.6: Check existing alpha before injection. Items
-                    # already share condition effects + traits + tendency, so
-                    # they often exceed the target. Skip to avoid alpha > 0.95.
-                    _existing_corr = np.corrcoef(_item_matrix_cd.T)
-                    _existing_r_bar = np.mean(_existing_corr[np.triu_indices_from(_existing_corr, k=1)])
-                    _existing_alpha = (num_items * _existing_r_bar) / (1 + (num_items - 1) * _existing_r_bar) if _existing_r_bar > 0 else 0
+
+                    def _construct_matrix() -> np.ndarray:
+                        # Alpha/correlation must be judged in the CONSTRUCT direction.
+                        _m = np.array([data[c] for c in item_col_names], dtype=float).T
+                        if _rev_idx0:
+                            _m[:, _rev_idx0] = (scale_min + scale_max) - _m[:, _rev_idx0]
+                        return _m
+
+                    def _std_alpha(_m: np.ndarray) -> float:
+                        _c = np.corrcoef(_m.T)
+                        _rb = float(np.mean(_c[np.triu_indices_from(_c, k=1)]))
+                        return (num_items * _rb) / (1 + (num_items - 1) * _rb) if _rb > 0 else 0.0
+
+                    _item_matrix = np.array([data[c] for c in item_col_names], dtype=float).T
+                    _existing_alpha = _std_alpha(_construct_matrix())
                     if _existing_alpha < target_alpha:
-                        # v1.2.8.1: scale-stable seed → per-item loading
-                        # heterogeneity that is reproducible and distinct per scale.
+                        # v1.2.8.1: scale-stable seed -> per-item loading heterogeneity.
                         _iic_seed = _stable_int_hash(f"{scale_name}|iic_loadings")
                         _correlated = _inject_inter_item_correlation(
                             _item_matrix, target_alpha, scale_min, scale_max,
@@ -12017,9 +12271,21 @@ class EnhancedSimulationEngine:
                         )
                         for j, c in enumerate(item_col_names):
                             data[c] = _correlated[:, j].tolist()
-                        self._log(f"Injected inter-item correlation for '{scale_name_raw}' (existing alpha={_existing_alpha:.2f} → target={target_alpha:.2f})")
-                    else:
-                        self._log(f"Skipped correlation injection for '{scale_name_raw}' (existing alpha={_existing_alpha:.2f} already >= target={target_alpha:.2f})")
+                        self._log(f"Injected inter-item correlation for '{scale_name_raw}' (existing alpha={_existing_alpha:.2f} -> target={target_alpha:.2f})")
+                    # The injection assumes independent items, so on items that already
+                    # share variance it OVERSHOOTS (alpha 0.73 -> 0.95 with target 0.75).
+                    # Bring any alpha well above target back to it (item-specific noise).
+                    _alpha_now = _std_alpha(_construct_matrix())
+                    if _alpha_now > target_alpha + 0.04:
+                        _cd_new = _attenuate_inter_item_correlation(
+                            _construct_matrix(), _alpha_now, target_alpha, scale_min, scale_max,
+                            seed=_stable_int_hash(f"{scale_name}|alpha_noise"),
+                        ).astype(float)
+                        if _rev_idx0:
+                            _cd_new[:, _rev_idx0] = (scale_min + scale_max) - _cd_new[:, _rev_idx0]
+                        for j, c in enumerate(item_col_names):
+                            data[c] = _cd_new[:, j].astype(int).tolist()
+                        self._log(f"Attenuated inter-item correlation for '{scale_name_raw}' (alpha={_alpha_now:.2f} -> ~{target_alpha:.2f})")
                 except Exception as _corr_err:
                     self._log(f"WARNING: Could not inject correlation for '{scale_name_raw}': {_corr_err}")
 
@@ -13390,6 +13656,14 @@ class EnhancedSimulationEngine:
             df["_Generation_Source"] = "Adaptive Behavioral Engine 3.0 (Non-LLM)"
 
         _report_progress("complete", n, n)
+        # Final authoritative reconciliation: no routine that edits item values after
+        # the composites were built (repairs, jitter, enrichment) may leave a scale
+        # mean inconsistent with its own items in the exported data.
+        try:
+            self._reconcile_composites(df)
+        except Exception as _rec_err:
+            self._log(f"WARNING: composite reconciliation failed: {_rec_err}")
+
         return df, metadata
 
     def _check_generation_warnings(self, df: pd.DataFrame) -> List[str]:
@@ -13625,6 +13899,38 @@ class EnhancedSimulationEngine:
             report.append(scale_report)
 
         return report
+
+    def _reconcile_composites(self, df: pd.DataFrame) -> int:
+        """Recompute every ``<scale>_mean`` composite from the final item columns.
+
+        Reverse-keyed items are recoded (min + max - x) before averaging and missing
+        cells are skipped. Returns the number of rows whose composite was corrected.
+        """
+        fixed = 0
+        for le in (getattr(self, "_scale_generation_log", None) or []):
+            cols = [c for c in (le.get("columns_generated") or []) if c in df.columns]
+            if len(cols) < 2:
+                continue
+            mcol = f"{cols[0].rsplit('_', 1)[0]}_mean"
+            if mcol not in df.columns:
+                continue
+            allcols = le.get("columns_generated") or []
+            rev = set(le.get("reverse_items") or [])
+            flip = float(le.get("scale_min", 0)) + float(le.get("scale_max", 0))
+            M = df[cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float, copy=True)
+            for j, c in enumerate(cols):
+                if (allcols.index(c) + 1) in rev:
+                    M[:, j] = flip - M[:, j]
+            with np.errstate(all="ignore"):
+                new = np.round(np.nanmean(M, axis=1), 2)
+            old = pd.to_numeric(df[mcol], errors="coerce").to_numpy(dtype=float)
+            diff = ~np.isclose(np.nan_to_num(old, nan=-999.0), np.nan_to_num(new, nan=-999.0), atol=0.011)
+            if diff.any():
+                df[mcol] = new
+                fixed += int(diff.sum())
+        if fixed:
+            self._log(f"Reconciled {fixed} composite value(s) with their final item values")
+        return fixed
 
     def _compute_observed_effect_sizes(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
         """
