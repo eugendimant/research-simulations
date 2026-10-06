@@ -468,9 +468,11 @@ _QWERTY_ADJACENT = {
 # v1.1.0.2: Common autocorrect failures
 _AUTOCORRECT_ERRORS = {
     "fuck": "duck", "shit": "shot", "hell": "he'll",
+    # v1.2.8.8: 'were' appeared twice ("we're" and "where"); a dict holds one value, so the
+    # first (the classic "were"->"we're" autocorrect slip) is kept and the dup removed.
     "were": "we're", "well": "we'll", "ill": "I'll",
     "its": "it's", "cant": "can't", "dont": "don't",
-    "were": "where", "there": "their", "your": "you're",
+    "there": "their", "your": "you're",
 }
 
 # v1.1.0.2: Phone typing artifacts — missing spaces, double taps

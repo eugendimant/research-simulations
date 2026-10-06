@@ -10117,6 +10117,11 @@ class EnhancedSimulationEngine:
         # Each entry maps a keyword (found in study_domain or study_title) to
         # a domain-specific description that grounds open-text responses.
         # Adaptive fallback chain (Steps B-D) supplements for topics not in table.
+        # v1.2.8.8: duplicate keys removed (corruption/memory/family/conspiracy/belief were
+        # defined twice; Python kept the LAST value). Kept the FIRST (more specific,
+        # natural-language) phrasing: 'conspiracy_theory' already covers the 'alternative
+        # explanations' wording, and the narrative-domain 'memory'/'family'/'belief' rewordings
+        # were less natural topic descriptions.
         _domain_topic_hints = {
             # ── Economic games (meta-analysis-calibrated baselines) ──
             'dictator': 'giving and allocation decisions',
@@ -10232,7 +10237,6 @@ class EnhancedSimulationEngine:
             'deception': 'honesty and deceptive behavior',
             'lying': 'lying behavior and truth-telling norms',
             'cheating': 'cheating behavior and academic integrity',
-            'corruption': 'corruption perceptions and institutional trust',
             'hypocrisy': 'moral hypocrisy and inconsistency',
             'virtue': 'virtue and moral character judgments',
             'disgust': 'moral disgust and purity concerns',
@@ -10592,21 +10596,17 @@ class EnhancedSimulationEngine:
             'luck': 'luck beliefs and superstitious thinking',
             'superstition': 'superstitious beliefs and magical thinking',
             'conspiracy_theory': 'conspiracy thinking and epistemic mistrust',
-            'conspiracy': 'conspiracy beliefs and alternative explanations',
             'paranormal': 'paranormal beliefs and supernatural attitudes',
             # v1.0.8.3: Expanded for narrative/creative/disclosure question types
             'secret': 'personal secrets and self-disclosure',
             'disclosure': 'personal disclosure and private information sharing',
             'confession': 'confessions and personal admissions',
-            'family': 'family relationships and family knowledge',
             'narrative': 'personal narratives and life stories',
             'anecdote': 'personal anecdotes and memorable experiences',
             'story': 'personal stories and lived experiences',
-            'belief': 'personal beliefs and conviction systems',
             'theory': 'personal theories and explanatory beliefs',
             'opinion': 'personal opinions and value judgments',
             'experience': 'personal experiences and life events',
-            'memory': 'personal memories and recollections',
         }
         _domain_hint = ""
         # Step A: Check comprehensive domain vocabulary table
