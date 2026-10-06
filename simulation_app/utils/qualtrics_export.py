@@ -41,6 +41,7 @@ __all__ = [
     "QUALTRICS_COLUMN_DESCRIPTIONS",
     "DIAGNOSTICS_KEY_COLUMNS",
     "is_internal_column",
+    "protected_columns",
     "split_columns",
     "build_qualtrics_export",
     "export_to_csv_bytes",
@@ -169,13 +170,37 @@ def _composite_columns(columns: Sequence[str]) -> Set[str]:
     return out
 
 
-def is_internal_column(name: str, all_columns: Optional[Sequence[str]] = None) -> bool:
+def protected_columns(metadata: Optional[Mapping[str, Any]]) -> Set[str]:
+    """Columns the researcher defined (scale items, open-ended answers).
+
+    These are never treated as simulator-internal even when their names look like
+    diagnostics (e.g. a scale called ``Flag_Trust`` produces ``Flag_Trust_1``).
+    """
+    meta = metadata or {}
+    out: Set[str] = set()
+    for entry in meta.get("scale_generation_log") or []:
+        if isinstance(entry, Mapping):
+            out.update(str(c) for c in (entry.get("columns_generated") or []))
+    for q in meta.get("open_ended_questions") or []:
+        if isinstance(q, Mapping):
+            for key in ("variable_name", "name"):
+                if q.get(key):
+                    out.add(str(q[key]).replace(" ", "_"))
+                    out.add(str(q[key]))
+    out.update(str(c) for c in (meta.get("user_columns") or []))
+    return out
+
+
+def is_internal_column(name: str, all_columns: Optional[Sequence[str]] = None,
+                       protected: Optional[Set[str]] = None) -> bool:
     """True if ``name`` is simulator-internal (absent from a real Qualtrics export).
 
     Args:
         name: Engine dataframe column name.
         all_columns: All column names (needed to recognise ``<Scale>_mean`` composites).
     """
+    if protected and name in protected:
+        return False
     if name in _INTERNAL_EXACT or name.startswith(_INTERNAL_PREFIXES) or name.startswith("_"):
         return True
     if all_columns is not None and name in _composite_columns(all_columns):
@@ -183,14 +208,20 @@ def is_internal_column(name: str, all_columns: Optional[Sequence[str]] = None) -
     return False
 
 
-def split_columns(columns: Sequence[str]) -> Tuple[List[str], List[str]]:
-    """Split engine column names into (participant_facing, internal), order preserved."""
+def split_columns(columns: Sequence[str],
+                  protected: Optional[Set[str]] = None) -> Tuple[List[str], List[str]]:
+    """Split engine column names into (participant_facing, internal), order preserved.
+
+    ``protected`` names (see :func:`protected_columns`) always stay participant-facing.
+    """
     cols = list(columns)
     composites = _composite_columns(cols)
     facing: List[str] = []
     internal: List[str] = []
     for c in cols:
-        if c in _INTERNAL_EXACT or c.startswith(_INTERNAL_PREFIXES) or c.startswith("_") or c in composites:
+        if protected and c in protected:
+            facing.append(c)
+        elif c in _INTERNAL_EXACT or c.startswith(_INTERNAL_PREFIXES) or c.startswith("_") or c in composites:
             internal.append(c)
         else:
             facing.append(c)
@@ -337,7 +368,7 @@ def build_qualtrics_export(
     n = len(work)
     seed = _resolve_seed(work, meta)
 
-    facing, internal = split_columns(list(work.columns))
+    facing, internal = split_columns(list(work.columns), protected_columns(meta))
     item_like = [c for c in facing if c != "CONDITION"]
 
     # Participant keys: PARTICIPANT_ID when present, else row position.

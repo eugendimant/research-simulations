@@ -409,3 +409,41 @@ def test_script_reverse_flip_uses_scale_min_plus_max():
     for script in (eng.generate_r_export(export_df), eng.generate_stata_export(export_df),
                    eng.generate_spss_export(export_df)):
         assert "12 - " not in script and "8 - " not in script
+
+
+def _engine_with_scale(name, variable_name=None):
+    scale = {"name": name, "num_items": 3, "scale_points": 7, "reverse_items": [2]}
+    if variable_name:
+        scale["variable_name"] = variable_name
+    eng = EnhancedSimulationEngine(
+        study_title="Names", study_description="column naming", sample_size=40,
+        conditions=["A", "B"], factors=[{"name": "G", "levels": ["A", "B"]}],
+        scales=[scale], additional_vars=[],
+        demographics={"gender_quota": 50, "age_mean": 30, "age_sd": 8}, seed=3)
+    try:
+        eng.llm_generator.disable_permanently("test: no network")
+    except Exception:
+        pass
+    df, md = eng.generate()
+    return eng, df, md
+
+
+def test_user_columns_that_look_like_diagnostics_stay_in_the_data_file():
+    """A scale called Flag_Trust must not have its items moved to the diagnostics sidecar."""
+    eng, df, md = _engine_with_scale("Flag_Trust")
+    export_df, diag = build_qualtrics_export(df, md)
+    assert {"Flag_Trust_1", "Flag_Trust_2", "Flag_Trust_3"} <= set(export_df.columns)
+    assert not any(c.startswith("Flag_Trust_") and not c.endswith("_mean") for c in diag.columns)
+    assert "Flag_Speed" in diag.columns  # real diagnostics still moved
+
+
+def test_scripts_follow_generated_columns_when_variable_name_differs():
+    """Display name and variable_name differ: scripts must still compute the composite."""
+    eng, df, md = _engine_with_scale("Trust in the advisor", variable_name="Trust")
+    export_df, _ = build_qualtrics_export(df, md)
+    item_cols = [c for c in export_df.columns if c.startswith("Trust_")]
+    assert item_cols, list(export_df.columns)
+    py = eng.generate_python_export(export_df)
+    assert "composite" in py and "Trust_2_R" in py
+    for lang_script in (eng.generate_r_export(export_df), eng.generate_stata_export(export_df)):
+        assert "composite" in lang_script.lower()

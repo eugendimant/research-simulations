@@ -14130,6 +14130,7 @@ class EnhancedSimulationEngine:
                 QUALTRICS_METADATA_COLUMNS as _qx_meta_cols,
                 QUALTRICS_COLUMN_DESCRIPTIONS as _qx_meta_desc,
                 split_columns as _qx_split,
+                protected_columns as _qx_protected,
             )
             _qx_ok = True
         except ImportError:
@@ -14139,7 +14140,10 @@ class EnhancedSimulationEngine:
 
         _all_names = [c for c, _ in self.column_info]
         if _qx_ok:
-            _facing_names, _internal_names = _qx_split(_all_names)
+            _facing_names, _internal_names = _qx_split(_all_names, _qx_protected({
+                "scale_generation_log": getattr(self, "_scale_generation_log", None),
+                "open_ended_questions": self.open_ended_questions,
+            }))
         else:
             _facing_names, _internal_names = _all_names, []
         _facing_set = set(_facing_names)
@@ -14288,6 +14292,8 @@ class EnhancedSimulationEngine:
         """
         cols = set(df.columns) if df is not None and hasattr(df, "columns") else None
         out: List[Dict[str, Any]] = []
+        _log = list(getattr(self, "_scale_generation_log", None) or [])
+        _used: Set[int] = set()
         for scale in self.scales:
             raw = str(scale.get("name", "Scale")).strip() or "Scale"
             name = _clean_column_name(raw)
@@ -14300,6 +14306,18 @@ class EnhancedSimulationEngine:
             _smax = _safe_numeric(scale.get("scale_max", points), default=points, as_int=True)
             flip = _smin + _smax
             items = [f"{name}_{i}" for i in range(1, num_items + 1)]
+            # The generator records the columns it actually wrote (their prefix comes from
+            # variable_name and is de-duplicated), so prefer that over rebuilding from `name`.
+            _k = next((k for k, e in enumerate(_log)
+                       if k not in _used and str(e.get("name", "")).strip() == raw), None)
+            _entry = _log[_k] if _k is not None else None
+            if _entry is not None:
+                _used.add(_k)
+                _gen_cols = [str(c) for c in (_entry.get("columns_generated") or [])]
+                if _gen_cols:
+                    name = _gen_cols[0].rsplit("_", 1)[0]
+                    items = _gen_cols
+                    reverse = _safe_parse_reverse_items(_entry.get("reverse_items", reverse))
             if cols is not None:
                 items = [it for it in items if it in cols]
                 if not items:

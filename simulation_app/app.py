@@ -4806,24 +4806,8 @@ def _finalize_builder_design(
     if _feedback:
         st.session_state["_builder_feedback"] = _feedback
 
-    # Collect synthetic QSF training data (never block user on failure)
-    try:
-        _ri = raw_inputs or {
-            "conditions_text": _cond_text,
-            "scales_text": _scale_text,
-            "open_ended_text": " | ".join(q.question_text for q in parsed_oe) if parsed_oe else "",
-            "study_title": title,
-            "study_description": description,
-            "participant_desc": participant_desc,
-            "design_type": design_type,
-            "sample_size": sample_size,
-        }
-        synthetic_qsf = generate_qsf_from_design(parsed_design, raw_inputs=_ri)
-        safe_title = re.sub(r'[^a-zA-Z0-9_\- ]', '', title or 'untitled')[:60].strip().replace(' ', '_')
-        _date_prefix = datetime.now().strftime("%Y_%m_%d")
-        _collect_qsf_if_consented(f"{_date_prefix}_{safe_title}.qsf", synthetic_qsf)
-    except Exception:
-        pass  # Never let collection errors affect the user workflow
+    # Generated designs are never shared with researchers: the consent checkbox exists only on
+    # the QSF upload page, so nothing is collected here.
 
     return True
 
@@ -7491,13 +7475,16 @@ def _render_validity_notice() -> None:
 
 
 def _collect_qsf_if_consented(filename: str, content: bytes) -> None:
-    """Forward a survey file to the research collection repo ONLY with explicit consent.
+    """Forward an UPLOADED survey file to the research collection repo ONLY with explicit consent.
 
-    Collection is opt-in per session: nothing leaves the app unless the user ticked
-    the sharing checkbox on the upload page.
+    Collection is opt-in per file: the consent checkbox is keyed by a nonce that is
+    advanced as soon as one file has been shared (or the consent is consumed), so a single
+    tick can never authorize a later upload, a different study, or a generated design.
     """
     try:
-        if st.session_state.get("share_survey_consent", False):
+        _nonce = st.session_state.get("_share_consent_nonce", 0)
+        if st.session_state.get(f"share_survey_consent_{_nonce}", False):
+            st.session_state["_share_consent_nonce"] = _nonce + 1  # consume this consent
             collect_qsf_async(filename, content)
     except Exception as _e:  # collection must never affect the workflow
         _app_logging.getLogger(__name__).debug("QSF collection skipped: %s", _e)
@@ -9256,7 +9243,7 @@ if active_page == 1:
                         "Share this survey file with the tool's researchers to help improve it "
                         "(optional; remove participant or personal details first)",
                         value=False,
-                        key="share_survey_consent",
+                        key=f"share_survey_consent_{st.session_state.get('_share_consent_nonce', 0)}",
                     )
                 qsf_file = st.file_uploader(
                     "QSF file",

@@ -155,6 +155,8 @@ def _script_scales(
     """
     cols = set(df.columns) if df is not None and hasattr(df, "columns") else None
     out: List[Dict[str, Any]] = []
+    gen_log = [e for e in (metadata.get("scale_generation_log") or []) if isinstance(e, dict)]
+    used: set = set()
     for scale in (metadata.get("scales") or []):
         if not isinstance(scale, dict):
             continue
@@ -173,6 +175,17 @@ def _script_scales(
         smin = _script_int(scale.get("scale_min", 1), 1)
         smax = _script_int(scale.get("scale_max", points), points)
         items = [f"{name}_{i}" for i in range(1, num_items + 1)]
+        # Prefer the columns the generator recorded: their prefix comes from variable_name
+        # and is de-duplicated, so it can differ from the display name.
+        k = next((i for i, e in enumerate(gen_log)
+                  if i not in used and str(e.get("name", "")).strip() == raw), None)
+        if k is not None:
+            used.add(k)
+            gen_cols = [str(c) for c in (gen_log[k].get("columns_generated") or [])]
+            if gen_cols:
+                name = gen_cols[0].rsplit("_", 1)[0]
+                items = gen_cols
+                reverse = {int(x) for x in (gen_log[k].get("reverse_items") or []) if str(x).lstrip("-").isdigit()} or reverse
         if cols is not None:
             items = [it for it in items if it in cols]
             if not items:
