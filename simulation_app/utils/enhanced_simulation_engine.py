@@ -917,12 +917,22 @@ def _infer_numeric_answer_spec(
     text = _clean_question_text(question_text)
     ctype = str(q.get("content_type") or "").lower()
     lo_hi: Optional[Tuple[float, float]] = None
+    hard_lo = hard_hi = None   # declared bounds, enforced on every draw (also when only one side is declared)
     try:
         nmin, nmax = q.get("number_min"), q.get("number_max")
-        if nmin is not None and nmax is not None and float(nmin) < float(nmax):
-            lo_hi = (float(nmin), float(nmax))
+        hard_lo = float(nmin) if nmin not in (None, "") else None
+        hard_hi = float(nmax) if nmax not in (None, "") else None
+        if hard_lo is not None and hard_hi is not None and hard_lo < hard_hi:
+            lo_hi = (hard_lo, hard_hi)
+        elif hard_lo is None and hard_hi is not None and 0 < hard_hi < float("inf"):
+            # Max only (Min left blank): what these boxes ask for (counts, amounts, percentages, ages, years)
+            # is never negative, so the window is 0..Max. Without this a declared "at most 2" was ignored
+            # and the draw came from the generic count distribution (0-13), or from a "(0-100)" in the text.
+            lo_hi = (0.0, hard_hi)
     except (TypeError, ValueError):
         lo_hi = None
+        hard_lo = hard_hi = None
+    num_decimals = q.get("number_decimals")
 
     if ctype == "validzip":
         return {"kind": "zip"}
@@ -950,9 +960,36 @@ def _infer_numeric_answer_spec(
     if lo_hi is None:
         lo_hi = _parse_numeric_range(text)
     kind = "percent" if _PERCENT_RE.search(t) else ("money" if _MONEY_RE.search(t) else "count")
-    decimals = bool(re.search(r"decimal|cents|\d\.\d", t))
+    if num_decimals not in (None, ""):
+        decimals = int(num_decimals) > 0           # the survey's own NumDecimals setting wins over wording
+    else:
+        decimals = bool(re.search(r"decimal|cents|\d\.\d", t))
     return {"kind": kind, "lo": lo_hi[0] if lo_hi else None, "hi": lo_hi[1] if lo_hi else None,
-            "decimals": decimals}
+            "decimals": decimals, "hard_lo": hard_lo, "hard_hi": hard_hi,
+            "ndec": int(num_decimals) if num_decimals not in (None, "") and int(num_decimals) > 0 else 2}
+
+
+def _format_numeric(value: float, spec: Dict[str, Any], lo: Optional[float] = None, hi: Optional[float] = None) -> str:
+    """Format a drawn number so it stays inside every declared bound (integers round INTO the range)."""
+    import math
+    lo = spec.get("hard_lo") if spec.get("hard_lo") is not None else lo
+    hi = spec.get("hard_hi") if spec.get("hard_hi") is not None else hi
+    decimals = bool(spec.get("decimals"))
+    if not decimals and lo is not None and hi is not None and math.ceil(lo) > math.floor(hi):
+        decimals = True                                  # no integer fits (e.g. 0.2-0.8): use decimals
+    if lo is not None:
+        value = max(value, lo)
+    if hi is not None:
+        value = min(value, hi)
+    if decimals:
+        nd = int(spec.get("ndec", 2))
+        return f"{value:.{nd}f}"
+    iv = int(round(value))
+    if lo is not None and iv < lo:
+        iv = int(math.ceil(lo))
+    if hi is not None and iv > hi:
+        iv = int(math.floor(hi))
+    return str(iv)
 
 
 def _draw_numeric_answer(spec: Dict[str, Any], rng: "np.random.RandomState") -> str:
@@ -972,8 +1009,13 @@ def _draw_numeric_answer(spec: Dict[str, Any], rng: "np.random.RandomState") -> 
         lo, hi = spec.get("lo"), spec.get("hi")
 
         def _one() -> int:
-            age = int(np.clip(rng.normal(35, 13), 18, 80))
-            return age if kind == "age" else _REFERENCE_SURVEY_YEAR - age
+            for _try in range(20):                      # truncated (re-drawn) normal: no spike at the floor
+                _a = int(round(rng.normal(37, 13)))
+                if 18 <= _a <= 80:
+                    break
+            else:
+                _a = 35
+            return _a if kind == "age" else _REFERENCE_SURVEY_YEAR - _a
 
         if lo is None or hi is None:
             return str(_one())
@@ -994,9 +1036,9 @@ def _draw_numeric_answer(spec: Dict[str, Any], rng: "np.random.RandomState") -> 
             value = float(np.clip(np.exp(rng.normal(np.log(20.0), 1.0)), 0, 1000))
             if rng.random() < 0.5:  # round-number preference for money
                 value = float(min([5, 10, 20, 25, 50, 100, 200, 500], key=lambda v: abs(v - value)))
-            return f"{value:.2f}" if decimals else str(int(round(value)))
+            return _format_numeric(value, spec)
         else:
-            return str(int(np.clip(rng.negative_binomial(2, 0.4), 0, 30)))
+            return _format_numeric(float(np.clip(rng.negative_binomial(2, 0.4), 0, 30)), spec)
     span = hi - lo
     r = rng.random()
     if r < 0.10:
@@ -1011,9 +1053,7 @@ def _draw_numeric_answer(spec: Dict[str, Any], rng: "np.random.RandomState") -> 
     else:
         value = lo + float(rng.beta(2.0, 2.0)) * span
     value = float(np.clip(value, lo, hi))
-    if decimals:
-        return f"{value:.2f}"
-    return str(int(round(value)))
+    return _format_numeric(value, spec, lo, hi)
 
 
 # Public names for callers outside this module (the app's data preview uses them). Other

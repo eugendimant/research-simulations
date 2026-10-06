@@ -32,7 +32,7 @@ def test_trim_dangling_tail_keeps_valid_endings():
 def test_trim_dangling_tail_removes_cut_off_phrases():
     assert tc.trim_dangling_tail("I think the policy is good for the") == "I think the policy is good."
     assert tc.trim_dangling_tail("it was fine but") == "it was fine."
-    assert tc.trim_dangling_tail("the person I voted for") == "the person I voted."  # no closing punctuation
+    assert tc.trim_dangling_tail("the person I voted for") == "the person I voted for"  # a stranded preposition is complete English
 
 
 def test_lower_first_keeps_proper_nouns_and_acronyms():
