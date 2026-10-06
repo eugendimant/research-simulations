@@ -522,3 +522,21 @@ def test_builder_radio_preselects_the_design_from_the_condition_labels(apptest_e
     assert radio.value == expected
     note = [w for w in at.warning if "one condition per participant" in w.value]
     assert bool(note) == (expected != "between")
+
+
+# ---- 6. the design-structure note says only what is true -----------------------------------------
+def test_design_structure_note_does_not_claim_the_design_type_is_recorded(apptest_env):
+    at = _qsf_generate_page(n=40)
+    _goto(at, 2)
+    next(s for s in at.selectbox if s.key == "design_type_select").select("Within-subjects (each participant sees all conditions)")
+    at.run()
+    notes = [w.value for w in at.warning if "one condition per participant" in w.value]
+    assert len(notes) == 1, notes
+    note = notes[0]
+    _goto(at, 3)
+    metadata = json.loads(_click_generate(at)["Metadata.json"])
+    # A note may only promise that the choice is recorded when Metadata.json really holds it.
+    if "recorded" in note.lower() or "design summary" in note.lower():
+        assert "design_type" in metadata.get("design_review", {}), "the note claims a record that does not exist"
+    assert "repeated measures" in note and "does not change" in note
+    assert str(metadata["design_review"].get("randomization_level")).startswith("Participant-level")

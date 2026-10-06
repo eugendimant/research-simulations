@@ -260,12 +260,14 @@ def _decrypt_api_key(ciphertext_hex: str) -> str:
 
 MAX_SIMULATED_N = 10000
 MAX_FREE_LLM_N = 100  # v1.2.1.9: Cap free LLM generation to prevent API exhaustion
-# v1.2.9.1: the generator assigns each simulated participant to ONE condition. The design
-# choices below are saved in the summary, but they do not change the structure of the data.
+# v1.2.9.1: the generator assigns each simulated participant to ONE condition. The design type
+# chosen on the pages does not change the structure of the data and is not written to Metadata.json
+# (only the randomization level of the QSF path is listed in the design summary), so the note must
+# not say that the choice is recorded.
 DESIGN_STRUCTURE_NOTE = (
     "This version generates one condition per participant (between-subjects, randomized at the "
-    "participant level). Your choice is recorded in the design summary, but the generated data will "
-    "not contain repeated measures, mixed-design columns or clustered observations."
+    "participant level). The design type you choose here does not change that: the generated data "
+    "will not contain repeated measures, mixed-design columns or clustered observations."
 )
 
 # Whole-word cues in condition labels that suggest a repeated-measures ("within") or "mixed" design.
