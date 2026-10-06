@@ -38,11 +38,11 @@ Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider sta
 
 ---
 
-## ABSOLUTE RULE: Version Synchronization — ALL 10 Locations, EVERY Commit
+## ABSOLUTE RULE: Version Synchronization — ALL 11 Locations, EVERY Commit
 
 **A version mismatch causes a VISIBLE ERROR BANNER for all users.** The app checks `REQUIRED_UTILS_VERSION == utils.__version__` at startup. If they differ by even one digit, users see a yellow warning bar. **It MUST NEVER happen again.**
 
-### The 10 version locations — ALL must contain the EXACT SAME version string:
+### The 11 version locations — ALL must contain the EXACT SAME version string:
 
 | # | File | Location |
 |---|------|----------|
@@ -53,9 +53,10 @@ Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider sta
 | 5 | `simulation_app/utils/__init__.py` | `Version: X.X.X.X` in docstring (line ~5) |
 | 6 | `simulation_app/utils/qsf_preview.py` | `__version__ = "X.X.X.X"` (line ~36) |
 | 7 | `simulation_app/utils/response_library.py` | `__version__ = "X.X.X.X"` (line ~66) |
-| 8 | `simulation_app/README.md` | `**Version X.X.X.X**` in header (line ~3) |
-| 9 | `simulation_app/README.md` | `## The behavioral engine (vX.X.X.X)` section header |
-| 10 | `simulation_app/README.md` | `(Version X.X.X.X)` in the citation block at the bottom |
+| 8 | `simulation_app/utils/instructor_report.py` | `__version__ = "X.X.X.X"` (line ~9) — report-facing stamp |
+| 9 | `simulation_app/README.md` | `**Version X.X.X.X**` in header (line ~3) |
+| 10 | `simulation_app/README.md` | `## The behavioral engine (vX.X.X.X)` section header |
+| 11 | `simulation_app/README.md` | `(Version X.X.X.X)` in the citation block at the bottom |
 
 ### MANDATORY WORKFLOW — Do this BEFORE every commit:
 
@@ -64,7 +65,7 @@ Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider sta
 - Examples: `1.0.7.3` → `1.0.7.4`, `1.0.7.9` → `1.0.8.0`, `1.0.9.9` → `1.1.0.0`
 - **NEVER use two-digit segments** like `.10`, `.11`. Each segment is a single digit 0-9.
 
-**Step 2: Update ALL 10 locations with the SAME version string.** Never touch one file without the other. The #1 failure mode is updating `utils/__init__.py` without updating `REQUIRED_UTILS_VERSION` in `app.py` (or vice versa). Treat them as a single atomic operation.
+**Step 2: Update ALL 11 locations with the SAME version string.** Never touch one file without the other. The #1 failure mode is updating `utils/__init__.py` without updating `REQUIRED_UTILS_VERSION` in `app.py` (or vice versa). Treat them as a single atomic operation.
 
 **Step 3: Update BUILD_ID** to force Streamlit cache invalidation. Format: `"YYYYMMDD-vXXXXX-short-description"`
 
@@ -156,7 +157,7 @@ Never leave changes uncommitted. Never forget the PR link.
 
 ### Before Every Commit:
 1. Run `python3 -m py_compile <file>` on ALL modified Python files
-2. Verify version numbers are synchronized (all 10 locations)
+2. Verify version numbers are synchronized (all 11 locations)
 3. Run tests: `python3 -m pytest tests/test_e2e.py -v --tb=short`
 4. Test the app loads without version mismatch warning
 5. Ensure no syntax errors or import failures
@@ -405,7 +406,7 @@ research-simulations/
 
 ### Code & Architecture
 1. Big-bang rewrites → break into iterations
-2. Forgetting version sync → always use the 10-location checklist
+2. Forgetting version sync → always use the 11-location checklist
 3. Assuming state persists → explicitly save and restore
 4. Skipping validation → users find edge cases you missed
 5. Suppressing exceptions silently (`except Exception: pass`) → always log at minimum
