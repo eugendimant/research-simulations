@@ -750,3 +750,52 @@ def test_uploading_a_zip_bomb_shows_a_clear_error_and_does_not_start_the_design(
     errors = [e.value for e in at.error if "QSF parsing failed" in e.value]
     assert errors and "would expand to 30 MB" in errors[0], [e.value[:80] for e in at.error]
     assert not at.session_state["qsf_preview"] if "qsf_preview" in at.session_state else True
+
+
+# ---- 9. inferred factor names do not depend on PYTHONHASHSEED --------------------------------------
+_FACTOR_CASES = [
+    # the real conditions of a Qualtrics survey whose factor name used to flip between "Politeness" and "Rudeness"
+    ["Condition 1\xa0(High strategic silence/ politeness)", "Condition 2 (High strategic silence/ rudeness)",
+     "Condition 3 (low strategic silence/ politeness)", "Condition 4 (low strategic silence/ rudeness)"],
+    ["Cond1A", "Cond1B", "Cond2A", "Cond2B"],                                    # numeric / suffix route
+    ["AI_Hedonic", "AI_Utilitarian", "NoAI_Hedonic", "NoAI_Utilitarian"],         # underscore route
+    ["red apple", "green pear"],                                                  # varying words of equal length
+    ["wolf lion a", "wolf lion b"],                                               # common words of equal length
+    ["No sugar x Sweet tea", "Sugar x Iced tea", "No sugar x Iced tea", "Sugar x Sweet tea"],
+    ["Control", "Treatment"],
+]
+
+
+def _factor_names_under_hash_seed(seed: str, workdir: Path) -> dict:
+    import os
+    import subprocess
+
+    code = (
+        "import contextlib, importlib.util, io, json, sys\n"
+        f"sys.path.insert(0, {str(_APP_DIR)!r})\n"
+        "buf = io.StringIO()\n"
+        "with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):\n"
+        f"    spec = importlib.util.spec_from_file_location('_app_seed_probe', {str(_APP_DIR / 'app.py')!r})\n"
+        "    app = importlib.util.module_from_spec(spec); sys.modules['_app_seed_probe'] = app\n"
+        "    try:\n"
+        "        spec.loader.exec_module(app)\n"
+        "    except SystemExit:\n"
+        "        pass\n"
+        f"cases = {_FACTOR_CASES!r}\n"
+        "out = [[[f['name'], f['levels']] for f in app._infer_factors_from_conditions(list(c))] for c in cases]\n"
+        "print('RESULT:' + json.dumps(out))\n"
+    )
+    env = {**os.environ, "PYTHONHASHSEED": seed, "STREAMLIT_SERVER_HEADLESS": "true"}
+    done = subprocess.run([sys.executable, "-c", code], cwd=workdir, env=env, capture_output=True, text=True, timeout=240, check=True)  # noqa: S603
+    line = next(line for line in done.stdout.splitlines() if line.startswith("RESULT:"))
+    return json.loads(line[len("RESULT:"):])
+
+
+def test_factor_names_and_levels_are_identical_under_different_hash_seeds(tmp_path):
+    first = _factor_names_under_hash_seed("11", tmp_path)
+    second = _factor_names_under_hash_seed("12", tmp_path)
+    assert first == second
+    names = [[factor[0] for factor in case] for case in first]
+    assert names[3] == ["Apple"]        # ties on length are broken alphabetically, not by set order
+    assert names[4] == ["Lion Wolf"]
+    assert names[0][-1] == "( Strategic Silence/ Politeness)"

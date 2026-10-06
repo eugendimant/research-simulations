@@ -4118,7 +4118,8 @@ def _infer_factor_name(levels: List[str]) -> str:
 
         if varying_words:
             # Use the longest varying word as potential factor name
-            best_word = max(varying_words, key=len)
+            # sorted(): ties on length must not depend on set order (it changes with PYTHONHASHSEED)
+            best_word = max(sorted(varying_words), key=len)
             if len(best_word) > 2:
                 return best_word.title()
 
@@ -4129,7 +4130,7 @@ def _infer_factor_name(levels: List[str]) -> str:
 
         if common_words:
             # Use common words as factor name
-            common_str = ' '.join(sorted(common_words, key=len, reverse=True)[:2])
+            common_str = ' '.join(sorted(common_words, key=lambda w: (-len(w), w))[:2])
             if common_str and len(common_str) > 2:
                 return common_str.title()
 
@@ -4234,7 +4235,7 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
     underscore_rows = [c.split('_') for c in conditions if '_' in c]
     if len(underscore_rows) >= len(conditions) - 1 and len(underscore_rows) > 1:  # Allow 1 non-matching
         parts_count = [len(r) for r in underscore_rows]
-        most_common_parts = max(set(parts_count), key=parts_count.count)
+        most_common_parts = max(sorted(set(parts_count)), key=parts_count.count)
         consistent_rows = [r for r in underscore_rows if len(r) == most_common_parts]
 
         if len(consistent_rows) >= 2 and most_common_parts > 1:
@@ -4276,10 +4277,10 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
             # Potential 2-factor design
             factors = []
             if len(numbers) > 1:
-                factor_name = _infer_factor_name(list(numbers))
+                factor_name = _infer_factor_name(sorted(numbers))
                 factors.append({"name": factor_name if factor_name != "Factor" else "Factor 1", "levels": sorted(list(numbers))})
             if len(suffixes) > 1:
-                factor_name = _infer_factor_name(list(suffixes))
+                factor_name = _infer_factor_name(sorted(suffixes))
                 factors.append({"name": factor_name if factor_name != "Factor" else "Factor 2", "levels": sorted(list(suffixes))})
 
             if len(factors) > 1:
