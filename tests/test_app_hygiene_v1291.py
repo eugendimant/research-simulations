@@ -540,3 +540,143 @@ def test_design_structure_note_does_not_claim_the_design_type_is_recorded(apptes
         assert "design_type" in metadata.get("design_review", {}), "the note claims a record that does not exist"
     assert "repeated measures" in note and "does not change" in note
     assert str(metadata["design_review"].get("randomization_level")).startswith("Participant-level")
+
+
+# ---- 7. QSF collector: duplicates do not spend the upload budget, names stay distinct ------------
+_QSF_A = json.dumps({"SurveyEntry": {"SurveyID": "SV_A"}, "SurveyElements": []}).encode()
+_QSF_B = json.dumps({"SurveyEntry": {"SurveyID": "SV_B"}, "SurveyElements": []}).encode()
+
+
+class _Reply:
+    def __init__(self, status, payload=None):
+        self.status_code, self._payload = status, payload if payload is not None else {}
+
+    def json(self):
+        return self._payload
+
+
+@pytest.fixture()
+def collector(monkeypatch):
+    """The collector with a recorded fake GitHub: `repo` maps file name -> content already stored."""
+    import types
+
+    from utils import github_qsf_collector as coll
+
+    repo: dict = {}
+    calls = {"get": 0, "put": []}
+
+    def fake_get(url, headers=None, params=None, timeout=None, **_kw):
+        calls["get"] += 1
+        return _Reply(200, [{"name": name, "type": "file", "sha": coll._git_blob_sha(body)} for name, body in repo.items()])
+
+    def fake_put(url, headers=None, json=None, timeout=None, **_kw):  # noqa: A002 - mirrors requests.put
+        import base64
+
+        name = url.rsplit("/", 1)[-1]
+        calls["put"].append(name)
+        repo[name] = base64.b64decode(json["content"])
+        return _Reply(201)
+
+    monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(get=fake_get, put=fake_put))
+    monkeypatch.setattr(coll, "_get_config", lambda: {"token": "ghp_" + "a" * 36, "repo": "o/r", "path": "p",
+                                                       "enabled": True, "branch": "collected"})
+    coll._upload_times.clear()
+    coll._lookup_times.clear()
+    yield coll, repo, calls
+    coll._upload_times.clear()
+    coll._lookup_times.clear()
+
+
+def test_duplicate_uploads_do_not_use_up_the_hourly_upload_budget(collector):
+    coll, repo, calls = collector
+    for i in range(coll.MAX_UPLOADS_PER_HOUR + 5):
+        repo[f"2026_10_06_file{i}.qsf"] = _QSF_A
+    for i in range(coll.MAX_UPLOADS_PER_HOUR + 5):
+        ok, message = coll.collect_qsf_sync(f"2026_10_06_file{i}.qsf", _QSF_A)
+        assert not ok and "already exists" in message
+    assert len(coll._upload_times) == 0 and calls["put"] == []
+    ok, message = coll.collect_qsf_sync("2026_10_06_brand_new.qsf", _QSF_B)  # still gets its upload slot
+    assert ok, message
+    assert calls["put"] == ["2026_10_06_brand_new.qsf"] and len(coll._upload_times) == 1
+
+
+def test_a_listing_without_content_ids_is_treated_as_duplicates(collector, monkeypatch):
+    import types
+
+    coll, _repo, calls = collector
+    names = [{"name": f"file{i}.qsf"} for i in range(30)]  # no "sha": the content cannot be compared
+    monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(
+        get=lambda *a, **k: _Reply(200, names), put=lambda *a, **k: pytest.fail("a same-name file must not be re-uploaded")))
+    for i in range(coll.MAX_UPLOADS_PER_HOUR + 5):
+        assert coll.collect_qsf_sync(f"file{i}.qsf", _QSF_A)[0] is False
+    assert len(coll._upload_times) == 0 and calls["put"] == []
+
+
+def test_an_unreadable_listing_skips_the_file_without_spending_budget(collector, monkeypatch):
+    import types
+
+    coll, _repo, _calls = collector
+    monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(
+        get=lambda *a, **k: _Reply(500), put=lambda *a, **k: pytest.fail("must not upload when the listing is unknown")))
+    ok, message = coll.collect_qsf_sync("x.qsf", _QSF_A)
+    assert not ok and "already exists" in message and len(coll._upload_times) == 0
+
+
+def test_same_name_with_different_content_is_collected_under_a_hashed_name(collector):
+    coll, repo, calls = collector
+    repo["2026_10_06_Survey.qsf"] = _QSF_A
+    ok, message = coll.collect_qsf_sync("2026_10_06_Survey.qsf", _QSF_B)  # another student's different survey
+    assert ok, message
+    (stored,) = calls["put"]
+    assert stored.startswith("2026_10_06_Survey_") and stored.endswith(".qsf") and stored != "2026_10_06_Survey.qsf"
+    assert repo[stored] == _QSF_B and repo["2026_10_06_Survey.qsf"] == _QSF_A  # nothing was overwritten
+    for body in (_QSF_A, _QSF_B):  # now both versions are known: re-uploading either is a duplicate
+        ok, message = coll.collect_qsf_sync("2026_10_06_Survey.qsf", body)
+        assert not ok and "already exists" in message
+    assert len(calls["put"]) == 1
+
+
+def test_lookups_have_their_own_hourly_bound(collector):
+    coll, repo, calls = collector
+    total = coll.MAX_LOOKUPS_PER_HOUR + 3
+    for i in range(total):
+        repo[f"dup{i}.qsf"] = _QSF_A
+    messages = [coll.collect_qsf_sync(f"dup{i}.qsf", _QSF_A)[1] for i in range(total)]
+    assert all("already exists" in m for m in messages[:-3])
+    assert messages[-3:] == ["Hourly upload limit reached"] * 3  # reads are bounded too
+    assert calls["get"] == coll.MAX_LOOKUPS_PER_HOUR and calls["put"] == [] and len(coll._upload_times) == 0
+
+
+def test_async_path_also_checks_for_duplicates_before_spending_budget(collector, monkeypatch):
+    coll, repo, calls = collector
+
+    class _Immediate:
+        def __init__(self, target, daemon=None):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    monkeypatch.setattr(coll.threading, "Thread", _Immediate)
+    repo["dup.qsf"] = _QSF_A
+    for _ in range(coll.MAX_UPLOADS_PER_HOUR + 3):
+        coll.collect_qsf_async("dup.qsf", _QSF_A)
+    assert len(coll._upload_times) == 0
+    coll.collect_qsf_async("fresh.qsf", _QSF_B)
+    assert calls["put"] == ["fresh.qsf"] and len(coll._upload_times) == 1
+
+
+def test_non_ascii_file_names_stay_distinct_and_ascii_names_are_unchanged():
+    from utils import github_qsf_collector as coll
+
+    names = ["調査.qsf", "实验.qsf", "我的调查.qsf", "調査1.qsf", "实验1.qsf", "\U0001f600.qsf", "Ωmega.qsf"]
+    cleaned = [coll._sanitize_filename(n) for n in names]
+    assert len(set(cleaned)) == len(names), cleaned
+    assert all(n.isascii() and n.endswith(".qsf") and len(n) <= coll.MAX_FILENAME_LENGTH for n in cleaned)
+    assert coll._sanitize_filename("調査.qsf") == coll._sanitize_filename("調査.qsf")  # stable across calls
+    assert coll._sanitize_filename("Étude.qsf") == "Etude.qsf"  # accents fold to their letters
+    # names that were already fine keep exactly the name they had before
+    for before, after in {"survey.QSF": "survey.QSF", "my survey #1 (final)?.qsf": "my survey _1 _final_.qsf",
+                          "../../etc/passwd.qsf": "etc_passwd.qsf", "report.qsf.exe": "report.qsf.exe.qsf",
+                          "": "survey.qsf", "2026_10_06___.qsf": "2026_10_06_.qsf", "name.qsf.": "name.qsf"}.items():
+        assert coll._sanitize_filename(before) == after, before
