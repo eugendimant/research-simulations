@@ -7831,6 +7831,7 @@ class EnhancedSimulationEngine:
         condition: str,
         variable_name: str,
         participant_seed: int,
+        construct_seed: Optional[int] = None,
     ) -> int:
         """
         Generate a single scale response using SCIENTIFICALLY CALIBRATED methods.
@@ -7941,7 +7942,11 @@ class EnhancedSimulationEngine:
         # constructs partially independently. Add per-scale noise drawn from
         # a distribution seeded on (participant, variable) so it's reproducible
         # but varies across scales for the same person.
-        _scale_noise_seed = _stable_int_hash(f"{participant_seed}_{variable_name}") % (2**31)
+        # v1.2.8.8: key the independent draw on a per-(participant, CONSTRUCT) seed
+        # (`construct_seed`, identical for all items of a construct). `participant_seed`
+        # carries a per-ITEM col_hash, so using it re-rolled the draw per item.
+        _noise_base = participant_seed if construct_seed is None else construct_seed
+        _scale_noise_seed = _stable_int_hash(f"{_noise_base}_{variable_name}") % (2**31)
         _scale_noise_rng = np.random.RandomState(_scale_noise_seed)
         # v1.2.6.6: Construct-specific tendency replacement. Instead of adding
         # noise to a shared tendency, generate a PARTIALLY INDEPENDENT base
@@ -7956,7 +7961,22 @@ class EnhancedSimulationEngine:
         # to match real human data where demographics/traits explain ~15-25%
         # of cross-scale variance.
         _SHARED_WEIGHT = 0.35
-        _independent_tendency = _scale_noise_rng.normal(0.58, 0.15)
+        # v1.2.8.8: split the independent draw into a CONSTRUCT-level part (shared by all
+        # items of the construct: seeded on (participant, construct)) and an ITEM-level
+        # part (seeded per item). Total variance is preserved (rho + (1-rho) = 1) but only
+        # a fraction `_CONSTRUCT_SHARE` is shared across items, which keeps Cronbach's
+        # alpha realistic (~0.85-0.92) instead of inflating it when the whole draw is shared (N=400, 5 items, 1-7: mean within-condition alpha 0.905 -> 0.911, SD 1.43 -> 1.44).
+        _CONSTRUCT_SHARE = 0.10
+        _construct_z = float(_scale_noise_rng.normal(0.0, 1.0))
+        if construct_seed is None:
+            # Single-item constructs (no item structure): identical to the pre-v1.2.8.8 draw.
+            _mix_z = _construct_z
+        else:
+            _item_rng = np.random.RandomState(
+                _stable_int_hash(f"{participant_seed}_{variable_name}_item") % (2**31))
+            _item_z = float(_item_rng.normal(0.0, 1.0))
+            _mix_z = (_CONSTRUCT_SHARE ** 0.5) * _construct_z + ((1.0 - _CONSTRUCT_SHARE) ** 0.5) * _item_z
+        _independent_tendency = 0.58 + 0.15 * _mix_z
         _independent_tendency = float(np.clip(_independent_tendency, 0.10, 0.90))
         _secondary_z = traits.get('_secondary_diversity_z', 0.0)
         _independent_tendency += _secondary_z * 0.06
@@ -10005,6 +10025,11 @@ class EnhancedSimulationEngine:
         # Each entry maps a keyword (found in study_domain or study_title) to
         # a domain-specific description that grounds open-text responses.
         # Adaptive fallback chain (Steps B-D) supplements for topics not in table.
+        # v1.2.8.8: duplicate keys removed (corruption/memory/family/conspiracy/belief were
+        # defined twice; Python kept the LAST value). Kept the FIRST (more specific,
+        # natural-language) phrasing: 'conspiracy_theory' already covers the 'alternative
+        # explanations' wording, and the narrative-domain 'memory'/'family'/'belief' rewordings
+        # were less natural topic descriptions.
         _domain_topic_hints = {
             # ── Economic games (meta-analysis-calibrated baselines) ──
             'dictator': 'giving and allocation decisions',
@@ -10120,7 +10145,6 @@ class EnhancedSimulationEngine:
             'deception': 'honesty and deceptive behavior',
             'lying': 'lying behavior and truth-telling norms',
             'cheating': 'cheating behavior and academic integrity',
-            'corruption': 'corruption perceptions and institutional trust',
             'hypocrisy': 'moral hypocrisy and inconsistency',
             'virtue': 'virtue and moral character judgments',
             'disgust': 'moral disgust and purity concerns',
@@ -10480,21 +10504,17 @@ class EnhancedSimulationEngine:
             'luck': 'luck beliefs and superstitious thinking',
             'superstition': 'superstitious beliefs and magical thinking',
             'conspiracy_theory': 'conspiracy thinking and epistemic mistrust',
-            'conspiracy': 'conspiracy beliefs and alternative explanations',
             'paranormal': 'paranormal beliefs and supernatural attitudes',
             # v1.0.8.3: Expanded for narrative/creative/disclosure question types
             'secret': 'personal secrets and self-disclosure',
             'disclosure': 'personal disclosure and private information sharing',
             'confession': 'confessions and personal admissions',
-            'family': 'family relationships and family knowledge',
             'narrative': 'personal narratives and life stories',
             'anecdote': 'personal anecdotes and memorable experiences',
             'story': 'personal stories and lived experiences',
-            'belief': 'personal beliefs and conviction systems',
             'theory': 'personal theories and explanatory beliefs',
             'opinion': 'personal opinions and value judgments',
             'experience': 'personal experiences and life events',
-            'memory': 'personal memories and recollections',
         }
         _domain_hint = ""
         # Step A: Check comprehensive domain vocabulary table
@@ -11791,6 +11811,7 @@ class EnhancedSimulationEngine:
                 "columns_generated": [],
             })
 
+            _construct_hash = _stable_int_hash(str(scale_name))  # v1.2.8.8
             for item_num in range(1, num_items + 1):
                 col_name = f"{scale_name}_{item_num}"
                 is_reverse = item_num in reverse_items
@@ -11813,6 +11834,8 @@ class EnhancedSimulationEngine:
                     if i % _scale_cb_interval == 0:
                         _report_progress("generating", i, n)
                     p_seed = (self.seed + i * 100 + col_hash) % (2**31)
+                    # v1.2.8.8: item-independent seed -> shared per-construct draw
+                    _construct_seed = (self.seed + i * 100 + _construct_hash) % (2**31)
                     self._current_participant_idx = i  # v1.0.4.9: for reverse tracking
                     self._current_item_position = item_num
                     self._current_item_total = num_items
@@ -11824,6 +11847,7 @@ class EnhancedSimulationEngine:
                         conditions.iloc[i],
                         scale_name,
                         p_seed,
+                        construct_seed=_construct_seed,
                     )
                     # SAFETY: Enforce bounds on generated value
                     val = max(scale_min, min(scale_max, int(val)))

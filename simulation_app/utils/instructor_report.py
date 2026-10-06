@@ -20,6 +20,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
+import logging
+logger = logging.getLogger(__name__)
 
 # Try multiple import strategies for scipy
 SCIPY_AVAILABLE = False
@@ -2816,7 +2818,7 @@ class ComprehensiveInstructorReport:
         - p >= 0.10: not significant, label 'ns'
         """
         # Handle NaN / inf p-values gracefully
-        if p != p or p is None:  # NaN check
+        if p is None or pd.isna(p):  # NaN check (v1.2.8.8)
             return {"significant": False, "marginally_significant": False, "sig_label": "ns"}
         if p < 0.001:
             return {"significant": True, "marginally_significant": False, "sig_label": "***"}
@@ -4489,14 +4491,20 @@ class ComprehensiveInstructorReport:
 
             return img_base64
         except Exception as e:
-            # Fallback: try a simpler line plot
+            # Fallback (v1.2.8.8): simpler plot built only from `comparisons`.
+            # (Previously referenced an undefined `pairwise_results`.)
+            logger.warning("Forest plot primary path failed (%s); using simple fallback", e)
             try:
                 plt.close('all')
-                fig, ax = plt.subplots(figsize=(8, 5))
-                for j, (ci, f2) in enumerate(pairwise_results):
-                    ax.errorbar([0, 1], ci['means'], yerr=ci['ses'], marker='o', label=f2)
+                fig, ax = plt.subplots(figsize=(8, max(3, len(comparisons) * 0.5 + 1)))
+                _d_vals = [float(c.get('cohens_d', 0.0)) for c in comparisons]
+                _lbls = [str(c.get('comparison', f'Comparison {k + 1}')) for k, c in enumerate(comparisons)]
+                ax.barh(list(range(len(_d_vals))), _d_vals, color='#95a5a6')
+                ax.set_yticks(list(range(len(_d_vals))))
+                ax.set_yticklabels(_lbls)
+                ax.axvline(0, color='#e74c3c', linestyle='--')
+                ax.set_xlabel("Cohen's d")
                 ax.set_title(title)
-                ax.legend()
                 plt.tight_layout()
 
                 buffer = io.BytesIO()
@@ -5116,7 +5124,7 @@ class ComprehensiveInstructorReport:
                 if "CONDITION" in df_analysis.columns:
                     for cond in conditions:
                         mask = df_analysis["CONDITION"].apply(
-                            lambda x: _clean_condition_name(str(x)) == _clean_condition_name(str(cond))
+                            lambda x, _c=cond: _clean_condition_name(str(x)) == _clean_condition_name(str(_c))
                         )
                         svg_dist_data[_clean_condition_name(str(cond))] = df_analysis.loc[mask, "_composite"].dropna().tolist()
 
@@ -5539,10 +5547,10 @@ class ComprehensiveInstructorReport:
                                 # Create factor columns for plotting
                                 df_plot = df_analysis.copy()
                                 df_plot["_f1"] = df_plot["CONDITION"].apply(
-                                    lambda x: next((l for l in f1_levels if str(l).lower() in str(x).lower()), None)
+                                    lambda x, _lv=f1_levels: next((l for l in _lv if str(l).lower() in str(x).lower()), None)
                                 )
                                 df_plot["_f2"] = df_plot["CONDITION"].apply(
-                                    lambda x: next((l for l in f2_levels if str(l).lower() in str(x).lower()), None)
+                                    lambda x, _lv=f2_levels: next((l for l in _lv if str(l).lower() in str(x).lower()), None)
                                 )
 
                                 interaction_img = self._create_interaction_plot(
