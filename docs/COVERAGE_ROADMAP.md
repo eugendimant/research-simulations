@@ -6,10 +6,10 @@ paradigms/output) plus adversarial critique. It answers: **does the current
 design cover everything reasonable for anyone who wants to simulate real human
 behavior, and where are the gaps?**
 
-The tool is genuinely mature: **38 effect-detection domains**, a scientific
+The tool is genuinely mature: **43 effect-detection domains**, a scientific
 knowledge base of **~255 calibration entries** (187 meta-analytic effects, 68
 game calibrations, construct norms spanning clinical/personality/affect/
-well-being scales), **161 personas**, census-weighted demographics, ex-Gaussian
+well-being scales), **78 personas** (6 response-style + 72 domain-specific), census-weighted demographics, ex-Gaussian
 response-time realism, MCAR/MAR missingness + survival-skewed dropout, inter-item
 α targeting, cross-DV correlation, and acquiescence/extremity/SD response styles.
 
@@ -44,7 +44,7 @@ data-validity fixes:**
   (b) fractional (0–0.25) and huge (0–100000) slider ranges no longer collapse
   to a constant — they fill a clean integer grid with realistic spread.
 - **Streamlined:** the type-aware post-processing was extracted from the giant
-  `generate()` into three named helpers; classification regexes compile once. Verified across the 291-QSF corpus, the DV types that
+  `generate()` into three named helpers; classification regexes compile once. Verified across the example-QSF corpus, the DV types that
 actually occur are: `matrix(1808), single_item(921), numbered_items(154),
 numeric_input(52), slider(29), constant_sum(8), rank_order(5), likert(4),
 numbered(1)`. (Types like `single_choice`/`best_worst`/`paired_comparison`/
@@ -63,8 +63,8 @@ numbered(1)`. (Types like `single_choice`/`best_worst`/`paired_comparison`/
 The seam is now **correct for every DV type that occurs in real QSFs**. All
 changes are **additive and gated on `type` + name cues**, so generic numeric
 (age/temperature) and all Likert/matrix/slider DVs are **byte-identical**.
-Validated: 15 regression tests, effect fuzz (2,592 combos), 0 crashes across 291
-QSFs, 0 issues across 10 student QSFs, e2e all-pass.
+Validated: 15 regression tests, effect fuzz (2,592 combos), 0 crashes across every
+example QSF, 0 issues across 10 student QSFs, e2e all-pass.
 
 ---
 

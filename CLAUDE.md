@@ -54,7 +54,7 @@ Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider sta
 | 6 | `simulation_app/utils/qsf_preview.py` | `__version__ = "X.X.X.X"` (line ~36) |
 | 7 | `simulation_app/utils/response_library.py` | `__version__ = "X.X.X.X"` (line ~66) |
 | 8 | `simulation_app/README.md` | `**Version X.X.X.X**` in header (line ~3) |
-| 9 | `simulation_app/README.md` | `## Features (vX.X.X.X)` section header (line ~22) |
+| 9 | `simulation_app/README.md` | `## The behavioral engine (vX.X.X.X)` section header |
 
 ### MANDATORY WORKFLOW — Do this BEFORE every commit:
 
@@ -311,8 +311,8 @@ Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests 
 
 ## Trash/Unused Block Handling
 
-- `EXCLUDED_BLOCK_NAMES` contains 200+ patterns
-- `EXCLUDED_BLOCK_PATTERNS` contains regex patterns
+- `QSFPreviewParser.EXCLUDED_BLOCK_NAMES` contains 644 literal block names
+- `QSFPreviewParser.EXCLUDED_BLOCK_PATTERNS` contains 77 regex patterns
 - `_is_excluded_block_name()` checks both
 - **Be aggressive with exclusions** — better to exclude too much than pollute conditions
 - Common patterns to exclude: `trash_`, `unused_`, `old_`, `test_`, `copy_`, consent, demographics, debrief, attention_check

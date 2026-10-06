@@ -1,4 +1,4 @@
-# Replication Package — Behavioral Experiment Simulation Tool (v1.2.7.4)
+# Replication Package — Behavioral Experiment Simulation Tool (v1.2.8.7)
 
 This archive contains everything needed to run, inspect, and evaluate the
 behavioral-experiment simulation tool in its entirety.
@@ -17,7 +17,7 @@ paradata, and exclusion flags — grounded in published behavioral-science norms
   - `utils/response_library.py`, `persona_library.py`, `llm_response_generator.py` — open-ended text generation
   - `utils/scientific_knowledge_base.py` — meta-analytic effects, game calibrations, construct norms
   - `utils/instructor_report.py`, `schema_validator.py`, `svg_charts.py` — analysis/reporting/validation
-  - `example_files/` — 291 real Qualtrics `.qsf` files used for end-to-end testing
+  - `example_files/` — real Qualtrics `.qsf` files used for end-to-end testing (the corpus grows as surveys are collected; count with `ls simulation_app/example_files/*.qsf | wc -l`)
   - `requirements.txt` — Python dependencies
   - `skills/` — the development protocol the project follows
 - `tests/` — pytest suites + standalone validation harnesses
@@ -41,7 +41,7 @@ streamlit run simulation_app/app.py
 # Unit / regression suite (includes the v1.2.6.x–v1.2.7.x bug-fix regressions)
 python3 -m pytest tests/test_bugfixes_v1264.py -q
 
-# Parse all 291 example QSFs — expect 0 crashes
+# Parse every example QSF — expect 0 crashes
 python3 tests/qsf_robustness.py
 
 # End-to-end simulate a diverse QSF sample — expect "ALL CHECKS PASSED"
@@ -79,8 +79,8 @@ print(df.shape); print(df.head())
   to force the offline (non-LLM) open-ended generator; otherwise the tool tries
   free LLM providers for open-ended text and falls back to templates.
 - **Version sync:** the app checks `REQUIRED_UTILS_VERSION == utils.__version__`
-  at startup; all 9 version locations are kept in sync (currently `1.2.7.4`).
+  at startup; all 9 version locations are kept in sync (currently `1.2.8.7`). The
+  canonical list of those locations is in `CLAUDE.md`.
 - **Known remaining roadmap** (not bugs) is documented in
   `docs/COVERAGE_ROADMAP.md` — e.g. within-subjects repeated-measures done as a
   proper long format, dyadic/per-trial output modes, population-source profiles.
-- This package was exported from branch `claude/coverage-expansion`.
