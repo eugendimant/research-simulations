@@ -180,7 +180,7 @@ Runs in this order:
 1. **STEP 0 — Relational/Matching Condition Parsing** (fires FIRST): Detects WHO is matched with WHOM. Political identity detection, ingroup (+0.30) vs outgroup (-0.35 to -0.40). Sets `_handled_by_relational = True` to skip Step 1. Economic game DVs amplify by 1.3×.
 2. **STEP 1 — Simple valence keywords** (ONLY if STEP 0 didn't handle): "positive", "negative", "reward", "punishment". Note: 'lover' and 'hater' are EXCLUDED (identity markers, not valence).
 3. **STEP 2 — Domain-specific semantic effects** (43 domains): Each domain has keyword→effect mappings grounded in literature.
-4. **STEP 3 — Stable-hash jitter**: an MD5-derived nudge of ±0.04 so same-meaning condition labels still differ slightly (never positional). Condition trait modifiers — political identity → extremity/consistency, outgroup → negative acquiescence — are a *separate* method, `_get_condition_trait_modifier()` (`enhanced_simulation_engine.py:6415`), applied as STEP 1 of `_generate_scale_response()`.
+4. **STEP 3 — Stable-hash jitter**: an MD5-derived nudge of ±0.04 so same-meaning condition labels still differ slightly (never positional). Condition trait modifiers — political identity → extremity/consistency, outgroup → negative acquiescence — are a *separate* method, `_get_condition_trait_modifier()` (`enhanced_simulation_engine.py:6856`), applied as STEP 1 of `_generate_scale_response()`.
 5. **STEP 4 — Domain-aware effect magnitude scaling**: Political + economic game: 1.6×. Political only: 1.3×. Economic game only: 1.2×.
 
 ### Economic Game DV Calibration
@@ -274,7 +274,7 @@ Every simulated participant is ONE person. Their numeric responses and open-text
 Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests one provider. If it fails, the user sees 3 choices IMMEDIATELY (retry / own API key / template). The user is NEVER left waiting for a dead API.
 
 ### Progress Callback Architecture
-- `_report_progress("generating", i, n)` fires EVERY participant **during OE generation** (`enhanced_simulation_engine.py:12367`). The scale-generation loop still fires on an interval — `max(1, min(20, n // 20))`, i.e. every ~5% capped at every 20 (`:11808`)
+- `_report_progress("generating", i, n)` fires EVERY participant **during OE generation** (`enhanced_simulation_engine.py:12959`). The scale-generation loop still fires on an interval — `max(1, min(20, n // 20))`, i.e. every ~5% capped at every 20 (`:12359`)
 - `_report_progress("open_ended_question", idx, total)` fires per-OE-question
 - UI shows: elapsed time, participant count, live LLM stats (AI count vs template count)
 - Post-generation: data source breakdown shown when template fallback was used
@@ -283,7 +283,7 @@ Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests 
 
 | Bug | What Happened | Where | Fix |
 |-----|---------------|-------|-----|
-| Auto-recovery cycle | `is_llm_available` re-enabled dead providers every 20s | `llm_response_generator.py` — `is_llm_available` (~:2557) | `_force_disabled` checked first |
+| Auto-recovery cycle | `is_llm_available` re-enabled dead providers every 20s | `llm_response_generator.py` — `is_llm_available` (:2543) | `_force_disabled` checked first |
 | Quality filter too strict | Topic keyword matching rejected valid LLM responses silently | `_is_low_quality_response()` | 3-char prefix matching + accept-on-full-rejection |
 | Rate limiter timestamp | `wait_if_needed()` returned without appending timestamp when sleep > 15s | `_RateLimiter.wait_if_needed()` | Returns bool; caller checks |
 | Prefill budget too short | 30s filled only 2/15 pool buckets → 500+ on-demand calls | `enhanced_simulation_engine.py` | Increased to 90s |
@@ -350,11 +350,11 @@ Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests 
 
 - Page-based rendering keeps state in `st.session_state` directly. The
   `_save_step_state()` / `_restore_step_state()` snapshot pair was **removed in
-  v1.4.14** (see the note at `app.py:6531`) — do not reintroduce calls to them.
+  v1.4.14** (see the note at `app.py:6522`) — do not reintroduce calls to them.
 - `_navigate_to()` mirrors `_widget_persist_keys` to `_p_<key>` so the values of
   widgets that are no longer rendered survive a page switch. That list currently
   holds four keys: `study_title`, `study_description`, `team_name`,
-  `team_members_raw` (`app.py:6575`).
+  `team_members_raw` (`app.py:6566`).
 - Must persist: conditions, factors, confirmed scales/DVs, factorial config, sample/effect size
 
 ---
@@ -500,10 +500,10 @@ https://claude.ai/code/[session-id]
 3. Authority/NFC persona-level interaction in STEP 3
 
 (Narrative transportation's STEP 2 domain shipped in v1.0.4.9, and matrix
-detection already exists. Note its `narrative_transportation` template set is
-unreachable: template lookup goes through `domain.value`
-(`response_library.py:8622`) and that key is not a `StudyDomain` value — one of
-ten such orphaned keys.)
+detection already exists. Its `narrative_transportation` template set used to be
+unreachable; as of v1.2.8.9 it resolves through `_DOMAIN_TEMPLATE_ALIASES`
+(`response_library.py:4662`, consulted at `:8639`), and all 116
+`DOMAIN_TEMPLATES` keys are now selectable.)
 
 ### Business Roadmap
 Phase 1 (Foundation): User accounts + persistent workspaces + billing infrastructure

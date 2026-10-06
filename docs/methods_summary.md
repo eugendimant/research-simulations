@@ -97,9 +97,20 @@ Regardless of input method, you review and adjust the detected design:
 
 ### Generate and Download
 
-The system produces a publication-ready CSV file containing:
+The download is a ZIP. `Simulated_Data.csv` is laid out like a real Qualtrics
+export — 17 survey-metadata columns, then condition, demographics, attention
+checks and the raw scale items — and everything a Qualtrics download would not
+contain moves to `Simulation_Diagnostics.csv`, keyed by `ResponseId`: participant
+and run IDs, the seed, the `<Scale>_mean` composites, timing, the quality flags
+and `Exclude_Recommended`, and the seven `ABE3_*` columns. A third file,
+`Simulated_Data_Qualtrics_Raw.csv`, carries the same data under Qualtrics'
+three-row header. Built by `build_qualtrics_export()`
+(`utils/qualtrics_export.py`, called at `app.py:15007`), with the plain engine
+CSV as the fallback if that fails.
 
-- Participant IDs and condition assignments
+Between them the two files contain:
+
+- Condition assignments, with participant and run IDs in the diagnostics file
 - Likert scale responses with realistic distributions
 - Unique open-ended text responses
 - Demographics (including custom variables) and metadata
@@ -171,7 +182,7 @@ Multi-item scales exhibit realistic internal consistency (Cronbach's alpha) thro
 Response = lambda * Common_Factor + sqrt(1 - lambda^2) * Unique_Error
 ```
 
-Where lambda (factor loading) is derived from the target reliability. Items measuring the same construct share common variance while retaining item-specific variation, producing alpha values from about 0.75 up to the mid-0.90s. Correlation injection is one-sided — it raises alpha toward the target (default 0.75) and never lowers it (`enhanced_simulation_engine.py:11877`, whose comment notes items "often exceed the target") — so a fair share of scales land above 0.90.
+Where lambda (factor loading) is derived from the target reliability. Items measuring the same construct share common variance while retaining item-specific variation, producing alpha values in roughly the 0.79-0.89 band (measured over ten four-item scales at N=500: min 0.794, median 0.851, max 0.890, none above 0.90). The control is two-sided: correlation is injected when alpha falls below the target (`enhanced_simulation_engine.py:12451`) and attenuated when it overshoots by more than 0.04 (`:12465`), which is what keeps the ceiling off. The target is the scale's own `reliability` when you set one, otherwise a per-scale draw from 0.80-0.90 seeded by the scale name (`:12429`). The fixed 0.75 survives only on the missing-data repair path (`:9677`).
 
 ### Response Style Modeling
 
@@ -339,18 +350,20 @@ The response generation system has been trained on **hundreds of scientific insi
 
 ### Major Research Fields
 
-**273 research domains** are keyword-detectable, via 3,452 keyword patterns.
+**277 research domains** are keyword-detectable, via 3,473 keyword patterns.
 **189** of them are grouped into the 23 categories below (191 memberships — two
 domains, `social_media` and `algorithmic_fairness`, are cross-listed); the other
-84 are detectable but ungrouped. **104** of the detectable domains carry a reachable
-open-ended template set, 68 of them inside these categories. (`DOMAIN_TEMPLATES`
-holds 116 keys, but template lookup goes through `domain.value`
-(`response_library.py:8622`), so the 10 keys that are not `StudyDomain` values —
-`artificial_intelligence`, `climate_change`, `ethical_dilemma`, `forgiveness`,
-`gratitude_experience`, `gratitude_intervention`, `moral_cleansing`,
-`narrative_transportation`, `nostalgia`, `sleep_quality` — can never be
-selected. Two more, `general` and `survey_feedback`, are reachable as fallbacks
-but are not keyword-detectable domains.)
+88 are detectable but ungrouped. All **116** `DOMAIN_TEMPLATES` keys carry a
+selectable open-ended template set, 68 of them inside these categories: 110 are
+`StudyDomain` values, and the remaining 6 — `artificial_intelligence`,
+`climate_change`, `ethical_dilemma`, `gratitude_experience`,
+`gratitude_intervention`, `narrative_transportation` — are reached through
+`_DOMAIN_TEMPLATE_ALIASES` (`response_library.py:4662`, 15 source keys), which
+the lookup consults before the `domain.value` path (`:8639`). Four of the ten
+keys that used to be unreachable became `StudyDomain` members outright. Four
+`StudyDomain` values have no keyword list and so are not detectable — `general`,
+`miscellaneous`, `open_ended`, `survey_feedback` — though they remain reachable
+as template fallbacks.
 
 The table is generated from `DOMAIN_CATEGORIES` in `utils/response_library.py`,
 which is authoritative. "Example domains" lists the first few members of each
@@ -413,24 +426,25 @@ Configurable proportion of participants fail attention checks, matching real-wor
 ### Careless Response Detection
 
 The generated dataset flags (and can recommend excluding) simulated careless
-responses. These columns ship: `Max_Straight_Line`, `Flag_StraightLine`,
-`Flag_Speed`, `Flag_Attention`, `Exclude_Recommended`.
+responses. These columns ship in `Simulation_Diagnostics.csv`:
+`Max_Straight_Line`, `Flag_StraightLine`, `Flag_Speed`, `Flag_Attention`,
+`Exclude_Recommended`.
 
 - **Straight-lining**: same response repeated across items
 - **Response time anomalies**: unrealistically fast completion
 
 Alternating patterns (1-7-1-7) **are** detected, in the live exclusion path
-(`enhanced_simulation_engine.py:11161-11167`), and folded into the shipped
-`Max_Straight_Line` column by taking the worse of the two streaks (`:11169`),
+(`enhanced_simulation_engine.py:11708-11713`), and folded into the shipped
+`Max_Straight_Line` column by taking the worse of the two streaks (`:11716`),
 which in turn drives `Flag_StraightLine`. Midpoint overuse is implemented only
-in `_detect_careless_patterns()` (`:1512`), which has no callers, so it never
+in `_detect_careless_patterns()` (`:1535`), which has no callers, so it never
 reaches an output column.
 
 ### Validation Metrics
 
 Generated datasets include quality metrics:
 
-- Achieved effect sizes — Cohen's *d*, both group means and both Ns (no confidence intervals). 95% CIs appear in the emailed instructor report, as per-condition means, and in the password-gated Analytics Dashboard, which also plots Cohen's *d* with 95% CIs (`app.py:2753`, `:2958`) — though that dashboard returns early unless `plotly` is importable, and `plotly` is not in `requirements.txt`
+- Achieved effect sizes — Cohen's *d*, both group means and both Ns (no confidence intervals). 95% CIs appear in the emailed instructor report, as per-condition means, and in the password-gated Analytics Dashboard, which also plots Cohen's *d* with 95% CIs (`app.py:2762`, `:2956`) — that dashboard returns early unless `plotly` is importable, and `plotly` is now a declared requirement, so its charts work on a default install
 - Condition balance verification
 - Missing data rates
 - Response distribution statistics
@@ -513,8 +527,8 @@ The responses exhibit statistical properties matching published research on huma
 
 - Mean responses around 4.0-5.2 on 7-point scales before domain calibration (documented positive response bias); realized DV means span roughly 3.5-5.5 once construct norms apply, with clinical DVs centering lower and satisfaction DVs higher
 - Standard deviations of 1.2-1.8 (typical for Likert data)
-- Cronbach's alphas from about 0.75 up to the mid-0.90s for multi-item scales (raised toward the target, never lowered)
-- Effect sizes: a configured Cohen's *d* is recovered to within roughly -8% to +12% across scale widths and item counts, and a null effect stays null (`tests/test_effect_size_recovery.py`). Effects inferred from condition wording when no *d* is configured are literature-sized and directional rather than fitted to a target. Verify the achieved effect in `Metadata.json` (`effect_sizes_observed`) before relying on the magnitude.
+- Cronbach's alphas in roughly 0.79-0.89 for multi-item scales (measured 0.794-0.890 over ten scales, median 0.851), injected toward a per-scale 0.80-0.90 target and attenuated when they overshoot it
+- Effect sizes: a configured Cohen's *d* is recovered on the scale composite, which it was not before v1.2.8.8. Two independent runs (N=400, three seeds) bracketed the composite at 0.15-0.24 for a configured 0.2, 0.45-0.55 for 0.5 and 0.74-0.86 for 0.8, so expect within roughly a quarter of target and individual items a little below the composite; at small *d* a single dataset can land near zero or above target. A null effect stays null (`tests/test_effect_size_recovery.py`). Effects inferred from condition wording when no *d* is configured are literature-sized and directional rather than fitted to a target. Verify the achieved effect in `Metadata.json` (`effect_sizes_observed`) before relying on the magnitude.
 
 ### Can I use this for any survey?
 
