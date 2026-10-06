@@ -346,7 +346,10 @@ def test_python_script_runs_against_delivered_files(run, tmp_path):
     data, clean = ns["data"], ns["data_clean"]
     assert "Trust_composite" in data.columns and "Satisfaction_composite" in data.columns
     assert len(data) == len(export_df) and 0 < len(clean) <= len(data)
-    expected = export_df[["Trust_1", "Trust_2", "Trust_3", "Trust_4"]].astype("Float64").mean(axis=1)
+    # Trust_2 is reverse-keyed on a 7-point scale: the composite must average the recoded item.
+    items = export_df[["Trust_1", "Trust_2", "Trust_3", "Trust_4"]].astype("Float64").copy()
+    items["Trust_2"] = 8 - items["Trust_2"]
+    expected = items.mean(axis=1)
     got = data["Trust_composite"]
     # merge preserves row order; compare on ResponseId to be safe
     got = pd.Series(got.to_numpy(), index=data["ResponseId"])
@@ -362,3 +365,20 @@ def test_explainer_describes_delivered_files(run):
         assert needle in text, needle
     survey_part = text.split("SURVEY COLUMNS (Simulated_Data.csv)")[1].split("DIAGNOSTICS COLUMNS")[0]
     assert "Trust_1" in survey_part and "RUN_ID" not in survey_part and "Trust_mean" not in survey_part
+
+
+def test_script_composites_use_reverse_recoded_columns(run):
+    """Composite lines must average Trust_2_R (Stata: trust_2_r), never the raw reverse item."""
+    eng, df, _, _, _ = run
+    scripts = _scripts(eng, df)
+    for lang, script in scripts.items():
+        low = lang == "Stata"
+        rec = "Trust_2_r" if low else "Trust_2_R"
+        raw = "Trust_2"
+        line = next(l for l in script.splitlines()
+                    if ("trust_composite" if low else "Trust_composite") in l
+                    and ("mean" in l.lower()))
+        l2 = line.lower() if low else line
+        assert rec.lower() in l2.lower() if low else rec in line, (lang, line)
+        import re as _re
+        assert not _re.search(r"(?<![\w])" + _re.escape(raw if not low else raw.lower()) + r"(?![\w])", line if not low else line.lower()), (lang, line)

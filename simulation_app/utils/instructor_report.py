@@ -1479,7 +1479,7 @@ class InstructorReportGenerator:
             lines.append("**R:**")
             lines.append("```r")
             lines.append("library(readr); library(car); library(effectsize)")
-            lines.append("df <- read_csv('Simulated.csv')")
+            lines.append("df <- read_csv('Simulated_Data.csv')")
             lines.append("df_clean <- df[df$Exclude_Recommended == 0, ]")
             lines.append(f"model <- aov({_first_dv} ~ {factor_names[0]} * {factor_names[1]}, data = df_clean)")
             lines.append("summary(model)")
@@ -1490,7 +1490,7 @@ class InstructorReportGenerator:
             lines.append("```python")
             lines.append("import pandas as pd; import statsmodels.api as sm")
             lines.append("from statsmodels.formula.api import ols")
-            lines.append("df = pd.read_csv('Simulated.csv')")
+            lines.append("df = pd.read_csv('Simulated_Data.csv')")
             lines.append("df_clean = df[df['Exclude_Recommended'] == 0]")
             lines.append(f"model = ols('{_first_dv} ~ C({factor_names[0]}) * C({factor_names[1]})', data=df_clean).fit()")
             lines.append("print(sm.stats.anova_lm(model, typ=2))")
@@ -1501,7 +1501,7 @@ class InstructorReportGenerator:
             lines.append("**R:**")
             lines.append("```r")
             lines.append("library(readr); library(effsize)")
-            lines.append("df <- read_csv('Simulated.csv')")
+            lines.append("df <- read_csv('Simulated_Data.csv')")
             lines.append("df_clean <- df[df$Exclude_Recommended == 0, ]")
             lines.append(f"t.test({_first_dv} ~ CONDITION, data = df_clean, var.equal = FALSE)")
             lines.append(f"effsize::cohen.d({_first_dv} ~ CONDITION, data = df_clean)")
@@ -1510,7 +1510,7 @@ class InstructorReportGenerator:
             lines.append("**Python:**")
             lines.append("```python")
             lines.append("import pandas as pd; from scipy import stats; import numpy as np")
-            lines.append("df = pd.read_csv('Simulated.csv')")
+            lines.append("df = pd.read_csv('Simulated_Data.csv')")
             lines.append("df_clean = df[df['Exclude_Recommended'] == 0]")
             lines.append(f"g1 = df_clean[df_clean['CONDITION'] == '{conditions[0]}']['{_first_dv}']")
             lines.append(f"g2 = df_clean[df_clean['CONDITION'] == '{conditions[1]}']['{_first_dv}']")
@@ -1524,7 +1524,7 @@ class InstructorReportGenerator:
             lines.append("**R:**")
             lines.append("```r")
             lines.append("library(readr); library(effectsize)")
-            lines.append("df <- read_csv('Simulated.csv')")
+            lines.append("df <- read_csv('Simulated_Data.csv')")
             lines.append("df_clean <- df[df$Exclude_Recommended == 0, ]")
             lines.append(f"model <- aov({_first_dv} ~ CONDITION, data = df_clean)")
             lines.append("summary(model)")
@@ -1535,7 +1535,7 @@ class InstructorReportGenerator:
             lines.append("**Python:**")
             lines.append("```python")
             lines.append("import pandas as pd; from scipy import stats")
-            lines.append("df = pd.read_csv('Simulated.csv')")
+            lines.append("df = pd.read_csv('Simulated_Data.csv')")
             lines.append("df_clean = df[df['Exclude_Recommended'] == 0]")
             cond_list_str = repr(conditions)
             lines.append(f"groups = [df_clean[df_clean['CONDITION']==c]['{_first_dv}'] for c in {cond_list_str}]")
@@ -1694,7 +1694,7 @@ class InstructorReportGenerator:
             "library(readr)",
             "library(dplyr)",
             "",
-            "data <- read_csv('Simulated.csv', show_col_types = FALSE)",
+            "data <- read_csv('Simulated_Data.csv', show_col_types = FALSE)",
             "",
             "# Set up factors",
             f"data$CONDITION <- factor(data$CONDITION, levels = c({condition_levels}))",
@@ -1747,7 +1747,7 @@ class InstructorReportGenerator:
             "# library(car)        # Levene's test (optional)",
             "",
             "# --- SECTION 2: DATA LOADING ---",
-            "data <- read_csv('Simulated.csv', show_col_types = FALSE)",
+            "data <- read_csv('Simulated_Data.csv', show_col_types = FALSE)",
             "head(data)  # Verify data loaded correctly",
             "",
             "# --- SECTION 3: DATA PREPARATION ---",
@@ -1840,7 +1840,7 @@ class InstructorReportGenerator:
             "from scipy import stats",
             "",
             "# --- SECTION 1: DATA LOADING ---",
-            "df = pd.read_csv('Simulated.csv')",
+            "df = pd.read_csv('Simulated_Data.csv')",
             "print('Dataset shape:', df.shape)",
             "",
             "# --- SECTION 2: DATA PREPARATION ---",
@@ -1909,7 +1909,7 @@ class InstructorReportGenerator:
             "* ============================================================================.",
             "",
             "* --- SECTION 1: DATA LOADING ---.",
-            "* Use File > Open > Data to import Simulated.csv.",
+            "* Use File > Open > Data to import Simulated_Data.csv.",
             "* Or use GET DATA /TYPE=TXT command.",
             "",
             "* --- SECTION 2: DATA CLEANING ---.",
@@ -1988,7 +1988,7 @@ class InstructorReportGenerator:
             "",
             "// --- SECTION 1: DATA LOADING ---",
             "clear all",
-            'import delimited "Simulated.csv", clear',
+            'import delimited "Simulated_Data.csv", clear',
             "describe",
             "",
             "// --- SECTION 2: DATA PREPARATION ---",

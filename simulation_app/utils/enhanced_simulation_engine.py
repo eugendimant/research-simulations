@@ -13962,7 +13962,13 @@ class EnhancedSimulationEngine:
             if lowercase:
                 name = name.lower()
                 items = [it.lower() for it in items]
-            out.append({"raw": raw, "name": name, "items": items, "reverse": rev, "points": points})
+            # Composite = mean of the items AFTER reverse coding, so scripts must average
+            # the recoded `_R` (Stata: `_r`) columns for reverse-keyed items.
+            _sfx = "_r" if lowercase else "_R"
+            _rev_cols = {f"{name}_{r}" for r in rev}
+            composite_items = [(f"{it}{_sfx}" if it in _rev_cols else it) for it in items]
+            out.append({"raw": raw, "name": name, "items": items, "reverse": rev,
+                        "points": points, "composite_items": composite_items})
         return out
 
     def _export_has_gender(self, df: Optional[pd.DataFrame]) -> bool:
@@ -14020,7 +14026,7 @@ class EnhancedSimulationEngine:
                 lines.append("")
 
             lines.append(f"# Create {sc['raw']} composite from the item columns")
-            item_list = ", ".join([f"data${item}" for item in sc["items"]])
+            item_list = ", ".join([f"data${item}" for item in sc["composite_items"]])
             lines.append(f"data${sc['name']}_composite <- rowMeans(cbind({item_list}), na.rm = TRUE)")
             lines.append("")
 
@@ -14096,7 +14102,7 @@ class EnhancedSimulationEngine:
                 lines.append("")
 
             lines.append(f"# Create {sc['raw']} composite from the item columns")
-            item_list = ", ".join([f"'{item}'" for item in sc["items"]])
+            item_list = ", ".join([f"'{item}'" for item in sc["composite_items"]])
             lines.append(f"data['{sc['name']}_composite'] = data[[{item_list}]].mean(axis=1)")
             lines.append("")
 
@@ -14172,7 +14178,7 @@ class EnhancedSimulationEngine:
                 lines.append("")
 
             lines.append(f"# Create {sc['raw']} composite from the item columns (missing values skipped)")
-            item_syms = ", ".join([f":{item}" for item in sc["items"]])
+            item_syms = ", ".join([f":{item}" for item in sc["composite_items"]])
             lines.append(
                 f"data.{sc['name']}_composite = [isempty(collect(skipmissing(collect(r)))) ? missing : "
                 f"mean(skipmissing(collect(r))) for r in eachrow(data[:, [{item_syms}]])]"
@@ -14244,7 +14250,7 @@ class EnhancedSimulationEngine:
                 lines.append("")
 
             lines.append(f"* Create {sc['raw']} composite from the item columns.")
-            lines.append(f"COMPUTE {sc['name']}_composite = MEAN({' '.join(sc['items'])}).")
+            lines.append(f"COMPUTE {sc['name']}_composite = MEAN({' '.join(sc['composite_items'])}).")
             lines.append("EXECUTE.")
             lines.append("")
 
@@ -14324,7 +14330,7 @@ class EnhancedSimulationEngine:
                 lines.append("")
 
             lines.append(f"// Create {sc['raw']} composite from the item columns")
-            lines.append(f"egen {sc['name']}_composite = rowmean({' '.join(sc['items'])})")
+            lines.append(f"egen {sc['name']}_composite = rowmean({' '.join(sc['composite_items'])})")
             lines.append("")
 
         lines.extend([
