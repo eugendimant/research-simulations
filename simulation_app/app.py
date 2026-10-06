@@ -13275,7 +13275,8 @@ if active_page == 3:
                         "0 draws a fresh random seed each run. Enter any other number to make "
                         "the run exactly repeatable: the same seed with the same design and "
                         "settings reproduces the same dataset. The seed actually used is always "
-                        "written to the SIMULATION_SEED column and to Metadata.json."
+                        "written to the SIMULATION_SEED column and to Metadata.json. The quick preview "
+                        "is illustrative only and does not contain the rows of the final dataset."
                     ),
                 )
             _gen_c1, _gen_c2 = st.columns([2, 2])

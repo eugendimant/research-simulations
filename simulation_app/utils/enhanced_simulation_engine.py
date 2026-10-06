@@ -3049,13 +3049,13 @@ class EnhancedSimulationEngine:
             condition_text, ""
         )
         # Merge detected domains
-        all_domains = list(set(self.detected_domains + condition_domains))
+        all_domains = list(dict.fromkeys(self.detected_domains + condition_domains))
         self.detected_domains = all_domains if all_domains else self.detected_domains
 
         # v1.3.6: Also merge in explicitly provided persona_domains from builder
         _explicit_persona_domains = self.study_context.get("persona_domains", [])
         if _explicit_persona_domains and isinstance(_explicit_persona_domains, list):
-            _merged = list(set(self.detected_domains + _explicit_persona_domains))
+            _merged = list(dict.fromkeys(self.detected_domains + _explicit_persona_domains))
             self.detected_domains = _merged if _merged else self.detected_domains
 
         self.available_personas = self.persona_library.get_personas_for_domains(
@@ -3455,6 +3455,8 @@ class EnhancedSimulationEngine:
             dropout_frac = self._should_dropout(i, all_traits[i])
             if dropout_frac is not None:
                 dropout_item = max(1, int(float(dropout_frac) * total_items))
+                if dropout_item >= total_items:
+                    continue  # would blank nothing: the participant finishes, so it is not a dropout
                 dropout_points[i] = dropout_item
                 dropout_count += 1
 
@@ -9173,6 +9175,29 @@ class EnhancedSimulationEngine:
     # Validates achieved within-person consistency and repairs violations.
     # ==================================================================
 
+    def _refresh_scale_composites(self, df: pd.DataFrame, scale_log: List[Dict[str, Any]]) -> None:
+        """Recompute each ``<Scale>_mean`` from its item columns (reverse-recoded, NaN-aware)."""
+        for entry in scale_log or []:
+            cols = [c for c in (entry.get("columns_generated") or []) if c in df.columns]
+            if not cols:
+                continue
+            mean_col = f"{cols[0].rsplit('_', 1)[0]}_mean"
+            if mean_col not in df.columns:
+                continue
+            rev = set(entry.get("reverse_items") or [])
+            flip = float(entry.get("scale_min", 1)) + float(entry.get("scale_max", 7))
+            vals = df[cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float, copy=True)
+            for j, col in enumerate(entry.get("columns_generated") or []):
+                if (j + 1) in rev and col in cols:
+                    k = cols.index(col)
+                    vals[:, k] = flip - vals[:, k]
+            answered = ~np.isnan(vals)
+            counts = answered.sum(axis=1)
+            sums = np.where(answered, vals, 0.0).sum(axis=1)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                means = np.where(counts > 0, sums / np.maximum(counts, 1), np.nan)
+            df[mean_col] = np.round(means, 2)
+
     def _audit_individual_consistency(
         self,
         df: pd.DataFrame,
@@ -13018,6 +13043,10 @@ class EnhancedSimulationEngine:
             # Re-create DataFrame with repaired data
             df = pd.DataFrame(data)
 
+        # Final consistency pass: every <Scale>_mean must equal the mean of the delivered
+        # (reverse-recoded, missing-aware) items, whatever the steps above did to them.
+        self._refresh_scale_composites(df, _scale_generation_log)
+
         # Compute observed effect sizes to validate simulation quality
         observed_effects = self._compute_observed_effect_sizes(df)
 
@@ -13325,6 +13354,9 @@ class EnhancedSimulationEngine:
                 self._log(f"ABE 3.0: Validation complete — {_validation_report.get('summary', 'ok')}")
             except Exception as _val_err:
                 self._log(f"ABE 3.0: Validation skipped: {_val_err}")
+
+        # The validator may perturb item values: re-derive composites from the final items.
+        self._refresh_scale_composites(df, getattr(self, "_scale_generation_log", None) or [])
 
         # Step D: Add ABE 3.0 metadata
         try:
@@ -13947,6 +13979,11 @@ class EnhancedSimulationEngine:
             num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
             points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
             reverse = _safe_parse_reverse_items(scale.get("reverse_items", []))
+            # Reverse coding flips around scale_min + scale_max (same rule as the engine),
+            # which equals points + 1 only for 1-based scales.
+            _smin = _safe_numeric(scale.get("scale_min", 1), default=1, as_int=True)
+            _smax = _safe_numeric(scale.get("scale_max", points), default=points, as_int=True)
+            flip = _smin + _smax
             items = [f"{name}_{i}" for i in range(1, num_items + 1)]
             if cols is not None:
                 items = [it for it in items if it in cols]
@@ -13962,7 +13999,7 @@ class EnhancedSimulationEngine:
             _rev_cols = {f"{name}_{r}" for r in rev}
             composite_items = [(f"{it}{_sfx}" if it in _rev_cols else it) for it in items]
             out.append({"raw": raw, "name": name, "items": items, "reverse": rev,
-                        "points": points, "composite_items": composite_items})
+                        "points": points, "flip": flip, "composite_items": composite_items})
         return out
 
     def _export_has_gender(self, df: Optional[pd.DataFrame]) -> bool:
@@ -14016,7 +14053,7 @@ class EnhancedSimulationEngine:
                 lines.append(f"# {sc['raw']} - reverse code items {sc['reverse']}")
                 for r_item in sc["reverse"]:
                     item_name = f"{sc['name']}_{r_item}"
-                    lines.append(f"data${item_name}_R <- {sc['points'] + 1} - data${item_name}")
+                    lines.append(f"data${item_name}_R <- {sc['flip']} - data${item_name}")
                 lines.append("")
 
             lines.append(f"# Create {sc['raw']} composite from the item columns")
@@ -14092,7 +14129,7 @@ class EnhancedSimulationEngine:
                 lines.append(f"# {sc['raw']} - reverse code items {sc['reverse']}")
                 for r_item in sc["reverse"]:
                     item_name = f"{sc['name']}_{r_item}"
-                    lines.append(f"data['{item_name}_R'] = {sc['points'] + 1} - data['{item_name}']")
+                    lines.append(f"data['{item_name}_R'] = {sc['flip']} - data['{item_name}']")
                 lines.append("")
 
             lines.append(f"# Create {sc['raw']} composite from the item columns")
@@ -14168,7 +14205,7 @@ class EnhancedSimulationEngine:
                 lines.append(f"# {sc['raw']} - reverse code items {sc['reverse']}")
                 for r_item in sc["reverse"]:
                     item_name = f"{sc['name']}_{r_item}"
-                    lines.append(f'data.{item_name}_R = {sc["points"] + 1} .- data.{item_name}')
+                    lines.append(f'data.{item_name}_R = {sc["flip"]} .- data.{item_name}')
                 lines.append("")
 
             lines.append(f"# Create {sc['raw']} composite from the item columns (missing values skipped)")
@@ -14239,7 +14276,7 @@ class EnhancedSimulationEngine:
                 lines.append(f"* {sc['raw']} - reverse code items {sc['reverse']}.")
                 for r_item in sc["reverse"]:
                     item_name = f"{sc['name']}_{r_item}"
-                    lines.append(f"COMPUTE {item_name}_R = {sc['points'] + 1} - {item_name}.")
+                    lines.append(f"COMPUTE {item_name}_R = {sc['flip']} - {item_name}.")
                 lines.append("EXECUTE.")
                 lines.append("")
 
@@ -14257,7 +14294,7 @@ class EnhancedSimulationEngine:
             "SORT CASES BY ResponseId (A).",
             "DATASET ACTIVATE data.",
             "SORT CASES BY ResponseId (A).",
-            "MATCH FILES /FILE=* /TABLE='diag' /BY ResponseId.",
+            "MATCH FILES /FILE=* /TABLE=diag /BY ResponseId.",
             "EXECUTE.",
             "",
             "USE ALL.",
@@ -14320,7 +14357,7 @@ class EnhancedSimulationEngine:
                 lines.append(f"// {sc['raw']} - reverse code items {sc['reverse']}")
                 for r_item in sc["reverse"]:
                     item_name = f"{sc['name']}_{r_item}"
-                    lines.append(f"gen {item_name}_r = {sc['points'] + 1} - {item_name}")
+                    lines.append(f"gen {item_name}_r = {sc['flip']} - {item_name}")
                 lines.append("")
 
             lines.append(f"// Create {sc['raw']} composite from the item columns")

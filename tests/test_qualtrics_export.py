@@ -382,3 +382,30 @@ def test_script_composites_use_reverse_recoded_columns(run):
         assert rec.lower() in l2.lower() if low else rec in line, (lang, line)
         import re as _re
         assert not _re.search(r"(?<![\w])" + _re.escape(raw if not low else raw.lower()) + r"(?![\w])", line if not low else line.lower()), (lang, line)
+
+
+def test_script_reverse_flip_uses_scale_min_plus_max():
+    """0-based and bipolar scales flip around scale_min + scale_max, not points + 1."""
+    eng = EnhancedSimulationEngine(
+        study_title="Flip", study_description="reverse coding on non 1-based scales",
+        sample_size=30, conditions=["A", "B"], factors=[{"name": "G", "levels": ["A", "B"]}],
+        scales=[
+            {"name": "Sel", "num_items": 3, "scale_points": 11, "scale_min": 0, "scale_max": 10,
+             "reverse_items": [2]},
+            {"name": "Bip", "num_items": 3, "scale_points": 7, "scale_min": -3, "scale_max": 3,
+             "reverse_items": [1]},
+        ],
+        additional_vars=[], demographics={"gender_quota": 50, "age_mean": 30, "age_sd": 8},
+        seed=5)
+    try:
+        eng.llm_generator.disable_permanently("test: no network")
+    except Exception:
+        pass
+    df, md = eng.generate()
+    export_df, _ = build_qualtrics_export(df, md)
+    py = eng.generate_python_export(export_df)
+    assert "data['Sel_2_R'] = 10 - data['Sel_2']" in py
+    assert "data['Bip_1_R'] = 0 - data['Bip_1']" in py
+    for script in (eng.generate_r_export(export_df), eng.generate_stata_export(export_df),
+                   eng.generate_spss_export(export_df)):
+        assert "12 - " not in script and "8 - " not in script

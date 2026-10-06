@@ -122,6 +122,193 @@ def _find_scale_columns(df: "pd.DataFrame", scale: Dict[str, Any],
     return sorted(cols)
 
 
+# ---------------------------------------------------------------------------
+# Embedded analysis-script helpers (v1.2.8.9)
+#
+# The delivered Simulated_Data.csv is a faithful Qualtrics-style export: item
+# columns only. It has NO "<Scale>_mean" and NO "Exclude_Recommended" column
+# (those live in Simulation_Diagnostics.csv, keyed on ResponseId). Every snippet
+# the report embeds therefore computes composites from the item columns
+# (reverse-keyed items recoded first) and merges the diagnostics file before
+# filtering. These helpers mirror the engine's export-script convention
+# (flip = scale_min + scale_max; recoded columns are "<item>_R", Stata "<item>_r").
+# ---------------------------------------------------------------------------
+
+_SCRIPT_RESERVED_COLUMNS = {"CONDITION", "Age", "Gender", "ResponseId"}
+
+
+def _script_int(v: Any, default: int) -> int:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def _script_scales(
+    metadata: Dict[str, Any],
+    df: Optional["pd.DataFrame"] = None,
+    lowercase: bool = False,
+) -> List[Dict[str, Any]]:
+    """Scale specs for embedded scripts (item columns, reverse items, flip constant).
+
+    When ``df`` is given, only items present as columns are referenced.
+    """
+    cols = set(df.columns) if df is not None and hasattr(df, "columns") else None
+    out: List[Dict[str, Any]] = []
+    for scale in (metadata.get("scales") or []):
+        if not isinstance(scale, dict):
+            continue
+        raw = str(scale.get("name", "Scale")).strip() or "Scale"
+        name = _report_clean_column_name(raw)
+        num_items = max(1, _script_int(scale.get("num_items", 5), 5))
+        points = _script_int(scale.get("scale_points", 7), 7)
+        reverse = set()
+        rev_raw = scale.get("reverse_items") or []
+        if isinstance(rev_raw, (list, tuple, set)):
+            for x in rev_raw:
+                try:
+                    reverse.add(int(x))
+                except (TypeError, ValueError):
+                    logging.getLogger(__name__).debug("Skipping invalid reverse item %r", x)
+        smin = _script_int(scale.get("scale_min", 1), 1)
+        smax = _script_int(scale.get("scale_max", points), points)
+        items = [f"{name}_{i}" for i in range(1, num_items + 1)]
+        if cols is not None:
+            items = [it for it in items if it in cols]
+            if not items:
+                continue
+        rev = sorted(r for r in reverse if f"{name}_{r}" in items)
+        if lowercase:
+            name = name.lower()
+            items = [it.lower() for it in items]
+        sfx = "_r" if lowercase else "_R"
+        rev_cols = {f"{name}_{r}" for r in rev}
+        composite_items = [(f"{it}{sfx}" if it in rev_cols else it) for it in items]
+        out.append({
+            "raw": raw, "name": name, "items": items, "reverse": rev,
+            "points": points, "flip": smin + smax,
+            "composite_items": composite_items, "composite": f"{name}_composite",
+        })
+    return out
+
+
+def _script_factor_map(
+    conditions: List[Any], factors: List[Dict[str, Any]]
+) -> Optional[List[Tuple[str, Dict[str, str]]]]:
+    """Map each condition label to one level per factor (None if not resolvable).
+
+    The delivered CSV only has CONDITION, so scripts derive factor columns from it.
+    Returns [(factor_column_name, {condition: level})] or None.
+    """
+    factors = [f for f in (factors or []) if isinstance(f, dict)]
+    if len(factors) < 2 or not conditions:
+        return None
+    result: List[Tuple[str, Dict[str, str]]] = []
+    used: set = set()
+    for idx, f in enumerate(factors):
+        fname = _report_clean_column_name(f.get("name", f"Factor{idx + 1}"))
+        if fname in _SCRIPT_RESERVED_COLUMNS or fname in used:
+            fname = f"{fname}_factor"
+        used.add(fname)
+        levels = [str(l) for l in (f.get("levels") or [])]
+        if len(levels) < 2:
+            return None
+        mapping: Dict[str, str] = {}
+        for cond in conditions:
+            c = str(cond)
+            hits = [l for l in levels if l.lower() in c.lower()]
+            if len(hits) > 1:  # prefer the longest match
+                hits = [max(hits, key=len)]
+            if len(hits) != 1:
+                return None
+            mapping[c] = hits[0]
+        if len(set(mapping.values())) < 2:
+            return None
+        result.append((fname, mapping))
+    cells = {tuple(m[str(c)] for _, m in result) for c in conditions}
+    if len(cells) != len(conditions):
+        return None
+    return result
+
+
+def _py_lit(x: Any) -> str:
+    return repr(str(x))
+
+
+def _r_lit(x: Any) -> str:
+    s = str(x).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{s}"'
+
+
+def _py_prep_lines(
+    scales: List[Dict[str, Any]],
+    factor_map: Optional[List[Tuple[str, Dict[str, str]]]] = None,
+    clean_name: str = "df_clean",
+) -> List[str]:
+    """Python: composites from items (reverse-keyed recoded), diagnostics merge, clean df."""
+    L: List[str] = []
+    for sc in scales:
+        if sc["reverse"]:
+            L.append(f"# {sc['raw']}: reverse-keyed items {sc['reverse']} are recoded first ({sc['flip']} - x)")
+            for r in sc["reverse"]:
+                it = f"{sc['name']}_{r}"
+                L.append(f"df['{it}_R'] = {sc['flip']} - df['{it}']")
+        items = ", ".join(f"'{i}'" for i in sc["composite_items"])
+        L.append(f"df['{sc['composite']}'] = df[[{items}]].mean(axis=1)  # {sc['raw']} composite")
+    if factor_map:
+        L.append("# The CSV has one CONDITION column; derive the factor columns from it")
+        for fname, mapping in factor_map:
+            pairs = ", ".join(f"{_py_lit(k)}: {_py_lit(v)}" for k, v in mapping.items())
+            L.append(f"df['{fname}'] = df['CONDITION'].astype(str).map({{{pairs}}})")
+    L.extend([
+        "# Exclude_Recommended lives in Simulation_Diagnostics.csv; join it on ResponseId",
+        "if os.path.exists('Simulation_Diagnostics.csv'):",
+        "    diagnostics = pd.read_csv('Simulation_Diagnostics.csv')",
+        "    df = df.merge(diagnostics[['ResponseId', 'Exclude_Recommended']], on='ResponseId', how='left')",
+        f"    {clean_name} = df[df['Exclude_Recommended'] == 0].copy()",
+        "else:",
+        "    print('Simulation_Diagnostics.csv not found; no exclusions applied.')",
+        f"    {clean_name} = df.copy()",
+    ])
+    return L
+
+
+def _r_prep_lines(
+    scales: List[Dict[str, Any]],
+    factor_map: Optional[List[Tuple[str, Dict[str, str]]]] = None,
+    data: str = "df",
+    clean: str = "df_clean",
+) -> List[str]:
+    """R: composites from items (reverse-keyed recoded), diagnostics join, clean data frame."""
+    L: List[str] = []
+    for sc in scales:
+        if sc["reverse"]:
+            L.append(f"# {sc['raw']}: reverse-keyed items {sc['reverse']} are recoded first ({sc['flip']} - x)")
+            for r in sc["reverse"]:
+                it = f"{sc['name']}_{r}"
+                L.append(f"{data}${it}_R <- {sc['flip']} - {data}${it}")
+        refs = ", ".join(f"{data}${i}" for i in sc["composite_items"])
+        L.append(f"{data}${sc['composite']} <- rowMeans(cbind({refs}), na.rm = TRUE)  # {sc['raw']} composite")
+    if factor_map:
+        L.append("# The CSV has one CONDITION column; derive the factor columns from it")
+        for fname, mapping in factor_map:
+            pairs = ", ".join(f"{_r_lit(k)} = {_r_lit(v)}" for k, v in mapping.items())
+            L.append(f"{data}${fname} <- factor(unname(c({pairs})[as.character({data}$CONDITION)]))")
+    L.extend([
+        "# Exclude_Recommended lives in Simulation_Diagnostics.csv; join it on ResponseId",
+        'if (file.exists("Simulation_Diagnostics.csv")) {',
+        '  diagnostics <- read_csv("Simulation_Diagnostics.csv", show_col_types = FALSE)',
+        f'  {data} <- left_join({data}, diagnostics[, c("ResponseId", "Exclude_Recommended")], by = "ResponseId")',
+        f"  {clean} <- {data}[!is.na({data}$Exclude_Recommended) & {data}$Exclude_Recommended == 0, ]",
+        "} else {",
+        '  message("Simulation_Diagnostics.csv not found; no exclusions applied.")',
+        f"  {clean} <- {data}",
+        "}",
+    ])
+    return L
+
+
+
 def _extract_persona_proportions(persona_dist: Any) -> Dict[str, float]:
     """Extract a flat {persona_name: proportion} dict from persona_distribution metadata.
 
@@ -1331,7 +1518,7 @@ class InstructorReportGenerator:
         if exclusion_summary:
             lines.append("### Data Cleaning Guide")
             lines.append("")
-            lines.append("Your dataset includes these quality flags (use `Exclude_Recommended` for filtering):")
+            lines.append("Quality flags are in `Simulation_Diagnostics.csv` (join on `ResponseId`, then filter on `Exclude_Recommended`):")
             lines.append("")
             n = metadata.get("sample_size", "N/A")
             flagged_speed = exclusion_summary.get("flagged_speed", 0)
@@ -1346,7 +1533,7 @@ class InstructorReportGenerator:
                 lines.append(f"| Straight-lining | {flagged_straight} | {flagged_straight/n*100:.1f}% | Identical responses in sequence |")
                 lines.append(f"| **Total excluded** | **{total_excluded}** | **{total_excluded/n*100:.1f}%** | **Recommended for removal** |")
             lines.append("")
-            lines.append("**Tip:** Filter with `Exclude_Recommended == 0` to keep only clean responses.")
+            lines.append("**Tip:** After joining `Simulation_Diagnostics.csv` on `ResponseId`, filter with `Exclude_Recommended == 0` to keep only clean responses.")
             lines.append("")
 
         # v1.2.0: Enhanced Analysis Recommendations with statistical test recommendations and power analysis
@@ -1367,8 +1554,8 @@ class InstructorReportGenerator:
         lines.append("### Suggested Analysis Steps")
         lines.append("")
         lines.append("1. **Data Cleaning**")
-        lines.append("   - Review `Exclude_Recommended` column for data quality issues")
-        lines.append("   - Check `Completion_Time_Seconds` for speedy responders (< 60s suspicious)")
+        lines.append("   - Review `Exclude_Recommended` (in `Simulation_Diagnostics.csv`, joined on `ResponseId`) for data quality issues")
+        lines.append("   - Check `Duration (in seconds)` for speedy responders (< 60s suspicious)")
         lines.append("   - Examine `Max_Straight_Line` for response patterns (> 5 suggests inattention)")
         lines.append("   - Check `Attention_Pass_Rate` (< 50% warrants exclusion)")
         lines.append("")
@@ -1389,9 +1576,9 @@ class InstructorReportGenerator:
         is_within = str(_design_type).lower() in ("within", "within-subjects", "repeated")
 
         # Build a first DV name for code snippets
-        _first_dv = "Outcome_mean"
+        _first_dv = "Outcome_composite"
         if scales:
-            _first_dv = str(scales[0].get("name", "Outcome")).replace(" ", "_") + "_mean"
+            _first_dv = _report_clean_column_name(str(scales[0].get("name", "Outcome"))) + "_composite"
 
         if is_factorial:
             factor_str = " x ".join([str(len(f.get('levels', []))) for f in factors])
@@ -1474,25 +1661,37 @@ class InstructorReportGenerator:
         lines.append("Copy-paste starter code for your primary analysis:")
         lines.append("")
 
-        if is_factorial and len(factor_names) >= 2:
+        # Snippets read the delivered files: Simulated_Data.csv has item columns only, so the
+        # composite is computed from the items (reverse-keyed recoded) and Exclude_Recommended
+        # is joined from Simulation_Diagnostics.csv on ResponseId.
+        _qs_all = _script_scales(metadata, df)
+        _qs_sc = _qs_all[:1]
+        if _qs_sc:
+            _first_dv = _qs_sc[0]["composite"]
+        _fmap = _script_factor_map(conditions, factors) if is_factorial else None
+        if not _qs_sc:
+            lines.append("*No scale item columns were found, so no starter code is shown.*")
+            lines.append("")
+        elif _fmap:
+            _f1, _f2 = _fmap[0][0], _fmap[1][0]
             # Factorial ANOVA snippets
             lines.append("**R:**")
             lines.append("```r")
-            lines.append("library(readr); library(car); library(effectsize)")
-            lines.append("df <- read_csv('Simulated_Data.csv')")
-            lines.append("df_clean <- df[df$Exclude_Recommended == 0, ]")
-            lines.append(f"model <- aov({_first_dv} ~ {factor_names[0]} * {factor_names[1]}, data = df_clean)")
+            lines.append("library(readr); library(dplyr); library(effectsize)")
+            lines.append("df <- read_csv('Simulated_Data.csv', show_col_types = FALSE)")
+            lines.extend(_r_prep_lines(_qs_sc, _fmap))
+            lines.append(f"model <- aov({_first_dv} ~ {_f1} * {_f2}, data = df_clean)")
             lines.append("summary(model)")
             lines.append("eta_squared(model, partial = TRUE)")
             lines.append("```")
             lines.append("")
             lines.append("**Python:**")
             lines.append("```python")
-            lines.append("import pandas as pd; import statsmodels.api as sm")
+            lines.append("import os; import pandas as pd; import statsmodels.api as sm")
             lines.append("from statsmodels.formula.api import ols")
             lines.append("df = pd.read_csv('Simulated_Data.csv')")
-            lines.append("df_clean = df[df['Exclude_Recommended'] == 0]")
-            lines.append(f"model = ols('{_first_dv} ~ C({factor_names[0]}) * C({factor_names[1]})', data=df_clean).fit()")
+            lines.extend(_py_prep_lines(_qs_sc, _fmap))
+            lines.append(f"model = ols('{_first_dv} ~ C({_f1}) * C({_f2})', data=df_clean).fit()")
             lines.append("print(sm.stats.anova_lm(model, typ=2))")
             lines.append("```")
             lines.append("")
@@ -1500,20 +1699,21 @@ class InstructorReportGenerator:
             # Two-group t-test snippets
             lines.append("**R:**")
             lines.append("```r")
-            lines.append("library(readr); library(effsize)")
-            lines.append("df <- read_csv('Simulated_Data.csv')")
-            lines.append("df_clean <- df[df$Exclude_Recommended == 0, ]")
+            lines.append("library(readr); library(dplyr); library(effsize)")
+            lines.append("df <- read_csv('Simulated_Data.csv', show_col_types = FALSE)")
+            lines.extend(_r_prep_lines(_qs_sc))
+            lines.append("df_clean$CONDITION <- factor(df_clean$CONDITION)")
             lines.append(f"t.test({_first_dv} ~ CONDITION, data = df_clean, var.equal = FALSE)")
             lines.append(f"effsize::cohen.d({_first_dv} ~ CONDITION, data = df_clean)")
             lines.append("```")
             lines.append("")
             lines.append("**Python:**")
             lines.append("```python")
-            lines.append("import pandas as pd; from scipy import stats; import numpy as np")
+            lines.append("import os; import pandas as pd; from scipy import stats; import numpy as np")
             lines.append("df = pd.read_csv('Simulated_Data.csv')")
-            lines.append("df_clean = df[df['Exclude_Recommended'] == 0]")
-            lines.append(f"g1 = df_clean[df_clean['CONDITION'] == '{conditions[0]}']['{_first_dv}']")
-            lines.append(f"g2 = df_clean[df_clean['CONDITION'] == '{conditions[1]}']['{_first_dv}']")
+            lines.extend(_py_prep_lines(_qs_sc))
+            lines.append(f"g1 = df_clean[df_clean['CONDITION'] == {_py_lit(conditions[0])}]['{_first_dv}'].dropna()")
+            lines.append(f"g2 = df_clean[df_clean['CONDITION'] == {_py_lit(conditions[1])}]['{_first_dv}'].dropna()")
             lines.append("t_stat, p_val = stats.ttest_ind(g1, g2, equal_var=False)")
             lines.append("d = (g1.mean() - g2.mean()) / np.sqrt((g1.std()**2 + g2.std()**2) / 2)")
             lines.append("print(f't({len(g1)+len(g2)-2}) = {t_stat:.3f}, p = {p_val:.4f}, d = {d:.3f}')")
@@ -1523,9 +1723,9 @@ class InstructorReportGenerator:
             # One-way ANOVA snippets
             lines.append("**R:**")
             lines.append("```r")
-            lines.append("library(readr); library(effectsize)")
-            lines.append("df <- read_csv('Simulated_Data.csv')")
-            lines.append("df_clean <- df[df$Exclude_Recommended == 0, ]")
+            lines.append("library(readr); library(dplyr); library(effectsize)")
+            lines.append("df <- read_csv('Simulated_Data.csv', show_col_types = FALSE)")
+            lines.extend(_r_prep_lines(_qs_sc))
             lines.append(f"model <- aov({_first_dv} ~ CONDITION, data = df_clean)")
             lines.append("summary(model)")
             lines.append("TukeyHSD(model)")
@@ -1534,11 +1734,10 @@ class InstructorReportGenerator:
             lines.append("")
             lines.append("**Python:**")
             lines.append("```python")
-            lines.append("import pandas as pd; from scipy import stats")
+            lines.append("import os; import pandas as pd; from scipy import stats")
             lines.append("df = pd.read_csv('Simulated_Data.csv')")
-            lines.append("df_clean = df[df['Exclude_Recommended'] == 0]")
-            cond_list_str = repr(conditions)
-            lines.append(f"groups = [df_clean[df_clean['CONDITION']==c]['{_first_dv}'] for c in {cond_list_str}]")
+            lines.extend(_py_prep_lines(_qs_sc))
+            lines.append(f"groups = [df_clean[df_clean['CONDITION'] == c]['{_first_dv}'].dropna() for c in {[str(c) for c in conditions]!r}]")
             lines.append("f_stat, p_val = stats.f_oneway(*groups)")
             lines.append("print(f'F = {f_stat:.3f}, p = {p_val:.4f}')")
             lines.append("# Post-hoc: pip install scikit-posthocs, then sp.posthoc_ttest(df_clean, val_col, group_col)")
@@ -1593,7 +1792,7 @@ class InstructorReportGenerator:
             lines.append("### R Script")
             lines.append("")
             lines.append("```r")
-            lines.append(self._generate_comprehensive_r_script(metadata))
+            lines.append(self._generate_comprehensive_r_script(metadata, df))
             lines.append("```")
             lines.append("")
 
@@ -1601,7 +1800,7 @@ class InstructorReportGenerator:
             lines.append("### Python Script")
             lines.append("")
             lines.append("```python")
-            lines.append(self._generate_python_script(metadata))
+            lines.append(self._generate_python_script(metadata, df))
             lines.append("```")
             lines.append("")
 
@@ -1609,7 +1808,7 @@ class InstructorReportGenerator:
             lines.append("### SPSS Syntax")
             lines.append("")
             lines.append("```spss")
-            lines.append(self._generate_spss_syntax(metadata))
+            lines.append(self._generate_spss_syntax(metadata, df))
             lines.append("```")
             lines.append("")
 
@@ -1617,7 +1816,7 @@ class InstructorReportGenerator:
             lines.append("### Stata Script")
             lines.append("")
             lines.append("```stata")
-            lines.append(self._generate_stata_script(metadata))
+            lines.append(self._generate_stata_script(metadata, df))
             lines.append("```")
             lines.append("")
 
@@ -1674,15 +1873,11 @@ class InstructorReportGenerator:
 
         return "\n".join(lines)
 
-    def _generate_basic_r_script(self, metadata: Dict[str, Any]) -> str:
+    def _generate_basic_r_script(self, metadata: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> str:
         conditions = metadata.get("conditions", [])
-        scales = metadata.get('scales', [])
+        scales = _script_scales(metadata, df)
 
-        def _r_quote(x: str) -> str:
-            x = str(x).replace('\\', '\\\\').replace('"', '\\"')
-            return f'"{x}"'
-
-        condition_levels = ", ".join([_r_quote(c) for c in conditions])
+        condition_levels = ", ".join([_r_lit(c) for c in conditions])
 
         r_lines = [
             "# ============================================================",
@@ -1694,43 +1889,27 @@ class InstructorReportGenerator:
             "library(readr)",
             "library(dplyr)",
             "",
-            "data <- read_csv('Simulated_Data.csv', show_col_types = FALSE)",
+            "# Simulated_Data.csv holds item columns only; composites are computed below.",
+            "df <- read_csv('Simulated_Data.csv', show_col_types = FALSE)",
             "",
             "# Set up factors",
-            f"data$CONDITION <- factor(data$CONDITION, levels = c({condition_levels}))",
-            "data$Gender <- factor(data$Gender)  # Gender is already labeled (Male, Female, Non-binary, Prefer not to say)",
+            f"df$CONDITION <- factor(df$CONDITION, levels = c({condition_levels}))",
             "",
         ]
-
-        for s in scales:
-            name = str(s.get("name", "Scale")).replace(" ", "_")
-            num_items = int(s.get("num_items", 5) or 5)
-            items = [f"{name}_{i}" for i in range(1, num_items + 1)]
-            items_quoted = ", ".join([f"\"{x}\"" for x in items])
-            r_lines.append(f"# Composite for {name}")
-            r_lines.append(
-                f"data${name}_composite <- rowMeans(data[, c({items_quoted})], na.rm = TRUE)"
-            )
-            r_lines.append("")
-
-        r_lines.append("# Optional: remove recommended exclusions")
-        r_lines.append("data_clean <- data %>% filter(Exclude_Recommended == 0)")
+        r_lines.extend(_r_prep_lines(scales))
         r_lines.append("")
-        r_lines.append("summary(data_clean)")
+        r_lines.append("summary(df_clean)")
         return "\n".join(r_lines)
 
-    def _generate_comprehensive_r_script(self, metadata: Dict[str, Any]) -> str:
+    def _generate_comprehensive_r_script(self, metadata: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> str:
         """Generate comprehensive R script with explanatory comments."""
         conditions = metadata.get("conditions", [])
-        factors = metadata.get("factors", [])
-        scales = metadata.get('scales', [])
-        is_factorial = len(factors) >= 2
+        factors = [f for f in metadata.get("factors", []) if isinstance(f, dict)]
+        scales = _script_scales(metadata, df)
+        fmap = _script_factor_map(conditions, factors)
         num_conditions = len(conditions)
 
-        def _r_quote(x: str) -> str:
-            return f'"{str(x).replace(chr(92), chr(92)+chr(92)).replace(chr(34), chr(92)+chr(34))}"'
-
-        condition_levels = ", ".join([_r_quote(c) for c in conditions])
+        condition_levels = ", ".join([_r_lit(c) for c in conditions])
 
         r_lines = [
             "# ============================================================================",
@@ -1747,85 +1926,72 @@ class InstructorReportGenerator:
             "# library(car)        # Levene's test (optional)",
             "",
             "# --- SECTION 2: DATA LOADING ---",
-            "data <- read_csv('Simulated_Data.csv', show_col_types = FALSE)",
-            "head(data)  # Verify data loaded correctly",
+            "# Simulated_Data.csv holds the item columns; Simulation_Diagnostics.csv holds the flags.",
+            "df <- read_csv('Simulated_Data.csv', show_col_types = FALSE)",
+            "head(df)  # Verify data loaded correctly",
             "",
             "# --- SECTION 3: DATA PREPARATION ---",
             "# Set condition as factor with proper ordering",
-            f"data$CONDITION <- factor(data$CONDITION, levels = c({condition_levels}))",
+            f"df$CONDITION <- factor(df$CONDITION, levels = c({condition_levels}))",
             "",
-            "# --- SECTION 4: DATA CLEANING ---",
-            "# Apply exclusion criteria (document in your methods!)",
-            "data_clean <- data %>% filter(Exclude_Recommended == 0)",
-            "cat('Total N:', nrow(data), '| Clean N:', nrow(data_clean), '\\n')",
-            "",
-            "# --- SECTION 5: COMPUTE COMPOSITES ---",
+            "# --- SECTION 4: COMPUTE COMPOSITES, JOIN DIAGNOSTICS, APPLY EXCLUSIONS ---",
+            "# Composites are the mean of the item columns (reverse-keyed items recoded first).",
+            "# Document the exclusion criteria in your methods!",
         ]
-
-        for s in scales:
-            name = str(s.get("name", "Scale")).replace(" ", "_")
-            num_items = int(s.get("num_items", 5) or 5)
-            items = [f"{name}_{i}" for i in range(1, num_items + 1)]
-            items_quoted = ", ".join([f'"{x}"' for x in items])
-            r_lines.append(f"# {name}: {num_items} items")
-            r_lines.append(f"data_clean${name}_composite <- rowMeans(data_clean[, c({items_quoted})], na.rm = TRUE)")
-
-        r_lines.append("")
-        r_lines.append("# --- SECTION 6: DESCRIPTIVES BY CONDITION ---")
-        r_lines.append("data_clean %>% group_by(CONDITION) %>%")
-        r_lines.append("  summarise(n = n(),")
-        for s in scales:
-            name = str(s.get("name", "Scale")).replace(" ", "_")
-            r_lines.append(f"            {name}_M = mean({name}_composite, na.rm=TRUE),")
-            r_lines.append(f"            {name}_SD = sd({name}_composite, na.rm=TRUE),")
-        r_lines.append("  )")
-        r_lines.append("")
-        r_lines.append("# --- SECTION 7: STATISTICAL TESTS ---")
-
-        if is_factorial:
-            r_lines.append("# FACTORIAL ANOVA - tests main effects and interaction")
+        r_lines.extend(_r_prep_lines(scales, fmap))
+        r_lines.extend([
+            "cat('Total N:', nrow(df), '| Clean N:', nrow(df_clean), '\\n')",
+            "",
+            "# --- SECTION 5: DESCRIPTIVES BY CONDITION ---",
+        ])
+        if scales:
+            r_lines.append("df_clean %>% group_by(CONDITION) %>%")
+            r_lines.append("  summarise(n = n(),")
             for s in scales:
-                name = str(s.get("name", "Scale")).replace(" ", "_")
-                fnames = [f.get('name', 'F').replace(' ', '_') for f in factors]
-                formula = " * ".join(fnames)
-                r_lines.append(f"model_{name} <- aov({name}_composite ~ {formula}, data = data_clean)")
-                r_lines.append(f"summary(model_{name})")
-                r_lines.append("# Effect sizes: effectsize::eta_squared(model, partial = TRUE)")
+                r_lines.append(f"            {s['name']}_M = mean({s['composite']}, na.rm = TRUE),")
+                r_lines.append(f"            {s['name']}_SD = sd({s['composite']}, na.rm = TRUE),")
+            r_lines.append("  )")
+        r_lines.append("")
+        r_lines.append("# --- SECTION 6: STATISTICAL TESTS ---")
+
+        if fmap:
+            r_lines.append("# FACTORIAL ANOVA - tests main effects and interaction")
+            formula = " * ".join(n for n, _ in fmap)
+            for s in scales:
+                r_lines.append(f"model_{s['name']} <- aov({s['composite']} ~ {formula}, data = df_clean)")
+                r_lines.append(f"summary(model_{s['name']})")
+                r_lines.append(f"# Effect sizes: effectsize::eta_squared(model_{s['name']}, partial = TRUE)")
         elif num_conditions == 2:
             r_lines.append("# TWO-GROUP T-TEST")
             r_lines.append("# Welch's t-test (var.equal=FALSE) is more robust")
             for s in scales:
-                name = str(s.get("name", "Scale")).replace(" ", "_")
-                r_lines.append(f"t.test({name}_composite ~ CONDITION, data = data_clean, var.equal = FALSE)")
-                r_lines.append(f"# Effect size: effectsize::cohens_d({name}_composite ~ CONDITION, data = data_clean)")
+                r_lines.append(f"t.test({s['composite']} ~ CONDITION, data = df_clean, var.equal = FALSE)")
+                r_lines.append(f"# Effect size: effectsize::cohens_d({s['composite']} ~ CONDITION, data = df_clean)")
             r_lines.append("")
             r_lines.append("# NON-PARAMETRIC ALTERNATIVE (if non-normal):")
             for s in scales:
-                name = str(s.get("name", "Scale")).replace(" ", "_")
-                r_lines.append(f"# wilcox.test({name}_composite ~ CONDITION, data = data_clean)")
+                r_lines.append(f"# wilcox.test({s['composite']} ~ CONDITION, data = df_clean)")
         elif num_conditions > 2:
             r_lines.append("# ONE-WAY ANOVA")
             for s in scales:
-                name = str(s.get("name", "Scale")).replace(" ", "_")
-                r_lines.append(f"model_{name} <- aov({name}_composite ~ CONDITION, data = data_clean)")
-                r_lines.append(f"summary(model_{name})")
-                r_lines.append(f"# Post-hoc: TukeyHSD(model_{name})")
+                r_lines.append(f"model_{s['name']} <- aov({s['composite']} ~ CONDITION, data = df_clean)")
+                r_lines.append(f"summary(model_{s['name']})")
+                r_lines.append(f"# Post-hoc: TukeyHSD(model_{s['name']})")
             r_lines.append("")
             r_lines.append("# NON-PARAMETRIC ALTERNATIVE:")
             for s in scales:
-                name = str(s.get("name", "Scale")).replace(" ", "_")
-                r_lines.append(f"# kruskal.test({name}_composite ~ CONDITION, data = data_clean)")
+                r_lines.append(f"# kruskal.test({s['composite']} ~ CONDITION, data = df_clean)")
 
         r_lines.append("")
         r_lines.append("# ============================================================================")
         return "\n".join(r_lines)
 
-    def _generate_python_script(self, metadata: Dict[str, Any]) -> str:
+    def _generate_python_script(self, metadata: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> str:
         """Generate Python analysis script with explanatory comments."""
-        conditions = metadata.get("conditions", [])
-        factors = metadata.get("factors", [])
-        scales = metadata.get('scales', [])
-        is_factorial = len(factors) >= 2
+        conditions = [str(c) for c in metadata.get("conditions", [])]
+        factors = [f for f in metadata.get("factors", []) if isinstance(f, dict)]
+        scales = _script_scales(metadata, df)
+        fmap = _script_factor_map(conditions, factors)
         num_conditions = len(conditions)
 
         py_lines = [
@@ -1835,70 +2001,83 @@ class InstructorReportGenerator:
             f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             "# ============================================================================",
             "",
+            "import os",
             "import pandas as pd",
             "import numpy as np",
             "from scipy import stats",
             "",
             "# --- SECTION 1: DATA LOADING ---",
+            "# Simulated_Data.csv holds the item columns; Simulation_Diagnostics.csv holds the flags.",
             "df = pd.read_csv('Simulated_Data.csv')",
             "print('Dataset shape:', df.shape)",
             "",
-            "# --- SECTION 2: DATA PREPARATION ---",
-            f"condition_order = {conditions}",
-            "df['CONDITION'] = pd.Categorical(df['CONDITION'], categories=condition_order, ordered=True)",
-            "",
-            "# --- SECTION 3: DATA CLEANING ---",
-            "# Apply exclusion criteria (document in methods!)",
-            "df_clean = df[df['Exclude_Recommended'] == 0].copy()",
+            "# --- SECTION 2: COMPUTE COMPOSITES, JOIN DIAGNOSTICS, APPLY EXCLUSIONS ---",
+            "# Composites are the mean of the item columns (reverse-keyed items recoded first).",
+            "# Document the exclusion criteria in your methods!",
+        ]
+        py_lines.extend(_py_prep_lines(scales, fmap))
+        py_lines.extend([
             "print(f'Total N: {len(df)} | Clean N: {len(df_clean)}')",
             "",
-            "# --- SECTION 4: COMPUTE COMPOSITES ---",
-        ]
-
+            "# --- SECTION 3: DATA PREPARATION ---",
+            f"condition_order = {conditions}",
+            "df_clean['CONDITION'] = pd.Categorical(df_clean['CONDITION'], categories=condition_order, ordered=True)",
+            "",
+            "# --- SECTION 4: DESCRIPTIVES ---",
+        ])
         for s in scales:
-            name = str(s.get("name", "Scale")).replace(" ", "_")
-            num_items = int(s.get("num_items", 5) or 5)
-            items = [f"{name}_{i}" for i in range(1, num_items + 1)]
-            py_lines.append(f"# {name}: {num_items} items")
-            py_lines.append(f"df_clean['{name}_composite'] = df_clean[{items}].mean(axis=1)")
+            py_lines.append(f"print(df_clean.groupby('CONDITION', observed=True)['{s['composite']}'].agg(['count', 'mean', 'std']))")
 
         py_lines.append("")
-        py_lines.append("# --- SECTION 5: DESCRIPTIVES ---")
-        for s in scales:
-            name = str(s.get("name", "Scale")).replace(" ", "_")
-            py_lines.append(f"print(df_clean.groupby('CONDITION')['{name}_composite'].agg(['count', 'mean', 'std']))")
-
-        py_lines.append("")
-        py_lines.append("# --- SECTION 6: STATISTICAL TESTS ---")
+        py_lines.append("# --- SECTION 5: STATISTICAL TESTS ---")
 
         if num_conditions == 2 and conditions:
             py_lines.append("# TWO-GROUP T-TEST")
-            py_lines.append(f"cond1, cond2 = '{conditions[0]}', '{conditions[1]}'")
+            py_lines.append(f"cond1, cond2 = {conditions[0]!r}, {conditions[1]!r}")
             for s in scales:
-                name = str(s.get("name", "Scale")).replace(" ", "_")
-                py_lines.append(f"g1 = df_clean[df_clean['CONDITION'] == cond1]['{name}_composite']")
-                py_lines.append(f"g2 = df_clean[df_clean['CONDITION'] == cond2]['{name}_composite']")
+                py_lines.append(f"g1 = df_clean[df_clean['CONDITION'] == cond1]['{s['composite']}'].dropna()")
+                py_lines.append(f"g2 = df_clean[df_clean['CONDITION'] == cond2]['{s['composite']}'].dropna()")
                 py_lines.append("t_stat, p_val = stats.ttest_ind(g1, g2, equal_var=False)  # Welch's t-test")
-                py_lines.append(f"print(f'{name}: t={{t_stat:.3f}}, p={{p_val:.4f}}')")
+                py_lines.append(f"print(f'{s['name']}: t={{t_stat:.3f}}, p={{p_val:.4f}}')")
                 py_lines.append("# Cohen's d")
                 py_lines.append("d = (g1.mean() - g2.mean()) / np.sqrt((g1.std()**2 + g2.std()**2) / 2)")
                 py_lines.append("print(f\"Cohen's d = {d:.3f}\")")
         elif num_conditions > 2:
             py_lines.append("# ONE-WAY ANOVA")
             for s in scales:
-                name = str(s.get("name", "Scale")).replace(" ", "_")
-                py_lines.append(f"groups = [df_clean[df_clean['CONDITION']==c]['{name}_composite'] for c in condition_order]")
+                py_lines.append(f"groups = [df_clean[df_clean['CONDITION'] == c]['{s['composite']}'].dropna() for c in condition_order]")
                 py_lines.append("f_stat, p_val = stats.f_oneway(*groups)")
-                py_lines.append(f"print(f'{name} ANOVA: F={{f_stat:.3f}}, p={{p_val:.4f}}')")
+                py_lines.append(f"print(f'{s['name']} ANOVA: F={{f_stat:.3f}}, p={{p_val:.4f}}')")
 
         py_lines.append("")
         py_lines.append("# ============================================================================")
         return "\n".join(py_lines)
 
-    def _generate_spss_syntax(self, metadata: Dict[str, Any]) -> str:
+    def _spss_diag_merge_lines(self) -> List[str]:
+        return [
+            "* Exclude_Recommended lives in Simulation_Diagnostics.csv; match it on ResponseId.",
+            "* Import 'Simulation_Diagnostics.csv' the same way (File > Import Data > CSV Data...), then run:",
+            "DATASET NAME diag WINDOW=FRONT.",
+            "DATASET ACTIVATE diag.",
+            "SORT CASES BY ResponseId (A).",
+            "DATASET ACTIVATE data.",
+            "SORT CASES BY ResponseId (A).",
+            "MATCH FILES /FILE=* /TABLE=diag /BY ResponseId.",
+            "EXECUTE.",
+            "",
+            "USE ALL.",
+            "COMPUTE filter_$=(Exclude_Recommended = 0).",
+            "VARIABLE LABELS filter_$ 'Exclude_Recommended = 0 (FILTER)'.",
+            "VALUE LABELS filter_$ 0 'Not Selected' 1 'Selected'.",
+            "FORMATS filter_$ (f1.0).",
+            "FILTER BY filter_$.",
+            "EXECUTE.",
+        ]
+
+    def _generate_spss_syntax(self, metadata: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> str:
         """Generate SPSS syntax with explanatory comments."""
         conditions = metadata.get("conditions", [])
-        scales = metadata.get('scales', [])
+        scales = _script_scales(metadata, df)
         num_conditions = len(conditions)
 
         spss_lines = [
@@ -1909,74 +2088,77 @@ class InstructorReportGenerator:
             "* ============================================================================.",
             "",
             "* --- SECTION 1: DATA LOADING ---.",
-            "* Use File > Open > Data to import Simulated_Data.csv.",
-            "* Or use GET DATA /TYPE=TXT command.",
+            "* Use File > Import Data > CSV Data... to import Simulated_Data.csv",
+            "* (one header row; text columns as strings).",
+            "DATASET NAME data WINDOW=FRONT.",
             "",
-            "* --- SECTION 2: DATA CLEANING ---.",
-            "* Filter to clean data (exclude flagged participants).",
-            "USE ALL.",
-            "COMPUTE filter_clean = (Exclude_Recommended = 0).",
-            "FILTER BY filter_clean.",
-            "EXECUTE.",
+            "* CONDITION is a string column; create a numeric version with value labels.",
+            "AUTORECODE VARIABLES=CONDITION /INTO CONDITION_num /PRINT.",
+            "",
+            "* --- SECTION 2: COMPUTE COMPOSITES ---.",
+            "* Composites are the mean of the item columns (reverse-keyed items recoded first).",
+        ]
+
+        for s in scales:
+            if s["reverse"]:
+                spss_lines.append(f"* {s['raw']} - reverse code items {s['reverse']}.")
+                for r_item in s["reverse"]:
+                    item_name = f"{s['name']}_{r_item}"
+                    spss_lines.append(f"COMPUTE {item_name}_R = {s['flip']} - {item_name}.")
+                spss_lines.append("EXECUTE.")
+            spss_lines.append(f"* {s['raw']}: composite from the item columns.")
+            spss_lines.append(f"COMPUTE {s['composite']} = MEAN({' '.join(s['composite_items'])}).")
+            spss_lines.append("EXECUTE.")
+
+        spss_lines.append("")
+        spss_lines.append("* --- SECTION 3: DATA CLEANING ---.")
+        spss_lines.extend(self._spss_diag_merge_lines())
+        spss_lines.extend([
             "",
             "* Check sample size.",
             "FREQUENCIES VARIABLES=CONDITION.",
             "",
-            "* --- SECTION 3: COMPUTE COMPOSITES ---.",
-        ]
+        ])
 
-        for s in scales:
-            name = str(s.get("name", "Scale")).replace(" ", "_")
-            num_items = int(s.get("num_items", 5) or 5)
-            items = [f"{name}_{i}" for i in range(1, num_items + 1)]
-            items_str = " ".join(items)
-            spss_lines.append(f"* {name}: {num_items} items.")
-            spss_lines.append(f"COMPUTE {name}_composite = MEAN({items_str}).")
-            spss_lines.append("EXECUTE.")
-
-        spss_lines.append("")
         spss_lines.append("* --- SECTION 4: DESCRIPTIVES ---.")
-        dv_vars = " ".join([f"{str(s.get('name', 'Scale')).replace(' ', '_')}_composite" for s in scales])
-        spss_lines.append(f"MEANS TABLES={dv_vars} BY CONDITION")
-        spss_lines.append("  /CELLS=MEAN STDDEV COUNT.")
+        if scales:
+            dv_vars = " ".join(s["composite"] for s in scales)
+            spss_lines.append(f"MEANS TABLES={dv_vars} BY CONDITION")
+            spss_lines.append("  /CELLS=MEAN STDDEV COUNT.")
         spss_lines.append("")
         spss_lines.append("* --- SECTION 5: STATISTICAL TESTS ---.")
 
         if num_conditions == 2:
-            spss_lines.append("* TWO-GROUP T-TEST.")
+            spss_lines.append("* TWO-GROUP T-TEST (CONDITION_num is the numeric version of CONDITION).")
             spss_lines.append("* Levene's test included in output - check for equal variances.")
             for s in scales:
-                name = str(s.get("name", "Scale")).replace(" ", "_")
-                spss_lines.append(f"T-TEST GROUPS=CONDITION")
-                spss_lines.append(f"  /VARIABLES={name}_composite")
+                spss_lines.append(f"T-TEST GROUPS=CONDITION_num(1 2)")
+                spss_lines.append(f"  /VARIABLES={s['composite']}")
                 spss_lines.append("  /MISSING=ANALYSIS.")
             spss_lines.append("")
             spss_lines.append("* NON-PARAMETRIC: Mann-Whitney U.")
             for s in scales:
-                name = str(s.get("name", "Scale")).replace(" ", "_")
-                spss_lines.append(f"NPAR TESTS /M-W={name}_composite BY CONDITION(1 2).")
+                spss_lines.append(f"NPAR TESTS /M-W={s['composite']} BY CONDITION_num(1 2).")
         elif num_conditions > 2:
             spss_lines.append("* ONE-WAY ANOVA with post-hoc tests.")
             for s in scales:
-                name = str(s.get("name", "Scale")).replace(" ", "_")
-                spss_lines.append(f"ONEWAY {name}_composite BY CONDITION")
+                spss_lines.append(f"ONEWAY {s['composite']} BY CONDITION_num")
                 spss_lines.append("  /STATISTICS DESCRIPTIVES HOMOGENEITY")
                 spss_lines.append("  /POSTHOC=TUKEY ALPHA(0.05).")
             spss_lines.append("")
             spss_lines.append("* For effect size (eta-squared), use GLM.")
             for s in scales:
-                name = str(s.get("name", "Scale")).replace(" ", "_")
-                spss_lines.append(f"UNIANOVA {name}_composite BY CONDITION")
+                spss_lines.append(f"UNIANOVA {s['composite']} BY CONDITION_num")
                 spss_lines.append("  /PRINT=ETASQ.")
 
         spss_lines.append("")
         spss_lines.append("* ============================================================================.")
         return "\n".join(spss_lines)
 
-    def _generate_stata_script(self, metadata: Dict[str, Any]) -> str:
+    def _generate_stata_script(self, metadata: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> str:
         """Generate Stata script with explanatory comments."""
         conditions = metadata.get("conditions", [])
-        scales = metadata.get('scales', [])
+        scales = _script_scales(metadata, df, lowercase=True)
         num_conditions = len(conditions)
 
         stata_lines = [
@@ -1987,36 +2169,54 @@ class InstructorReportGenerator:
             "   ============================================================================ */",
             "",
             "// --- SECTION 1: DATA LOADING ---",
+            "// Note: import delimited lower-cases variable names (CONDITION -> condition).",
             "clear all",
-            'import delimited "Simulated_Data.csv", clear',
+            'import delimited "Simulated_Data.csv", clear varnames(1)',
             "describe",
             "",
             "// --- SECTION 2: DATA PREPARATION ---",
             "// Encode condition as numeric factor",
             "encode condition, generate(condition_num)",
             "",
-            "// --- SECTION 3: DATA CLEANING ---",
+            "// --- SECTION 3: COMPUTE COMPOSITES ---",
+            "// Composites are the mean of the item columns (reverse-keyed items recoded first).",
+        ]
+
+        for s in scales:
+            if s["reverse"]:
+                stata_lines.append(f"// {s['raw']} - reverse code items {s['reverse']}")
+                for r_item in s["reverse"]:
+                    item_name = f"{s['name']}_{r_item}"
+                    stata_lines.append(f"gen {item_name}_r = {s['flip']} - {item_name}")
+            stata_lines.append(f"egen {s['composite']} = rowmean({' '.join(s['composite_items'])})")
+
+        stata_lines.extend([
+            "",
+            "// --- SECTION 4: DATA CLEANING ---",
+            "// Exclude_Recommended lives in Simulation_Diagnostics.csv; merge it on responseid.",
+            'capture confirm file "Simulation_Diagnostics.csv"',
+            "if _rc == 0 {",
+            "    preserve",
+            '    import delimited "Simulation_Diagnostics.csv", clear varnames(1)',
+            "    keep responseid exclude_recommended",
+            "    tempfile diag",
+            "    save `diag'",
+            "    restore",
+            "    merge 1:1 responseid using `diag', keep(master match) nogenerate",
+            "}",
+            "else {",
+            '    display "Simulation_Diagnostics.csv not found; no exclusions applied."',
+            "    gen exclude_recommended = 0",
+            "}",
             "// Keep only clean data (document criteria in methods!)",
             "keep if exclude_recommended == 0",
             "count",
             "tabulate condition",
             "",
-            "// --- SECTION 4: COMPUTE COMPOSITES ---",
-        ]
-
+            "// --- SECTION 5: DESCRIPTIVES ---",
+        ])
         for s in scales:
-            name = str(s.get("name", "Scale")).replace(" ", "_").lower()
-            num_items = int(s.get("num_items", 5) or 5)
-            items = [f"{name}_{i}" for i in range(1, num_items + 1)]
-            items_str = " ".join(items)
-            stata_lines.append(f"// {name}: {num_items} items")
-            stata_lines.append(f"egen {name}_composite = rowmean({items_str})")
-
-        stata_lines.append("")
-        stata_lines.append("// --- SECTION 5: DESCRIPTIVES ---")
-        for s in scales:
-            name = str(s.get("name", "Scale")).replace(" ", "_").lower()
-            stata_lines.append(f"tabstat {name}_composite, by(condition) statistics(n mean sd)")
+            stata_lines.append(f"tabstat {s['composite']}, by(condition) statistics(n mean sd)")
 
         stata_lines.append("")
         stata_lines.append("// --- SECTION 6: STATISTICAL TESTS ---")
@@ -2025,27 +2225,23 @@ class InstructorReportGenerator:
             stata_lines.append("// TWO-GROUP T-TEST")
             stata_lines.append("// Use 'unequal' for Welch's t-test (more robust)")
             for s in scales:
-                name = str(s.get("name", "Scale")).replace(" ", "_").lower()
-                stata_lines.append(f"ttest {name}_composite, by(condition) unequal")
+                stata_lines.append(f"ttest {s['composite']}, by(condition_num) unequal")
             stata_lines.append("")
             stata_lines.append("// NON-PARAMETRIC: Wilcoxon rank-sum (Mann-Whitney)")
             for s in scales:
-                name = str(s.get("name", "Scale")).replace(" ", "_").lower()
-                stata_lines.append(f"ranksum {name}_composite, by(condition)")
+                stata_lines.append(f"ranksum {s['composite']}, by(condition_num)")
         elif num_conditions > 2:
             stata_lines.append("// ONE-WAY ANOVA")
             for s in scales:
-                name = str(s.get("name", "Scale")).replace(" ", "_").lower()
-                stata_lines.append(f"oneway {name}_composite condition, tabulate")
+                stata_lines.append(f"oneway {s['composite']} condition_num, tabulate")
             stata_lines.append("")
             stata_lines.append("// Post-hoc tests")
             stata_lines.append("// Run after anova command:")
-            stata_lines.append("// pwcompare condition, mcompare(tukey) effects")
+            stata_lines.append("// pwcompare condition_num, mcompare(tukey) effects")
             stata_lines.append("")
             stata_lines.append("// NON-PARAMETRIC: Kruskal-Wallis")
             for s in scales:
-                name = str(s.get("name", "Scale")).replace(" ", "_").lower()
-                stata_lines.append(f"kwallis {name}_composite, by(condition)")
+                stata_lines.append(f"kwallis {s['composite']}, by(condition_num)")
 
         stata_lines.append("")
         stata_lines.append("/* ============================================================================ */")

@@ -178,3 +178,34 @@ def test_topic_stop_words_is_frozenset_superset_of_claude_md():
     assert m, "stop-word pattern not found in CLAUDE.md"
     expected = ast.literal_eval(m.group(1))
     assert expected <= TOPIC_STOP_WORDS
+
+
+# ---------------------------------------------------------------------------
+# 7. Composites and dropout metadata agree with the delivered data
+# ---------------------------------------------------------------------------
+def _engine_with_missing(seed):
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    eng = EnhancedSimulationEngine(
+        study_title="T", study_description="d", sample_size=80,
+        conditions=["Control", "Treatment"], factors=[{"name": "G", "levels": ["Control", "Treatment"]}],
+        scales=[{"name": "Trust", "num_items": 4, "scale_points": 7, "reverse_items": [2]},
+                {"name": "Sat", "num_items": 1, "scale_points": 7}],
+        additional_vars=[], demographics={"age_mean": 35, "age_sd": 10},
+        open_ended_questions=[], seed=seed, missing_data_rate=0.05, dropout_rate=0.08)
+    eng.llm_generator.disable_permanently("test: no network")
+    df, md = eng.generate()
+    return df, md
+
+
+@pytest.mark.parametrize("seed", [3, 5, 7, 11])
+def test_composites_equal_mean_of_delivered_items_and_dropouts_match(seed):
+    df, md = _engine_with_missing(seed)
+    items = df[[f"Trust_{i}" for i in range(1, 5)]].astype(float).copy()
+    items["Trust_2"] = 8 - items["Trust_2"]
+    expected = items.mean(axis=1)
+    both_nan = expected.isna() & df["Trust_mean"].isna()
+    assert (both_nan | ((expected - df["Trust_mean"]).abs() <= 0.006)).all()
+    # every counted dropout must have blanked at least one scale cell
+    cols = [c for c in df.columns if c.startswith(("Trust_", "Sat_")) and not c.endswith("_mean")]
+    blanked = df[cols].isna().any(axis=1).sum()
+    assert md["missing_data"]["dropout_count"] <= blanked
