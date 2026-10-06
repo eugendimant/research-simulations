@@ -761,9 +761,9 @@ def test_v1287_no_retired_provider_models():
     chain_bad = [(p.name, p.model) for p in gen._providers if p.model in RETIRED]
     assert not chain_bad, f"retired model(s) in failover chain: {chain_bad}"
     # Groq must keep two independent model lines so one retirement can't kill it.
-    groq = [p for p in gen._providers if p.name.startswith("groq")]
-    assert len({p.model for p in groq}) >= 2, \
-        f"expected >=2 distinct Groq models for resilience, got {[p.model for p in groq]}"
+    # (Checked on the configured constants: the provider chain is empty when no
+    # deployment keys are set, which is the normal state in CI.)
+    assert L.GROQ_MODEL != L.GROQ_MODEL_FALLBACK, "Groq primary and fallback must be distinct models"
 
 
 def test_v1287_reasoning_models_get_low_effort():

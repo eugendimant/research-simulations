@@ -277,8 +277,7 @@ class EnhancedConditionIdentifier:
         'positive', 'negative', 'neutral', 'baseline',
         # Comparison indicators
         'test', 'comparison', 'intervention', 'exposure',
-        'prime', 'priming', 'induction', 'manipulation',
-        # Design indicators
+        'prime', 'priming', 'induction', # Design indicators
         'cell', 'factor', 'level', 'variant', 'alternative',
     }
 

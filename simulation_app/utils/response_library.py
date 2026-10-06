@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.2.8.8"
+__version__ = "1.2.8.9"
 
 import random
 import re
@@ -7818,7 +7818,7 @@ class ComprehensiveResponseGenerator:
                            'do', 'does', 'rate', 'rated', 'rating', 'describe',
                            'explain', 'question', 'context', 'study', 'topic',
                            'the', 'and', 'for', 'any', 'have', 'has', 'feel',
-                           'think', 'way', 'that', 'with', 'are', 'was', 'were'}
+                           'think', 'way', 'with', 'are', 'was', 'were'}
                 _qw = [w for w in re.findall(r'\b[a-zA-Z]{3,}\b', question_text.lower())
                        if w not in _q_stop][:4]
                 _cand = ' '.join(_qw)

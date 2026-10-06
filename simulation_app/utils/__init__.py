@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.8.8 - Effect-size calibration: observed Cohen's d now tracks the configured d (was 2-4x inflated; shift applied to both levels with an SD-blind constant, persona multiplier mean 1.12, composite d not item-count aware). Reverse-keyed scales fixed: raw reverse items now correlate negatively with the scale (alpha after recoding 0.86, was -0.40), composites recode reverse items, alpha audit is reverse-aware, missing-data repair no longer crashes or leaves composites stale
+Version: 1.2.8.9 - Reproducibility, privacy and export fidelity: embedded API keys and default passwords removed (secrets via env or st.secrets), opt-in survey sharing, user-controlled seed with deterministic output, Qualtrics-faithful Simulated_Data.csv plus Simulation_Diagnostics.csv sidecar, analysis scripts that recode reverse items and match the delivered files, validity notice, dead modules removed
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.8.8"
+__version__ = "1.2.8.9"
 
 
 # =============================================================================

@@ -33,27 +33,15 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S102", "S603", "S607"]  # tests exec generated scripts and shell out to ruff
 # ---- Explicit baseline for the REAL-looking findings that remain (37 at time of adding).
 # ---- Each entry is a known issue to fix in source, NOT a judgement that it is fine.
 "simulation_app/app.py" = [
     "S105",  # _ADMIN_PASSWORD_HASH is a SHA-256 hash, not a plaintext password
     "S108",  # "/tmp/.sim_admin" state file
 ]
-"simulation_app/utils/condition_identifier.py" = ["B033"]       # duplicate set item (1)
-"simulation_app/utils/qsf_preview.py" = ["B033"]                # duplicate set items (6)
-"simulation_app/utils/enhanced_simulation_engine.py" = ["F601"]  # repeated dict keys (5): later entry silently wins
 "simulation_app/utils/hbs_error_calibrator.py" = ["S105"]       # "token" is a language token, not a secret (3)
-"simulation_app/utils/instructor_report.py" = [
-    "F821",  # REAL BUG (1): `pairwise_results` undefined in the fallback line-plot path (~line 4496)
-    "B023",  # loop variable captured by closure (3)
-]
 "simulation_app/utils/llm_response_generator.py" = [
-    "F601",  # repeated dict key "were" (1)
     "S310",  # urlopen on https provider URLs (2)
-]
-"simulation_app/utils/response_library.py" = [
-    "F601",  # repeated dict keys (3)
-    "B023",  # loop variable captured by closure (4)
-    "B033",  # duplicate set item (1)
 ]
 "simulation_app/utils/socsim_adapter.py" = ["F821"]  # `pd` only used in string annotations (3): false positive
