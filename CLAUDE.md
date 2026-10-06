@@ -34,7 +34,7 @@ Always present the classification to the user for confirmation before proceeding
 The full system for generating realistic participant behavior: domain detection → persona filtering → weight adjustment → assignment → trait generation → response generation. Refers to the complete chain from `detected_domains` through persona selection (`_CONDITION_PERSONA_AFFINITIES`, `_ADJACENT_DOMAINS`) to the 10-step simulation pipeline in `enhanced_simulation_engine.py`.
 
 ### Admin Dashboard
-Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider stats, simulation history, session state explorer, system info. Password: "Dimant_Admin" (SHA-256 hashed, updated v1.0.4.8).
+Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider stats, simulation history, session state explorer, system info. Password comes from the `ADMIN_PASSWORD` (or `ADMIN_PASSWORD_SHA256`) secret/env var; with none configured the page stays locked. The analytics dashboard uses `ANALYTICS_DASHBOARD_PASSWORD` the same way.
 
 ---
 

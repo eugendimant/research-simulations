@@ -4814,7 +4814,7 @@ def _finalize_builder_design(
         synthetic_qsf = generate_qsf_from_design(parsed_design, raw_inputs=_ri)
         safe_title = re.sub(r'[^a-zA-Z0-9_\- ]', '', title or 'untitled')[:60].strip().replace(' ', '_')
         _date_prefix = datetime.now().strftime("%Y_%m_%d")
-        collect_qsf_async(f"{_date_prefix}_{safe_title}.qsf", synthetic_qsf)
+        _collect_qsf_if_consented(f"{_date_prefix}_{safe_title}.qsf", synthetic_qsf)
     except Exception:
         pass  # Never let collection errors affect the user workflow
 
@@ -7439,7 +7439,47 @@ div[data-testid="stAlert"] {
 # Access: Add ?admin=1 to the URL. Password required.
 # Shows: LLM stats, simulation history, system diagnostics, session state.
 # =====================================================================
-_ADMIN_PASSWORD_HASH = "19465e8fc94da7f22aec392a5514a6494a3e090ce0ba3bd1773c1c9e339dcfac"  # SHA-256 of "Dimant_Admin"
+def _access_code_matches(supplied: str, secret_name: str) -> bool:
+    """Check an access code against a deployment secret (never stored in source).
+
+    The secret is read from the environment or ``st.secrets`` under ``secret_name``
+    (plaintext) or ``<secret_name>_SHA256`` (hex digest). When neither is
+    configured the gate stays closed, so a deployment without the secret simply
+    has no admin/dashboard access instead of a publicly known password.
+    """
+    import hmac
+    if not supplied:
+        return False
+
+
+def _collect_qsf_if_consented(filename: str, content: bytes) -> None:
+    """Forward a survey file to the research collection repo ONLY with explicit consent.
+
+    Collection is opt-in per session: nothing leaves the app unless the user ticked
+    the sharing checkbox on the upload page.
+    """
+    try:
+        if st.session_state.get("share_survey_consent", False):
+            collect_qsf_async(filename, content)
+    except Exception as _e:  # collection must never affect the workflow
+        _app_logging.getLogger(__name__).debug("QSF collection skipped: %s", _e)
+    plain, digest = "", ""
+    for key, target in ((secret_name, "plain"), (secret_name + "_SHA256", "digest")):
+        value = os.environ.get(key, "")
+        if not value:
+            try:
+                value = str(st.secrets.get(key, "") or "")
+            except Exception:  # no secrets.toml configured
+                value = ""
+        if target == "plain":
+            plain = value
+        else:
+            digest = value.strip().lower()
+    if plain and hmac.compare_digest(supplied.encode(), plain.encode()):
+        return True
+    if digest and hmac.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(), digest):
+        return True
+    return False
 
 
 # v1.0.6.3: File-based admin persistence so simulation history survives browser refresh
@@ -7624,8 +7664,7 @@ def _render_admin_dashboard() -> None:
             st.markdown("### Authentication Required")
             _pw = st.text_input("Admin Password", type="password", key="_admin_pw_input")
             if st.button("Authenticate", type="primary", use_container_width=True, key="_admin_auth_btn"):
-                _hash = hashlib.sha256(_pw.encode()).hexdigest()
-                if _hash == _ADMIN_PASSWORD_HASH:
+                if _access_code_matches(_pw, "ADMIN_PASSWORD"):
                     st.session_state["_admin_authenticated"] = True
                     st.rerun()
                 else:
@@ -9165,6 +9204,13 @@ if active_page == 1:
                 change_qsf = True
 
             if change_qsf or not existing_qsf_content:
+                if is_collection_enabled():
+                    st.checkbox(
+                        "Share this survey file with the tool's researchers to help improve it "
+                        "(optional; remove participant or personal details first)",
+                        value=False,
+                        key="share_survey_consent",
+                    )
                 qsf_file = st.file_uploader(
                     "QSF file",
                     type=["qsf", "zip", "json"],
@@ -9210,7 +9256,7 @@ if active_page == 1:
                     # Naming: YYYY_MM_DD_OriginalFilename.qsf
                     _upload_date = datetime.now().strftime("%Y_%m_%d")
                     _upload_name = re.sub(r'[^a-zA-Z0-9_\-.]', '_', qsf_file.name)
-                    collect_qsf_async(f"{_upload_date}_{_upload_name}", payload)
+                    _collect_qsf_if_consented(f"{_upload_date}_{_upload_name}", payload)
                     with st.spinner("Analyzing experimental design..."):
                         enhanced_analysis = _perform_enhanced_analysis(
                             qsf_content=payload,
@@ -15603,11 +15649,7 @@ if active_page == 3:
                 key="analytics_dashboard_pw",
                 help="Enter the access code to unlock the professional analytics dashboard.",
             )
-            _DASHBOARD_PW_HASH = "f35234aa5d24"  # MD5[:12] of "Dimant_Simulation"
-            _pw_valid = (
-                _dashboard_pw == "Dimant_Simulation"
-                or hashlib.md5(_dashboard_pw.encode()).hexdigest()[:12] == _DASHBOARD_PW_HASH
-            )
+            _pw_valid = _access_code_matches(_dashboard_pw, "ANALYTICS_DASHBOARD_PASSWORD")
             if _dashboard_pw and not _pw_valid:
                 st.warning("Incorrect access code.")
             elif _pw_valid:

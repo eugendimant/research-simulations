@@ -24,3 +24,6 @@ build/
 # Python bytecode anywhere (never commit)
 **/*.pyc
 **/__pycache__/
+
+# Agent worktrees
+.claude/
