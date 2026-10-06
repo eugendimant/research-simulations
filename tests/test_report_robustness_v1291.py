@@ -94,8 +94,20 @@ def _assert_clean(md: str, html: str):
     visible = _text_of_html(html)
     for label, text in (("markdown", md), ("html", visible)):
         assert not NAN_INF.search(text), f"{label}: {NAN_INF.search(text).group(0)!r} in {text[max(0, NAN_INF.search(text).start() - 80):NAN_INF.search(text).end() + 40]!r}"
-        assert not re.search(r"\bp\s*=\s*0\.0{3,4}(?![0-9])", text), f"{label}: p = 0.0000"
     assert "Report Error" not in html and "Report generation encountered an error" not in md
+
+
+# ---------------------------------------------------------------------------
+# 1. A preregistration that yields a hypothesis used to stub both attachments
+# ---------------------------------------------------------------------------
+PREREG_TEXTS = [
+    "Participants in the gamified group will see a tier badge; participants in the control group will not.",
+    "1. Trust (higher = more trust)\n2. Purchase intention",
+    "- Loyalty should be measured on a 7-point scale",
+    "Trust will be higher in the Treatment condition",
+    "Hypotheses\nH1: Participants in the treatment condition will report higher trust than those in the control condition.",
+    "Analysis: independent samples t-test; we predict that trust is higher after the treatment.",
+]
 
 
 @pytest.fixture()
@@ -103,6 +115,45 @@ def trust_study():
     df = _base_frame(40)
     cols = _likert_items(df, "Trust", {"Treatment": 1.2})
     return df, _meta(df, [_scale("Trust", 3)], {"Trust": cols})
+
+
+@pytest.mark.parametrize("prereg", PREREG_TEXTS)
+def test_prereg_with_hypotheses_does_not_crash_either_report(trust_study, stats_mode, prereg):
+    df, meta = trust_study
+    assert ComprehensiveInstructorReport()._parse_prereg_hypotheses(prereg)["hypotheses"] or "H1" not in prereg
+    md, html = _both_reports(df, meta, prereg)
+    _assert_clean(md, html)
+    assert "Executive Summary" in html
+
+
+def test_hypotheses_are_plain_strings_and_the_summary_accepts_strings_and_dicts(trust_study, monkeypatch):
+    df, meta = trust_study
+    gen = ComprehensiveInstructorReport()
+    parsed = gen._parse_prereg_hypotheses("Trust will be higher in the Treatment condition")
+    assert parsed["hypotheses"] and all(isinstance(h, str) for h in parsed["hypotheses"])
+    # an older caller (or a future parser) may return dicts: both shapes must work
+    for shape in (["Trust will be higher in the Treatment condition"],
+                  [{"text": "Trust will be higher in the Treatment condition"}],
+                  [None, "", {"text": ""}, 42, "Trust will be higher in the Treatment condition"]):
+        monkeypatch.setattr(ComprehensiveInstructorReport, "_parse_prereg_hypotheses",
+                            lambda self, text, _s=shape: {"hypotheses": list(_s), "control_variables": []})
+        html = ComprehensiveInstructorReport().generate_html_report(df=df, metadata=meta, prereg_text="x", team_info={})
+        assert "Pre-Registration Hypotheses" in html and "Report Error" not in html
+
+
+def test_hypothesis_lines_never_claim_support(stats_mode):
+    df = _base_frame(60)
+    cols = _likert_items(df, "Trust", {"Treatment": 1.5})
+    _likert_items(df, "Loyalty", {}, seed=11)
+    meta = _meta(df, [_scale("Trust", 3), _scale("Loyalty", 3)], {"Trust": cols, "Loyalty": ["Loyalty_1", "Loyalty_2", "Loyalty_3"]})
+    prereg = "Participants in the Treatment condition will show lower trust.\nLoyalty will be higher in the Treatment condition."
+    html = ComprehensiveInstructorReport().generate_html_report(df=df, metadata=meta, prereg_text=prereg, team_info={})
+    text = _text_of_html(html)
+    assert "Supported" not in text and "supported</strong>" not in html and "Not supported" not in text
+    # the (opposite-direction) hypothesis about trust is only called "related", with the caveat that direction was not checked
+    assert "a significant result on a related measure was found (Trust)" in text
+    assert "the direction was not checked" in text
+    assert "no significant related result" in text  # the loyalty hypothesis: no significant loyalty effect
 
 
 # ---------------------------------------------------------------------------

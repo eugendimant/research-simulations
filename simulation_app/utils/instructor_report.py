@@ -131,6 +131,21 @@ def _find_scale_columns(df: "pd.DataFrame", scale: Dict[str, Any],
     return sorted(cols)
 
 
+def _hypothesis_text(hypothesis: Any) -> str:
+    """Return the wording of one extracted hypothesis.
+
+    ``_parse_prereg_hypotheses`` returns plain strings, but an older/other caller may hand over
+    ``{"text": ...}`` dicts; both are accepted so the executive summary can never fail on the shape.
+    """
+    if isinstance(hypothesis, dict):
+        for key in ("text", "hypothesis", "statement"):
+            value = hypothesis.get(key)
+            if value:
+                return str(value).strip()
+        return ""
+    return "" if hypothesis is None else str(hypothesis).strip()
+
+
 # ---------------------------------------------------------------------------
 # Embedded analysis-script helpers (v1.2.8.9)
 #
@@ -3297,13 +3312,10 @@ class ComprehensiveInstructorReport:
             r'(\w+)\s+will\s+be\s+(?:higher|lower|greater|less|more|stronger|weaker)\s+(?:in|for|among)\s+([^.!?\n]+[.!?]?)',
         ]
         for pattern in effect_patterns:
-            matches = re.findall(pattern, prereg_original, re.IGNORECASE)
-            for match in matches:
-                # Combine match groups into a hypothesis statement
-                if isinstance(match, tuple):
-                    text = " ".join([m for m in match if m]).strip()
-                else:
-                    text = match.strip()
+            # Keep the whole matched sentence. Joining only the capture groups dropped the words between them
+            # ("gamified  see a tier badge ...", "Trust the AI condition") and read as garbled text in the report.
+            for found in re.finditer(pattern, prereg_original, re.IGNORECASE):
+                text = re.sub(r"\s+", " ", found.group(0)).strip()
                 if len(text) > 15 and text not in result["hypotheses"]:
                     result["hypotheses"].append(text)
 
@@ -4179,32 +4191,33 @@ class ComprehensiveInstructorReport:
                 f"<span style='color:#e74c3c;'>✗</span> No differences reached conventional significance (p &lt; .05). "
             )
 
-        # Pre-registration Hypothesis Evaluation
+        # Pre-registration hypotheses. The match below uses words in the measure names only: it never tests the
+        # predicted direction, so it can point to a related result but must never call a hypothesis "supported".
         if prereg_text:
             prereg_info = self._parse_prereg_hypotheses(prereg_text)
-            hypotheses = prereg_info.get("hypotheses", [])
+            hypotheses = [h for h in (_hypothesis_text(x) for x in prereg_info.get("hypotheses", [])) if h]
 
-            html.append("<br><br><strong style='color:#2c3e50;font-size:15px;'>Pre-Registration Evaluation:</strong><br>")
+            html.append("<br><br><strong style='color:#2c3e50;font-size:15px;'>Pre-Registration Hypotheses:</strong><br>")
 
             if hypotheses:
-                html.append(f"The pre-registration document specified {len(hypotheses)} hypothesis/hypotheses. Based on the simulated results:<br>")
-
-                # More sophisticated matching
-                for i, h in enumerate(hypotheses):
-                    h_text = h.get("text", "")
-                    h_matched = False
-
-                    # Check if any significant finding relates to this hypothesis
+                html.append(
+                    f"{len(hypotheses)} hypothesis statement(s) were picked out of the pre-registration text automatically (the wording may be "
+                    "incomplete). Each one is matched to the dependent variables by words in the variable name only, so the lines below point "
+                    "to related results. They do not test the predicted direction and do not show that a hypothesis is supported:<br>"
+                )
+                for h_text in hypotheses:
+                    h_lower = h_text.lower()
+                    related = []
                     for finding in sig_findings:
-                        scale_lower = finding["scale"].lower()
-                        h_lower = h_text.lower()
-                        if any(word in h_lower for word in scale_lower.split() if len(word) > 3):
-                            html.append(f"&nbsp;&nbsp;<span style='color:#27ae60;'>✓</span> <em>\"{h_text[:80]}{'...' if len(h_text) > 80 else ''}\"</em> — <strong>Supported</strong><br>")
-                            h_matched = True
-                            break
-
-                    if not h_matched:
-                        html.append(f"&nbsp;&nbsp;<span style='color:#e74c3c;'>✗</span> <em>\"{h_text[:80]}{'...' if len(h_text) > 80 else ''}\"</em> — Not supported<br>")
+                        words = [w for w in re.findall(r"[a-z0-9]+", str(finding["scale"]).lower()) if len(w) > 3]
+                        if any(w in h_lower for w in words):
+                            related.append(str(finding["scale"]))
+                    shown = _html_lib.escape(h_text[:80] + ("..." if len(h_text) > 80 else ""))
+                    if related:
+                        names = _html_lib.escape(", ".join(related[:3]))
+                        html.append(f"&nbsp;&nbsp;• <em>\"{shown}\"</em> — a significant result on a related measure was found ({names}); the direction was not checked<br>")
+                    else:
+                        html.append(f"&nbsp;&nbsp;• <em>\"{shown}\"</em> — no significant related result<br>")
             else:
                 html.append("No specific hypotheses were extracted from the pre-registration document. Review the document manually to compare predictions with results.")
 
