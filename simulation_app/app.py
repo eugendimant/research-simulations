@@ -2755,14 +2755,20 @@ def _build_variable_review_rows(
 
     # Add open-ended questions
     for q in inferred.get("open_ended_questions", []):
-        if q and q not in seen_vars:
-            seen_vars.add(q)
+        # open-ended questions are dicts ({"variable_name", "question_text", ...}) in current designs and bare names in old ones
+        if isinstance(q, dict):
+            q_name = str(q.get("variable_name") or q.get("name") or "").strip()
+            q_text = str(q.get("question_text") or "")
+        else:
+            q_name, q_text = str(q or "").strip(), ""
+        if q_name and q_name not in seen_vars:
+            seen_vars.add(q_name)
             rows.append({
-                "Variable": q,
-                "Display Name": q.replace("_", " ").title(),
+                "Variable": q_name,
+                "Display Name": q_name.replace("_", " ").title(),
                 "Type": "Survey Question",
                 "Role": "Open-ended",
-                "Question Text": "",
+                "Question Text": q_text[:60] + ("..." if len(q_text) > 60 else ""),
             })
 
     # If no rows, add a placeholder
