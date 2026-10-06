@@ -413,6 +413,74 @@ def _markdown_to_html(markdown_text: str, title: str = "Study Summary") -> str:
     return _harden_report_html('\n'.join(html_parts))
 
 
+def _build_instructor_reports(
+    *,
+    df: pd.DataFrame,
+    metadata: Dict[str, Any],
+    schema_results: Dict[str, Any],
+    prereg_text: str,
+    team_info: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build the student summary and the two instructor analyses; each document fails on its own.
+
+    The Markdown analysis, the HTML analysis and the student summary used to share try blocks,
+    so one failure replaced several attachments with a stub (an HTML failure also threw away
+    the Markdown text that had already been built). Every document now has its own try block
+    and its own stub, and every failure is added to ``problems``, which the instructor email
+    turns into a [REPORT ERROR] subject. A section the generator had to skip on its own
+    (``section_errors``) is listed too: that document is still delivered, with a one-line note
+    where the section would have been.
+
+    Returns ``{"student_md": str, "comp_md": str, "comp_html": str, "problems": List[str]}``.
+    """
+    problems: List[str] = []
+
+    def _build(label: Any, produce: Any, stub: Any) -> str:
+        try:
+            reporter, text = produce()
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError("the generator returned no text")
+        except Exception as err:  # noqa: BLE001 - one failed document must not replace the others
+            _log(f"{label} generation failed: {type(err).__name__}: {err}", level="error")
+            problems.append(f"{label}: {type(err).__name__}: {err}")
+            return stub(err)
+        for note in list(getattr(reporter, "section_errors", None) or []):
+            _log(f"{label}: skipped section {note}", level="warning")
+            problems.append(f"{label}, skipped section {note}")
+        return text
+
+    def _student() -> Tuple[Any, str]:
+        generator = InstructorReportGenerator()
+        return generator, generator.generate_markdown_report(
+            df=df, metadata=metadata, schema_validation=schema_results,
+            prereg_text=prereg_text, team_info=team_info)
+
+    def _analysis_md() -> Tuple[Any, str]:
+        reporter = ComprehensiveInstructorReport()
+        return reporter, reporter.generate_comprehensive_report(
+            df=df, metadata=metadata, schema_validation=schema_results,
+            prereg_text=prereg_text, team_info=team_info)
+
+    def _analysis_html() -> Tuple[Any, str]:
+        reporter = ComprehensiveInstructorReport()
+        return reporter, reporter.generate_html_report(
+            df=df, metadata=metadata, schema_validation=schema_results,
+            prereg_text=prereg_text, team_info=team_info)
+
+    return {
+        "student_md": _build(
+            "study summary", _student,
+            lambda err: f"# Study Summary\n\nReport generation encountered an error: {err}\n\nData was generated successfully."),
+        "comp_md": _build(
+            "instructor analysis (Markdown)", _analysis_md,
+            lambda err: f"# Comprehensive Report\n\nReport generation encountered an error: {err}\n\nData was generated successfully."),
+        "comp_html": _build(
+            "instructor analysis (HTML)", _analysis_html,
+            lambda err: f"<html><body><h1>Report Error</h1><p>{html_escape(str(err))}</p></body></html>"),
+        "problems": problems,
+    }
+
+
 def _zip_without_prefix(zip_bytes: bytes, prefix: str) -> bytes:
     """Copy of a ZIP without the entries under ``prefix`` (the original bytes when nothing changes or on any error)."""
     try:
@@ -15493,62 +15561,26 @@ if active_page == 3:
             stata_bytes = stata_script.encode("utf-8")
             # v1.2.3: Wrap report generation in try/except to prevent report errors
             # from crashing the entire simulation. Data generation succeeded at this point.
-            _report_problems: List[str] = []  # v1.2.9.1: surfaced in the instructor email subject and body
-            try:
-                # User study summary (included in user's download ZIP)
-                instructor_report = InstructorReportGenerator().generate_markdown_report(
-                    df=df,
-                    metadata=metadata,
-                    schema_validation=schema_results,
-                    prereg_text=st.session_state.get("prereg_text_sanitized", ""),
-                    team_info={
-                        "team_name": st.session_state.get("team_name", ""),
-                        "team_members": st.session_state.get("team_members_raw", ""),
-                    },
-                )
-                instructor_bytes = instructor_report.encode("utf-8")
-            except Exception as report_err:
-                _log(f"Study summary generation failed: {report_err}", level="error")
-                _report_problems.append(f"study summary: {type(report_err).__name__}: {report_err}")
-                instructor_report = f"# Study Summary\n\nReport generation encountered an error: {report_err}\n\nData was generated successfully."
-                instructor_bytes = instructor_report.encode("utf-8")
-
-            try:
-                # COMPREHENSIVE instructor report (for instructor email ONLY - not included in user download)
-                # This includes detailed statistical analysis, hypothesis testing, and recommendations
-                comprehensive_reporter = ComprehensiveInstructorReport()
-                team_info_dict = {
+            # v1.2.9.1: the study summary, the Markdown analysis and the HTML analysis each fail on their
+            # own (see _build_instructor_reports); failures are listed in the instructor email subject/body.
+            _built_reports = _build_instructor_reports(
+                df=df,
+                metadata=metadata,
+                schema_results=schema_results,
+                prereg_text=st.session_state.get("prereg_text_sanitized", ""),
+                team_info={
                     "team_name": st.session_state.get("team_name", ""),
                     "team_members": st.session_state.get("team_members_raw", ""),
-                }
-                prereg_text_report = st.session_state.get("prereg_text_sanitized", "")
-
-                # Markdown version (text-based)
-                comprehensive_report = comprehensive_reporter.generate_comprehensive_report(
-                    df=df,
-                    metadata=metadata,
-                    schema_validation=schema_results,
-                    prereg_text=prereg_text_report,
-                    team_info=team_info_dict,
-                )
-                comprehensive_bytes = comprehensive_report.encode("utf-8")
-
-                # HTML version with visualizations and statistical tests
-                comprehensive_html = comprehensive_reporter.generate_html_report(
-                    df=df,
-                    metadata=metadata,
-                    schema_validation=schema_results,
-                    prereg_text=prereg_text_report,
-                    team_info=team_info_dict,
-                )
-                comprehensive_html_bytes = comprehensive_html.encode("utf-8")
-            except Exception as comp_report_err:
-                _log(f"Comprehensive instructor report failed: {comp_report_err}", level="error")
-                _report_problems.append(f"instructor analysis: {type(comp_report_err).__name__}: {comp_report_err}")
-                comprehensive_report = f"# Comprehensive Report\n\nReport generation encountered an error: {comp_report_err}\n\nData was generated successfully."
-                comprehensive_bytes = comprehensive_report.encode("utf-8")
-                comprehensive_html = f"<html><body><h1>Report Error</h1><p>{html_escape(str(comp_report_err))}</p></body></html>"
-                comprehensive_html_bytes = comprehensive_html.encode("utf-8")
+                },
+            )
+            _report_problems: List[str] = _built_reports["problems"]
+            instructor_report = _built_reports["student_md"]  # study summary (included in the user's ZIP)
+            instructor_bytes = instructor_report.encode("utf-8")
+            # COMPREHENSIVE instructor analyses (instructor email ONLY - not included in the user download)
+            comprehensive_report = _built_reports["comp_md"]
+            comprehensive_bytes = comprehensive_report.encode("utf-8")
+            comprehensive_html = _built_reports["comp_html"]
+            comprehensive_html_bytes = comprehensive_html.encode("utf-8")
 
             # Generate HTML version of study summary (easy to open and well-formatted)
             try:
