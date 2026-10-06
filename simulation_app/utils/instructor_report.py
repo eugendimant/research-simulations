@@ -1350,46 +1350,29 @@ def _condition_display_labels(conditions: List[Any]) -> Dict[Any, str]:
     return labels
 
 
-def _fmt_p(p: Any, digits: int = 4) -> str:
-    """p-value text for a table cell: '< .001' for tiny values (never '0.0000'), 'n/a' if undefined."""
-    try:
-        v = float(p)
-    except (TypeError, ValueError):
-        return "n/a"
-    if v != v:
-        return "n/a"
-    if v < 0.001:
-        return "< .001"
-    return f"{v:.{digits}f}"
+def _fmt_p(p: Any) -> str:
+    """p-value text for a table cell ('< .001' for tiny values, never '0.0000'); delegates to ``_report_p_cell``."""
+    return _report_p_cell(p)
 
 
-def _p_eq(p: Any, digits: int = 4) -> str:
-    """Statement form: 'p = 0.0123', 'p < .001' or 'p undefined'."""
-    s = _fmt_p(p, digits)
-    if s == "n/a":
-        return "p undefined"
-    return f"p {s}" if s.startswith("<") else f"p = {s}"
+def _p_eq(p: Any) -> str:
+    """Statement form ('p = 0.0123' / 'p < .001' / 'p n/a'); delegates to ``_report_p_text``."""
+    return _report_p_text(p)
 
 
-def _fmt_p_html(p: Any, digits: int = 4) -> str:
-    """HTML-safe version of ``_fmt_p``."""
-    return _html_lib.escape(_fmt_p(p, digits))
+def _fmt_p_html(p: Any) -> str:
+    """HTML-safe table-cell p-value ('&lt; .001' for tiny values)."""
+    return _report_p_cell(p, html=True)
 
 
-def _p_eq_html(p: Any, digits: int = 4) -> str:
-    """HTML-safe version of ``_p_eq``."""
-    return _html_lib.escape(_p_eq(p, digits))
+def _p_eq_html(p: Any) -> str:
+    """HTML-safe statement form ('p &lt; .001')."""
+    return _report_p_text(p, html=True)
 
 
 def _fmt_stat(x: Any, digits: int = 3) -> str:
     """Number with fixed decimals; 'undefined' for NaN / inf (e.g. a t statistic with zero variance)."""
-    try:
-        v = float(x)
-    except (TypeError, ValueError):
-        return "undefined"
-    if v != v or math.isinf(v):
-        return "undefined"
-    return f"{v:.{digits}f}"
+    return _fnum(x, f".{digits}f", na="undefined")
 
 
 def _cohens_d_label(d: Any) -> str:
@@ -1549,12 +1532,16 @@ def _resolve_factorial_design(conditions: List[Any], factors: List[Dict[str, Any
     if len(usable) < 2:
         return {"ok": False, "reason": "fewer than two factors with at least two levels are defined"}
     reason = ""
+    # names that spell out ALL usable factors can still be analysed on a prefix of them (the rest is pooled)
+    parsed_all = {cond: _parse_condition_levels(cond, usable) for cond in conditions}
     for k in range(min(len(usable), max_factors), 1, -1):
         facs = usable[:k]
         level_map: Dict[Any, Tuple[str, ...]] = {}
         unparsed: List[Any] = []
         for cond in conditions:
             parsed = _parse_condition_levels(cond, facs)
+            if parsed is None and parsed_all[cond] is not None:
+                parsed = parsed_all[cond][:k]
             if parsed is None:
                 unparsed.append(cond)
             else:
@@ -6987,17 +6974,17 @@ class ComprehensiveInstructorReport:
                     if "levene_test" in stats_results:
                         lev = stats_results["levene_test"]
                         if lev["homogeneous"]:
-                            assumption_notes.append(f"Variance homogeneity: ✓ Met (Levene's {_p_eq_html(lev['p_value'], 3)})")
+                            assumption_notes.append(f"Variance homogeneity: ✓ Met (Levene's {_p_eq_html(lev['p_value'])})")
                         else:
-                            assumption_notes.append(f"Variance homogeneity: Welch's correction applied (Levene's {_p_eq_html(lev['p_value'], 3)})")
+                            assumption_notes.append(f"Variance homogeneity: Welch's correction applied (Levene's {_p_eq_html(lev['p_value'])})")
 
                     if "normality_test" in stats_results:
                         sw = stats_results["normality_test"]
                         _sw_name = _html_lib.escape(str(sw.get("test_name", "Shapiro-Wilk")))
                         if sw["normal"]:
-                            assumption_notes.append(f"Normality: ✓ Met ({_p_eq_html(sw['p_value'], 3)}, {_sw_name} on the pooled scores)")
+                            assumption_notes.append(f"Normality: ✓ Met ({_p_eq_html(sw['p_value'])}, {_sw_name} on the pooled scores)")
                         else:
-                            assumption_notes.append(f"Normality: Non-parametric tests also reported ({_p_eq_html(sw['p_value'], 3)}, {_sw_name} on the pooled scores)")
+                            assumption_notes.append(f"Normality: Non-parametric tests also reported ({_p_eq_html(sw['p_value'])}, {_sw_name} on the pooled scores)")
 
                     if assumption_notes:
                         html_parts.append("<div class='stat-box' style='background:#f8f9fa;'>")
