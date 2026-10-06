@@ -66,9 +66,10 @@ Item-level missingness and dropout are available under advanced settings and are
 
 - Conditions and factors, including embedded-data randomization, with 644 block-name exclusions and 77 regex patterns filtering trash/admin/structural blocks
 - DVs by type: matrix, single-item, numbered items, slider, numeric input, constant sum, rank order, and more
-- Ten well-known instruments — Big Five (BFI/IPIP/NEO wording), PANAS, Satisfaction With Life, Perceived Stress, Rosenberg Self-Esteem, Need for Cognition, Regulatory Focus, Risk Propensity, Trust Propensity and a social-desirability scale — plus reverse-coded items
-- DisplayLogic and SkipLogic, as a question dependency graph
+- Whether a question carries DisplayLogic or SkipLogic (as a per-question flag)
 Generation then respects those types: constant-sum items are renormalized to sum exactly to the total (largest-remainder), and rank-order DVs are valid 1..k permutations rather than independent integers.
+
+**Not detected from the QSF, despite tables existing for it.** Validated instruments (`WELL_KNOWN_SCALES`, 10 entries) and reverse-coded items each have a detector in `qsf_preview.py` with no callers, so no parsed scale comes back carrying an instrument name or a `reverse_items` list — verified across 427 scales in 40 corpus QSFs. Reverse-keyed items still work when you mark them yourself on the Design page or describe them to the builder, whose own `KNOWN_SCALES` table (84 entries, including BFI-10, GAD-7 and PHQ-9) does recognize instruments. The DisplayLogic/SkipLogic dependency-graph builder is uncalled too, so only the per-question flags are populated. All three are tracked in `docs/COVERAGE_ROADMAP.md`.
 
 Separately from the parser, the app reads pre-registration documents in OSF, AEA Registry and AsPredicted formats and checks them against the current design (shown only when one is uploaded).
 

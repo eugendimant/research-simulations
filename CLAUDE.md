@@ -199,7 +199,7 @@ Runs in this order:
 
 ### Three-Level Cascade:
 1. **LLM Generator** (llm_response_generator.py): 9 free provider entries, in order — Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Gemini 2.5 Flash Lite → Groq GPT-OSS 120B → Groq Qwen3.6 27B → Cerebras GPT-OSS 120B → SambaNova Llama 3.3 70B → Mistral Small → OpenRouter Mistral Small 3.1. `_builtin_providers` in that file is authoritative
-2. **ComprehensiveResponseGenerator** (response_library.py): Template-based + Markov chain
+2. **ComprehensiveResponseGenerator** (response_library.py): compositional template engine (opener + intent core + domain elaboration + coda). No Markov chain — `MarkovChainGenerator` lives in `text_generator.py` and nothing in this cascade instantiates it
 3. **TextResponseGenerator** (persona_library.py): Basic template fallback
 
 ### Key Principle: NO response should EVER be off-topic
@@ -341,9 +341,13 @@ Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests 
 
 ## State Persistence
 
-- `_save_step_state()` before navigation
-- `_restore_step_state()` at step start
-- `persist_keys` defines what survives navigation
+- Page-based rendering keeps state in `st.session_state` directly. The
+  `_save_step_state()` / `_restore_step_state()` snapshot pair was **removed in
+  v1.4.14** (see the note at `app.py:6531`) — do not reintroduce calls to them.
+- `_navigate_to()` mirrors `_widget_persist_keys` to `_p_<key>` so the values of
+  widgets that are no longer rendered survive a page switch. That list currently
+  holds four keys: `study_title`, `study_description`, `team_name`,
+  `team_members_raw` (`app.py:6575`).
 - Must persist: conditions, factors, confirmed scales/DVs, factorial config, sample/effect size
 
 ---

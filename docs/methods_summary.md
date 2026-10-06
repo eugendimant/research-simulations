@@ -69,7 +69,7 @@ If you haven't built your survey yet — or prefer a faster setup — you can **
 3. **Scales and DVs**: Describe your measures in paragraph or list format. The parser recognizes:
    - Standard scale specifications: `"Trust scale (4 items, 1-7)"`
    - Detailed academic format: `"Perceived Quality (PQ): 3 items (7-point Likert; 1=low, 7=high)"`
-   - Known validated instruments: `"BFI-10"`, `"PANAS"`, `"GAD-7"`, `"PHQ-9"` and others. Three tables recognize these: `KNOWN_SCALES` (`utils/survey_builder.py`, 84 entries) supplies expected structure on this builder path — it is where `GAD-7` (7 items, 0-3), `PHQ-9` (9 items, 0-3) and a `BFI-10`-specific entry (10 items, 1-5) live; `WELL_KNOWN_SCALES` (`utils/qsf_preview.py`, 10 entries) does the same on the QSF path; and the construct map supplies published norms for calibration. A name may hit one, two or all three
+   - Known validated instruments: `"BFI-10"`, `"PANAS"`, `"GAD-7"`, `"PHQ-9"` and others. Three tables recognize these: `KNOWN_SCALES` (`utils/survey_builder.py`, 84 entries) supplies expected structure on this builder path — it is where `GAD-7` (7 items, 0-3), `PHQ-9` (9 items, 0-3) and a `BFI-10`-specific entry (10 items, 1-5) live; `WELL_KNOWN_SCALES` (`utils/qsf_preview.py`, 10 entries) is present for the QSF path but its detector `_detect_well_known_scale()` has no callers, so the QSF path recognizes no validated instruments today; and the construct map supplies published norms for calibration. A name may hit one, two or all three
    - Numeric measures: `"Willingness to Pay (WTP): 1 item (open-ended numeric)"`
    - Binary measures: `"Manipulation check (Yes/No)"`
 4. **Open-ended questions**: Simply list your qualitative questions
@@ -87,7 +87,8 @@ Regardless of input method, you review and adjust the detected design:
 - **Scale type auto-correction**: Single-item DVs are automatically identified (not mislabeled as "Likert Scale"); multi-item scales are properly categorized by type (matrix, numbered items, single item). Scale min/max values are propagated from QSF detection.
 - Add or remove measures as needed
 - **Custom demographic variables**: Add demographic questions beyond the defaults (Age, Gender). Quick-add templates include Political Orientation, Education Level, Ethnicity, Household Income, Employment Status, Religion, and Party Identification. Each demographic is fully customizable:
-  - **Categorical**: Edit options and their probability weights (e.g., Political Orientation with "Very Conservative" through "Very Progressive")
+  - **Categorical**: Edit options and their probability weights
+- **Ordinal**: Ordered categories with weights (e.g. Political Orientation, "Very Liberal" through "Very Conservative")
   - **Ordinal**: Set ordered categories with center-weighted distribution
   - **Numeric**: Configure mean, standard deviation, and min/max bounds (e.g., household income)
   - **Distribution preview**: See the expected distribution before generating
@@ -103,7 +104,7 @@ The system produces a publication-ready CSV file containing:
 - Unique open-ended text responses
 - Demographics (including custom variables) and metadata
 - Quality metrics and validation flags
-- A comprehensive instructor report with statistical analyses, persona breakdowns, and effect size verification
+- A study summary report (`User_Study_Summary.md` / `.html`) with persona breakdowns, trait profiles by condition, and a configured-vs-observed effect size table
 
 ---
 
@@ -149,11 +150,18 @@ Treatment effects are calibrated using Cohen's d, the standard measure in behavi
 d = (Treatment Mean - Control Mean) / Pooled Standard Deviation
 ```
 
-When you specify d = 0.5, the system adjusts response distributions so that the mean difference between conditions matches your target. This is achieved through:
+When you specify d = 0.5, the system shifts response distributions between
+conditions in the configured direction. The configured *d* is a **target, not an
+achieved value** — see the effect-size note under Validation below. This works
+through:
 
 1. **Semantic parsing** of condition names to determine effect direction
 2. **Graduated adjustments** applied at the individual response level
-3. **Validation checks** confirming achieved effects match targets
+
+Achieved effects are written to `Metadata.json` under `effect_sizes_observed`
+for you to check. No automatic target check runs during generation:
+`_validate_effect_sizes()` exists in the engine, with a 0.15 tolerance, but has
+no callers.
 
 ### Scale Reliability Modeling
 
@@ -163,7 +171,7 @@ Multi-item scales exhibit realistic internal consistency (Cronbach's alpha) thro
 Response = lambda * Common_Factor + sqrt(1 - lambda^2) * Unique_Error
 ```
 
-Where lambda (factor loading) is derived from the target reliability. Items measuring the same construct share common variance while retaining item-specific variation, producing alpha values typically ranging 0.75-0.90.
+Where lambda (factor loading) is derived from the target reliability. Items measuring the same construct share common variance while retaining item-specific variation, producing alpha values from about 0.75 up to ~0.97. Correlation injection is one-sided — it raises alpha toward the target (default 0.75) and never lowers it (`enhanced_simulation_engine.py:11877`, whose comment notes items "often exceed the target") — so a fair share of scales land above 0.90.
 
 ### Response Style Modeling
 
@@ -206,12 +214,18 @@ Reverse-coded items receive sophisticated handling that goes beyond simple scale
 - **Acquiescence interaction**: Even respondents who correctly reverse show partial acquiescence pull (~0.5 point, Weijters et al. 2010)
 - **Cross-item failure consistency**: A participant who fails one reverse item is more likely to fail the next (trait-like within session)
 
-### Response Validation Layer
+### Response Validation Layer *(implemented, not yet called during generation)*
 
-Generated responses are validated against expected patterns for each persona type:
-- **Longstring detection**: Flags unrealistic straight-lining for engaged personas
-- **IRV checks**: Ensures response variability matches persona engagement level
-- **Endpoint utilization**: Verifies extreme response style personas actually use scale endpoints
+`_validate_participant_responses()` checks generated responses against expected
+patterns per persona type, but `generate()` does not invoke it, so none of these
+checks currently run:
+- **Longstring detection**: flags unrealistic straight-lining for engaged personas
+- **IRV checks**: response variability against persona engagement level
+- **Endpoint utilization**: whether extreme-response personas really use endpoints
+
+The validation that *does* run post-generation is `HBSValidator` — completion-time
+plausibility, open-ended uniqueness and length, straight-lining prevalence and
+rating–text coherence. Wiring this layer in is tracked in `docs/COVERAGE_ROADMAP.md`.
 
 ### Survey Flow Logic
 
@@ -391,18 +405,22 @@ Configurable proportion of participants fail attention checks, matching real-wor
 
 ### Careless Response Detection
 
-The system can identify (and optionally flag or exclude) simulated careless responses:
+The generated dataset flags (and can recommend excluding) simulated careless
+responses. These columns ship: `Max_Straight_Line`, `Flag_StraightLine`,
+`Flag_Speed`, `Flag_Attention`, `Exclude_Recommended`.
 
-- **Straight-lining**: Same response repeated across items
-- **Alternating patterns**: Systematic alternation (1-7-1-7)
-- **Midpoint overuse**: Excessive neutral responses
-- **Response time anomalies**: Unrealistically fast completion
+- **Straight-lining**: same response repeated across items
+- **Response time anomalies**: unrealistically fast completion
+
+Alternating-pattern (1-7-1-7) and midpoint-overuse detection are implemented in
+`_detect_careless_patterns()` but it has no callers, so neither appears as an
+output column.
 
 ### Validation Metrics
 
 Generated datasets include quality metrics:
 
-- Achieved effect sizes with confidence intervals
+- Achieved effect sizes — Cohen's *d*, both group means and both Ns (no confidence intervals; the only 95% CIs in the project are per-condition means in the emailed instructor report)
 - Condition balance verification
 - Missing data rates
 - Response distribution statistics
@@ -420,7 +438,7 @@ Generated datasets include quality metrics:
 ### Output Format
 
 - **CSV file** compatible with R, SPSS, Stata, Python
-- **Instructor report** (HTML) with comprehensive statistical analyses, persona breakdowns, effect size verification, trait profiles by condition, and visualization
+- **Study summary** (Markdown + HTML) with persona breakdowns, trait profiles by condition and configured-vs-observed effect sizes. The fuller statistical report — inferential tests, Condition × Gender chi-squared, charts — is generated separately and emailed to the instructor; it is not part of the download
 - **Metadata** JSON with simulation parameters
 - **Analysis scripts** auto-generated for R, Python, Julia, SPSS, and Stata
 
@@ -485,7 +503,7 @@ The responses exhibit statistical properties matching published research on huma
 
 - Mean responses around 4.0-5.2 on 7-point scales before domain calibration (documented positive response bias); realized DV means span roughly 3.5-5.5 once construct norms apply, with clinical DVs centering lower and satisfaction DVs higher
 - Standard deviations of 1.2-1.8 (typical for Likert data)
-- Cronbach's alphas of 0.75-0.90 for multi-item scales
+- Cronbach's alphas from about 0.75 up to ~0.97 for multi-item scales (raised toward the target, never lowered)
 - Effect sizes: configured Cohen's *d* sets the **target**, not a guaranteed outcome. Verify the achieved effect in `Metadata.json` (`effect_sizes_observed`) before relying on the magnitude — as of 1.2.8.7 the realized gap runs several times the configured *d*, and recalibration is in flight. Direction and ordering are reliable; magnitude is not yet.
 
 ### Can I use this for any survey?
@@ -538,7 +556,7 @@ The comprehensive HTML report includes:
 - **Effect size verification**: Configured vs. observed effects with Cohen's d interpretation
 - **Data quality**: Exclusion breakdown (speed, attention, straight-lining), validation corrections
 - **Categorical analysis**: Condition × Gender cross-tabulation with chi-squared test
-- **Executive summary**: AI-generated synthesis of key findings
+- **Executive summary**: automatically generated synthesis of key findings — rule-based, computed from the scale statistics; no LLM is involved
 - **Scientific references**: Full citations for the methodological foundations
 
 ---
@@ -575,9 +593,9 @@ The simulation algorithms are grounded in established survey methodology researc
 3. **Greenleaf, E. A. (1992)**. Measuring extreme response style. *Public Opinion Quarterly, 56*, 328-351.
 4. **Billiet, J. B., & McClendon, M. J. (2000)**. Modeling acquiescence in measurement models for two balanced sets of items. *Structural Equation Modeling, 7*, 608-628.
 5. **Meade, A. W., & Craig, S. B. (2012)**. Identifying careless responses in survey data. *Psychological Methods, 17*, 437-455.
-6. **Paulhus, D. L. (2002)**. Socially desirable responding. *Journal of Personality Assessment, 40*, 13-44.
+6. **Paulhus, D. L. (2002)**. Socially desirable responding: The evolution of a construct. In H. I. Braun, D. N. Jackson & D. E. Wiley (Eds.), *The role of constructs in psychological and educational measurement* (pp. 49-69). Erlbaum.
 7. **Nederhof, A. J. (1985)**. Methods of coping with social desirability bias. *European Journal of Social Psychology, 15*, 263-280.
-8. **Woods, C. M. (2006)**. Careless responding to reverse-worded items. *Journal of Psychoeducational Assessment, 24*, 207-220.
+8. **Woods, C. M. (2006)**. Careless responding to reverse-worded items: Implications for confirmatory factor analysis. *Journal of Psychopathology and Behavioral Assessment, 28*(3), 186-191.
 9. **Weijters, B., et al. (2010)**. The effect of rating scale format on response styles. *International Journal of Research in Marketing, 27*, 236-247.
 
 ### Behavioral Economics & Game Theory

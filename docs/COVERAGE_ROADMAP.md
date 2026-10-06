@@ -7,9 +7,9 @@ design cover everything reasonable for anyone who wants to simulate real human
 behavior, and where are the gaps?**
 
 The tool is genuinely mature: **43 effect-detection domains**, a scientific
-knowledge base of **~255 calibration entries** (187 meta-analytic effects, 68
-game calibrations, construct norms spanning clinical/personality/affect/
-well-being scales), **78 personas** (6 response-style + 72 domain-specific), census-weighted demographics, ex-Gaussian
+knowledge base of **468 calibration entries** (187 meta-analytic effects, 68
+game calibrations, 201 construct norms spanning clinical/personality/affect/
+well-being scales, 12 cultural adjustments), **78 personas** (6 response-style + 72 domain-specific), census-weighted demographics, ex-Gaussian
 response-time realism, optional MCAR and trait/position-dependent missingness
 + survival-skewed dropout (off by default), inter-item
 α targeting, cross-DV correlation, and acquiescence/extremity/SD response styles.
@@ -128,6 +128,23 @@ Ordered by (frequency of need × value ÷ risk). These are larger, mostly
 12. **Per-participant cross-cultural response styles** — `CULTURAL_RESPONSE_STYLES`
     table + `_apply_cultural_response_style()` exist but are **never called**;
     wire nation→ARS/ERS offsets (Johnson et al. 2005; Harzing 2006).
+12b. **Five more implemented-but-uncalled subsystems** (verified 2026-10-06 — each
+    is a definition with zero callers repo-wide, so the behavior the docs used to
+    claim does not run):
+    - `_validate_effect_sizes()` (`enhanced_simulation_engine.py:1552`) — would
+      compare achieved to configured *d* at a 0.15 tolerance.
+    - `_validate_participant_responses()` (`:9480`) — longstring, IRV and
+      endpoint-utilization checks per persona.
+    - `_detect_careless_patterns()` (`:1456`) — the only implementation of
+      alternating-pattern and midpoint-overuse detection; neither reaches output.
+    - `_detect_well_known_scale()` (`qsf_preview.py:1508`) and
+      `_detect_reverse_coded_items()` (`:1530`) — so no QSF-parsed scale carries an
+      instrument name or a `reverse_items` list (0 of 427 scales across 40 QSFs).
+    - `_build_question_dependency_graph()` (`qsf_preview.py:1738`), plus
+      `_parse_display_logic()` and `_parse_skip_logic()` — only the
+      `has_display_logic` / `has_skip_logic` booleans are populated.
+    Each is cheap to wire or to delete; leaving them defined invites the docs to
+    drift back into describing them as live.
 13. **Sample-source profiles** (MTurk / Prolific / undergrad / nat-rep) — careless
     base-rate, attention-pass, demographic skew, effect-size attenuation. Meta-DB
     `sample` moderators exist, unused.
