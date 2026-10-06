@@ -72,7 +72,31 @@ UNVERIFIED = "unverified"
 #: Checked and found to be WRONG. The corrected value is in `Provenance.corrected`.
 CORRECTED = "corrected"
 
-_TIER_ORDER = (MEASURED, VERIFIED, CORRECTED, PARTIAL, CITED_UNCHECKED, UNVERIFIED)
+# ── Recall tiers ─────────────────────────────────────────────────────────────
+# These record a DIFFERENT kind of evidence from the tiers above: a model that has
+# read a great deal of this literature was asked, entry by entry, whether it
+# recognises the citation and whether the stored number matches the published or
+# meta-analytic estimate. That is a judgement from memory, not a source check, and
+# it is kept in its own tier band so the two can never be confused. A recall tier
+# NEVER grants `may_set_magnitude` and always weighs less than `CITED_UNCHECKED`.
+#
+#: Citation recognised and the value is consistent with the recalled literature.
+RECALL_CONSISTENT = "recall_consistent"
+#: Recall says a field was wrong; the entry has been changed and the old value is
+#: in `Provenance.corrected` under "<field>_was".
+RECALL_CORRECTED = "recall_corrected"
+#: The citation is plausible but the number could not be judged from memory.
+RECALL_UNCERTAIN = "recall_uncertain"
+#: The citation could not be placed at all. Weaker than having no record, because
+#: a specific-looking citation nobody can place is itself a warning sign.
+UNRECOGNIZED = "unrecognized"
+
+_TIER_ORDER = (MEASURED, VERIFIED, CORRECTED, PARTIAL, CITED_UNCHECKED,
+               RECALL_CONSISTENT, RECALL_CORRECTED, RECALL_UNCERTAIN,
+               UNVERIFIED, UNRECOGNIZED)
+
+#: Tiers that rest on recall rather than on a source or a dataset.
+RECALL_TIERS = (RECALL_CONSISTENT, RECALL_CORRECTED, RECALL_UNCERTAIN, UNRECOGNIZED)
 
 #: How much weight the engine should give an entry's numbers, by tier.
 #: Unverified entries are not discarded — they are the best prior available — but
@@ -84,7 +108,11 @@ TIER_WEIGHT: Dict[str, float] = {
     CORRECTED: 1.00,
     PARTIAL: 0.85,
     CITED_UNCHECKED: 0.70,
+    RECALL_CONSISTENT: 0.68,
+    RECALL_CORRECTED: 0.68,
+    RECALL_UNCERTAIN: 0.58,
     UNVERIFIED: 0.55,
+    UNRECOGNIZED: 0.45,
 }
 
 
@@ -123,6 +151,44 @@ PROVENANCE: Dict[str, Provenance] = {}
 def register(key: str, prov: Provenance) -> None:
     """Add or replace a provenance record."""
     PROVENANCE[key] = prov
+
+
+def register_recall(key: str, tier: str, note: str, *,
+                    source: str = "", checked_fields: Tuple[str, ...] = (),
+                    corrected: Optional[Dict[str, Any]] = None,
+                    audited_on: str = "") -> bool:
+    """Record a recall-based audit verdict for a knowledge-base entry.
+
+    Separate from `register` so the invariants of this evidence class are enforced
+    in one place and cannot be bypassed by a data file:
+
+    * the tier must be one of `RECALL_TIERS` — a recall pass can never write
+      `VERIFIED`, `MEASURED` or `CORRECTED`, which are reserved for a source that
+      was actually read or a dataset we hold;
+    * a verdict with no explanatory note is not a verdict, so it is dropped;
+    * `doi`, `url` and `quote` are left empty by construction, because nothing was
+      fetched or quoted.
+
+    Returns True when the record was installed.
+    """
+    if tier not in RECALL_TIERS or not str(note).strip():
+        return False
+    existing = PROVENANCE.get(key)
+    if existing is not None and existing.status not in RECALL_TIERS:
+        # A measured, verified, corrected, partial or cited record was produced by
+        # looking at something. A recall verdict must never replace it, however
+        # much later it arrives.
+        return False
+    register(key, Provenance(
+        status=tier,
+        source=source,
+        doi="", url="", quote="",
+        verified_on="",          # nothing was verified; see `note`
+        checked_fields=tuple(checked_fields),
+        corrected=dict(corrected or {}),
+        note=f"RECALL, NOT SOURCE-VERIFIED ({audited_on or 'undated'}): {note}",
+    ))
+    return True
 
 
 def status_of(kind: str, key: str) -> str:
@@ -342,12 +408,21 @@ def coverage_summary() -> Dict[str, Any]:
         k[r["status"]] = k.get(r["status"], 0) + 1
     total = len(rows)
     sourced = by_status.get(VERIFIED, 0) + by_status.get(CORRECTED, 0) + by_status.get(PARTIAL, 0)
+    # Recall-audited entries are counted separately and are deliberately NOT added
+    # to `sourced_entries`: a judgement from memory is not a source check, and the
+    # honesty notice must not be able to claim otherwise.
+    recall_audited = sum(by_status.get(t, 0) for t in RECALL_TIERS)
     return {
         "total_entries": total,
         "by_status": by_status,
         "by_kind": by_kind,
         "sourced_entries": sourced,
         "sourced_fraction": (sourced / total) if total else 0.0,
+        "recall_audited_entries": recall_audited,
+        "recall_consistent_entries": by_status.get(RECALL_CONSISTENT, 0),
+        "recall_corrected_entries": by_status.get(RECALL_CORRECTED, 0),
+        "recall_uncertain_entries": by_status.get(RECALL_UNCERTAIN, 0),
+        "unrecognized_entries": by_status.get(UNRECOGNIZED, 0),
         "shrinkage_factor": shrinkage_factor(),
         "shrinkage_verified": bool(_SHRINKAGE.get("factor")),
         "default_tau": default_tau(),
@@ -363,14 +438,27 @@ def honesty_notice() -> str:
             if not s["shrinkage_verified"] else
             f"Literature effects are shrunk by {s['shrinkage_factor']:.2f} toward "
             "what a replication would find.")
+    recall = ""
+    if s.get("recall_audited_entries"):
+        recall = (
+            f" A further {s['recall_audited_entries']} entries have been audited "
+            "against recalled knowledge of the literature rather than against a "
+            f"source: {s['recall_consistent_entries']} were consistent with what is "
+            f"known, {s['recall_corrected_entries']} were corrected, "
+            f"{s['recall_uncertain_entries']} could not be judged from memory and "
+            f"{s['unrecognized_entries']} "
+            f"{'carries' if s['unrecognized_entries'] == 1 else 'carry'} a citation "
+            "that could not be placed. "
+            "Recall is not verification, so those entries remain barred from setting "
+            "a magnitude on their own.")
     return (
         f"{s['sourced_entries']} of {s['total_entries']} calibration entries "
         f"({pct:.1f}%) carry a verification record. For the rest, the citation has "
         "NOT been checked against the source and the exact value has not been "
         "transcribed from the paper, so it should be read as a documented prior "
         "rather than a published fact; where the simulator consults one it damps "
-        f"how hard that number may push the data. {bias} The provenance table "
-        "gives the tier of every number behind a run."
+        f"how hard that number may push the data.{recall} {bias} The provenance "
+        "table gives the tier of every number behind a run."
     )
 
 
@@ -673,3 +761,52 @@ try:
                         VERIFIED, PARTIAL, CITED_UNCHECKED, CORRECTED, UNVERIFIED)
 except Exception:  # pragma: no cover - registry degrades to "everything unverified"
     pass
+
+
+# =============================================================================
+# RECALL AUDIT RECORDS
+# =============================================================================
+#: The recall audit's data file, relative to the registry directory.
+RECALL_AUDIT_FILE = "recall_audit.json"
+
+
+def load_recall_audit(path: str = "") -> int:
+    """Install the recall-audit verdicts. Returns the number of records added.
+
+    The file is data only: a dict with `audited_on` and a `records` map from
+    "<kind>:<key>" to {tier, note, source, checked_fields, corrected}. Every record
+    goes through `register_recall`, so a file cannot promote an entry past the
+    recall band however it is written, and a malformed file installs nothing rather
+    than taking the engine down (see CLAUDE.md "Import Resilience").
+    """
+    target = path or _os.path.join(_REGISTRY_DIR, RECALL_AUDIT_FILE)
+    try:
+        with open(target, "r", encoding="utf-8") as fh:
+            blob = _json.load(fh)
+    except Exception:
+        return 0
+    audited_on = str(blob.get("audited_on", ""))
+    records = blob.get("records") or {}
+    if not isinstance(records, dict):
+        return 0
+    added = 0
+    for key, rec in records.items():
+        if not isinstance(rec, dict):
+            continue
+        ok = register_recall(
+            str(key),
+            str(rec.get("tier", "")),
+            str(rec.get("note", "")),
+            source=str(rec.get("source", "")),
+            checked_fields=tuple(rec.get("checked_fields") or ()),
+            corrected=rec.get("corrected") or {},
+            audited_on=str(rec.get("audited_on") or audited_on),
+        )
+        added += 1 if ok else 0
+    return added
+
+
+try:  # pragma: no cover - exercised through the registry's own tests
+    RECALL_AUDIT_COUNT = load_recall_audit()
+except Exception:
+    RECALL_AUDIT_COUNT = 0

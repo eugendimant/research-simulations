@@ -85,7 +85,7 @@ Free LLM generation could hang indefinitely even with available API tokens. Root
 
 - 4-option generation method chooser UI with expandable info tooltips:
   - Option 1: Built-in AI (free LLM providers) — Recommended
-  - Option 2: User's own API key (6 providers, auto-detection, format validation)
+  - Option 2: User's own API key (5 providers, auto-detection, format validation)
   - Option 3: Built-in template engine (225+ domains, 58+ personas)
   - Option 4: Experimental SocSim engine (Fehr-Schmidt, IRT, 28 games)
 - Real-time progress counter replacing static time estimates:
@@ -97,7 +97,7 @@ Free LLM generation could hang indefinitely even with available API tokens. Root
   - Condition→topic mapping (ingroup/outgroup/anonymous/etc.)
   - Engine `use_socsim_experimental` parameter wired from UI→engine
   - Post-generation enrichment: standard sim runs first, SocSim enriches game DVs
-- API key visual format validation (6 providers, green/red indicators)
+- API key visual format validation (5 providers, green/red indicators)
 - Updated to v1.0.8.1.
 
 ## 2026-02-13 — Massive OE template expansion (v1.0.8.0)

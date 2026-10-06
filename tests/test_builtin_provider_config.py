@@ -45,9 +45,8 @@ def no_keys(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     # The module-level constants are resolved at import time; a developer
     # machine with keys exported would otherwise leak them into the test.
-    for const in ("_DEFAULT_GROQ_KEY", "_DEFAULT_CEREBRAS_KEY",
-                  "_DEFAULT_GOOGLE_AI_KEY", "_DEFAULT_OPENROUTER_KEY",
-                  "_DEFAULT_MISTRAL_KEY", "_DEFAULT_SAMBANOVA_KEY",
+    for const in ("_DEFAULT_GROQ_KEY", "_DEFAULT_GOOGLE_AI_KEY",
+                  "_DEFAULT_OPENROUTER_KEY", "_DEFAULT_SAMBANOVA_KEY",
                   "_DEFAULT_API_KEY"):
         monkeypatch.setattr(lrg, const, "", raising=False)
     return None
@@ -134,7 +133,7 @@ def test_no_key_material_in_source():
     assert "_XK" not in source, "XOR key-obfuscation reintroduced"
     # The provider-detection helper legitimately mentions bare key prefixes, so
     # match only a prefix followed by enough key characters to be a real key.
-    for prefix in ("gsk_", "csk-", "sk-or-", "AIzaSy", "snova-"):
+    for prefix in ("gsk_", "csk-", "sk-or-", "AIzaSy", "AQ.", "snova-"):
         hit = re.search(re.escape(prefix) + r"[A-Za-z0-9_\-]{20,}", source)
         assert hit is None, "literal %s key found in source: %s" % (prefix, hit)
 
@@ -148,9 +147,7 @@ _EXPECTED_ORDER = [
     "google_ai_lite",
     "groq_builtin",
     "groq_qwen_builtin",
-    "cerebras_builtin",
     "sambanova_builtin",
-    "mistral_builtin",
     "openrouter_builtin",
 ]
 
@@ -291,8 +288,8 @@ def test_env_and_secrets_are_interchangeable(no_keys, monkeypatch, slot):
 
 def test_identical_key_from_both_sources_is_not_duplicated(no_keys, monkeypatch):
     """Same key in env and st.secrets must not be added to the chain twice."""
-    monkeypatch.setenv("MISTRAL_API_KEY", "same-key")
-    _install_fake_streamlit_secrets(monkeypatch, MISTRAL_API_KEY="same-key")
+    monkeypatch.setenv("SAMBANOVA_API_KEY", "same-key")
+    _install_fake_streamlit_secrets(monkeypatch, SAMBANOVA_API_KEY="same-key")
 
     gen = LLMResponseGenerator()
     assert [p.api_key for p in gen._providers].count("same-key") == 1
@@ -303,7 +300,7 @@ def test_identical_key_from_both_sources_is_not_duplicated(no_keys, monkeypatch)
 # ---------------------------------------------------------------------------
 
 def test_verify_reports_every_slot_when_nothing_is_configured(no_keys):
-    """With no keys the sweep still names all six slots and their secrets."""
+    """With no keys the sweep still names every slot and its secret."""
     results = LLMResponseGenerator().verify_providers(timeout=1)
 
     assert [r["slot"] for r in results] == list(BUILTIN_PROVIDER_SECRETS)
@@ -331,7 +328,7 @@ def test_verify_reports_ok_for_a_working_key(no_keys, monkeypatch):
 
     assert results["groq"]["status"] == "ok"
     assert results["groq"]["latency_ms"] is not None
-    assert results["mistral"]["status"] == "not_configured"
+    assert results["sambanova"]["status"] == "not_configured"
 
 
 def test_verify_reports_failed_for_a_rejected_key(no_keys, monkeypatch):
@@ -372,4 +369,141 @@ def test_verify_leaves_providers_usable_afterwards(no_keys, monkeypatch):
 
     gen = LLMResponseGenerator()
     gen.verify_providers(timeout=1)
+    assert all(p.available for p in gen._providers)
+
+
+# ---------------------------------------------------------------------------
+# v1.3.0.0: Google AI Studio's two key shapes, and a realistic secrets file
+# ---------------------------------------------------------------------------
+
+_GOOGLE_KEY_SHAPES = [
+    "AIzaSy" + "A" * 33,   # long-standing format
+    "AQ." + "A" * 48,      # issued from late 2026
+]
+
+
+@pytest.mark.parametrize("key", _GOOGLE_KEY_SHAPES)
+def test_both_google_key_shapes_detect_as_google(key):
+    """A Google key must never be routed to another vendor's endpoint.
+
+    Before v1.3.0.0 only "AIza" was recognised. An "AQ." key fell through to
+    the >30-character default branch and was handed to Groq, where it can only
+    be rejected — a user pasting a new Google key saw their own valid key fail.
+    """
+    detected = lrg.detect_provider_from_key(key)
+    assert detected is not None, "key shape %r was not recognised at all" % key[:4]
+    assert detected["name"] == "google_ai", (
+        "key shape %r detected as %r" % (key[:4], detected["name"])
+    )
+    assert detected["api_url"] == lrg.GOOGLE_AI_API_URL
+
+
+@pytest.mark.parametrize("key", _GOOGLE_KEY_SHAPES)
+def test_google_auth_carries_the_key_both_ways(no_keys, monkeypatch, key):
+    """Google is authenticated by header AND query param, for either shape.
+
+    The two shapes differ only in their characters, so nothing may branch on
+    the prefix when sending the request.
+    """
+    seen = {}
+
+    class _Resp:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    fake = types.ModuleType("requests")
+
+    def _post(url, headers=None, json=None, timeout=None):
+        seen["url"] = url
+        seen["headers"] = headers or {}
+        return _Resp()
+
+    fake.post = _post
+    fake.exceptions = types.SimpleNamespace(
+        Timeout=type("T", (Exception,), {}),
+        ConnectionError=type("C", (Exception,), {}),
+        SSLError=type("S", (Exception,), {}),
+    )
+    monkeypatch.setitem(sys.modules, "requests", fake)
+
+    lrg._call_llm_api(lrg.GOOGLE_AI_API_URL, key, lrg.GOOGLE_AI_MODEL, "s", "u")
+
+    assert seen["headers"].get("Authorization") == "Bearer %s" % key
+    assert "key=" in seen["url"], "googleapis.com call lost its ?key= parameter"
+
+
+def test_keys_are_read_from_a_flat_secrets_file_beside_unrelated_entries(
+        no_keys, monkeypatch):
+    """The real deployment's secrets file is flat and holds other settings too.
+
+    Streamlit Secrets on this deployment carries SMTP_* and GITHUB_* entries
+    alongside the provider keys. Reading a provider key must not depend on the
+    file holding only provider keys, nor disturb the other entries.
+    """
+    # Built as a dict, not keyword arguments: ruff's S106 reads a literal
+    # assigned to a name like SMTP_PASSWORD as a hardcoded credential.
+    _file = {
+        "SMTP_PASSWORD": "unrelated",
+        "GITHUB_TOKEN": "unrelated",
+        "ADMIN_PASSWORD": "unrelated",
+        "GOOGLE_API_KEY": "AQ." + "A" * 48,
+        "GROQ_API_KEY": "gsk_" + "g" * 40,
+        "SAMBANOVA_API_KEY": "f48c8117-0000-0000-0000-000000000000",
+        "OPENROUTER_API_KEY": "sk-or-v1-" + "0" * 48,
+    }
+    _install_fake_streamlit_secrets(monkeypatch, **_file)
+
+    assert lrg.builtin_provider_key_status() == {
+        slot: True for slot in BUILTIN_PROVIDER_SECRETS
+    }
+
+    gen = LLMResponseGenerator()
+    assert gen.is_llm_available is True
+    # Every configured slot reaches the chain, each on its own endpoint.
+    urls = {p.name.split("_builtin")[0]: p.api_url for p in gen._providers}
+    assert any("googleapis.com" in u for u in urls.values())
+    assert any("groq.com" in u for u in urls.values())
+    assert any("sambanova.ai" in u for u in urls.values())
+    assert any("openrouter.ai" in u for u in urls.values())
+
+
+def test_verify_providers_tests_the_same_endpoints_generation_uses(
+        no_keys, monkeypatch):
+    """"Test providers now" must exercise the Built-in AI path, not a parallel one.
+
+    A green admin panel next to a failing generation run is worse than no panel
+    at all, so the sweep is pinned to the chain's own (url, model) pairs.
+    """
+    _install_fake_streamlit_secrets(monkeypatch, **{
+        "GOOGLE_API_KEY": "AQ." + "A" * 48,
+        "GROQ_API_KEY": "gsk_" + "g" * 40,
+    })
+    dialled = []
+    monkeypatch.setattr(
+        lrg, "_call_llm_api",
+        lambda url, key, model, *a, **k: dialled.append((url, model)) or "OK",
+    )
+
+    gen = LLMResponseGenerator()
+    chain = {(p.api_url, p.model) for p in gen._providers}
+    results = {r["slot"]: r for r in gen.verify_providers(timeout=1)}
+
+    assert results["google_ai"]["status"] == "ok"
+    assert results["groq"]["status"] == "ok"
+    assert results["sambanova"]["status"] == "not_configured"
+    for pair in dialled:
+        assert pair in chain, "the sweep dialled %r, which generation never uses" % (pair,)
+
+
+def test_a_verification_sweep_leaves_the_chain_usable(no_keys, monkeypatch):
+    """Pressing the button must not cost the next run its providers."""
+    _install_fake_streamlit_secrets(monkeypatch, **{"GROQ_API_KEY": "gsk_" + "g" * 40})
+    monkeypatch.setattr(lrg, "_call_llm_api", lambda *a, **k: None)  # all fail
+
+    gen = LLMResponseGenerator()
+    gen.verify_providers(timeout=1)
+
     assert all(p.available for p in gen._providers)

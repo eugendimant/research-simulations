@@ -30,9 +30,7 @@ _KEY_POLICY = _REPO_ROOT / "docs" / "KEY_POLICY.md"
 _SLOT_DOC_NAMES = {
     "google_ai": "google",
     "groq": "groq",
-    "cerebras": "cerebras",
     "sambanova": "sambanova",
-    "mistral": "mistral",
     "openrouter": "openrouter",
 }
 
@@ -107,9 +105,8 @@ def test_no_keys_means_no_chain_and_no_error(monkeypatch):
     for names in BUILTIN_PROVIDER_SECRETS.values():
         for name in names:
             monkeypatch.delenv(name, raising=False)
-    for const in ("_DEFAULT_GROQ_KEY", "_DEFAULT_CEREBRAS_KEY",
-                  "_DEFAULT_GOOGLE_AI_KEY", "_DEFAULT_OPENROUTER_KEY",
-                  "_DEFAULT_MISTRAL_KEY", "_DEFAULT_SAMBANOVA_KEY",
+    for const in ("_DEFAULT_GROQ_KEY", "_DEFAULT_GOOGLE_AI_KEY",
+                  "_DEFAULT_OPENROUTER_KEY", "_DEFAULT_SAMBANOVA_KEY",
                   "_DEFAULT_API_KEY"):
         monkeypatch.setattr(lrg, const, "", raising=False)
 

@@ -57,7 +57,7 @@ different things and the difference has to be visible.
   publication-bias shrinkage and a between-study heterogeneity draw, so each run
   can differ the way two real labs differ. **Currently inert**: see below.
 
-## State of verification: 1 of 484
+## State of verification: 1 of 484 source-verified
 
 **No entry has been verified against a primary source**, because this build cannot
 reach one. Every scholarly host and data repository attempted was refused by the
@@ -80,6 +80,73 @@ exists to prevent, so nothing is filled in from snippets or from recall.
 
 The one record present is the `dictator_standard` SD correction above, and it is
 labelled as an internal-consistency finding, not a literature check.
+
+## The recall audit, 2026-10-06: 483 of 484
+
+Since sources cannot be read here, the entries were instead audited against what a
+model that has read a great deal of this literature recalls of it — entry by entry,
+checking the citation, the design, the direction of the effect, the magnitude
+against the published or meta-analytic estimate, and internal consistency. The
+verdicts live in `simulation_app/utils/registry/recall_audit.json`; the per-entry
+log is `summaries/literature-recall-audit-2026-10-06.md`.
+
+| Verdict | Entries |
+|---|---|
+| `recall_consistent` — citation recognised, value consistent with the literature | 200 |
+| `recall_corrected` — a field was wrong and was changed | 125 |
+| `recall_uncertain` — citation plausible, number not judgeable from memory | 157 |
+| `unrecognized` — citation could not be placed at all | 1 |
+
+169 fields across 122 entries were changed, and every one keeps the value it
+replaced in its record, so the pass is reversible from its own data.
+
+**This does not move the verification count, by construction.** Recall is not a
+source check, and the two are kept structurally apart: `register_recall()` refuses
+any tier above the recall band, refuses a verdict with no note, and refuses to
+overwrite a record that rests on evidence; `doi`, `url`, `quote` and `verified_on`
+are empty by construction; every recall tier weighs less than `CITED_UNCHECKED`;
+none grants `may_set_magnitude`; and `sourced_entries` still counts only
+`VERIFIED`/`CORRECTED`/`PARTIAL`. See `docs/REGISTRY.md`, "The recall band".
+
+### What the audit found, in kind
+
+The defects cluster, and the clusters matter more than any single number:
+
+* **Meta-analytic apparatus attached to sources that are not meta-analyses.** The
+  largest class by far, and the main driver of the 157 `recall_uncertain`
+  verdicts: a real citation — a book, a narrative review, a handbook chapter, a
+  single experiment — carrying a pooled `effect_d`, `n_studies`, `ci_95`, τ and
+  I² that the cited work does not report.
+* **Replication-crisis magnitudes carried at their original size.** Ego depletion,
+  moral reminders, facial feedback, the decoy effect, deindividuation and the ELM
+  were labelled `replicated` while citing the very work whose verdict was
+  negative.
+* **Clinical-level means presented as general-population norms.** Nine construct
+  norms had a per-item mean that, converted back to the instrument's total, lands
+  past that instrument's own clinical cutoff (PHQ-9, GAD-7, PSS-10, AUDIT, PSQI,
+  PHQ-15, LSAS, MBI-EE, SCL).
+* **`scale_points` holding something other than a response-option count** — an
+  item count, a score range, or a Likert count for an instrument that has no
+  Likert metric (the SVO slider's angle, IPAQ's minutes, the NPI's forced-choice
+  dyads). This field drives response generation, so it is the costliest to get
+  wrong.
+* **Internally impossible heterogeneity** — `i_squared=0.0` beside a positive τ,
+  in entries across several domains.
+* **Near-duplicate entries with disagreeing values**, which will double-count or
+  conflict at calibration time (`social_proof_meta`/`conformity_asch_meta`,
+  `contact_hypothesis`/`intergroup_contact_extended`, the two inoculation keys,
+  the two misinformation-correction keys, `growth_mindset_meta`/
+  `growth_mindset_intervention_meta`, `common_pool_resource_standard`/
+  `tragedy_of_commons_standard`, `social_exclusion_nts`/`ostracism_cyberball`).
+  These are reported, not resolved: dropping a key changes what the engine looks
+  up and belongs in its own change.
+
+The synthesized-statistics finding above is confirmed from the other direction:
+where a `k`/`N` pair *does* match a real meta-analysis (Rowland, Cepeda, Durlak,
+Hughes, Nickow, Sisk, Guilbault, Roseth, Engel, Johnson & Mislin, Jachimowicz,
+Khoury, Ekers, Humphrey), the τ and I² beside it still do not match what those
+papers report. Every τ and I² in the knowledge base should be treated as
+unsourced regardless of tier.
 
 ### Consequences, deliberately
 

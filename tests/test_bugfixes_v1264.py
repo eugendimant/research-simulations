@@ -747,9 +747,7 @@ def test_v1287_no_retired_provider_models():
     live = {
         "GROQ_MODEL": L.GROQ_MODEL,
         "GROQ_MODEL_FALLBACK": L.GROQ_MODEL_FALLBACK,
-        "CEREBRAS_MODEL": L.CEREBRAS_MODEL,
         "SAMBANOVA_MODEL": L.SAMBANOVA_MODEL,
-        "MISTRAL_MODEL": L.MISTRAL_MODEL,
         "OPENROUTER_MODEL": L.OPENROUTER_MODEL,
         "GOOGLE_AI_MODEL_PRIMARY": L.GOOGLE_AI_MODEL_PRIMARY,
     }
@@ -797,7 +795,7 @@ def test_v1287_reasoning_models_get_low_effort():
     try:
         L._call_llm_api("https://api.groq.com/x", "k" * 40, "openai/gpt-oss-120b", "s", "u")
         assert seen.get("reasoning_effort") == "low", "gpt-oss must request low reasoning effort"
-        L._call_llm_api("https://api.cerebras.ai/x", "k" * 40, "gpt-oss-120b", "s", "u")
+        L._call_llm_api("https://api.groq.com/x", "k" * 40, "gpt-oss-120b", "s", "u")
         assert seen.get("reasoning_effort") == "low", "bare gpt-oss ID must match too"
         L._call_llm_api("https://api.groq.com/x", "k" * 40, "qwen/qwen3.6-27b", "s", "u")
         assert "reasoning_effort" not in seen, "non-reasoning model must not get the param"

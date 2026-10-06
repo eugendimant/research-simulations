@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.9.9"
-BUILD_ID = "20261006-v12099-codex-round-two"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.0.3"
+BUILD_ID = "20261006-v13003-codex-findings"
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.9.9"  # v1.2.9.9: the free-provider key workflow and the literature-grounded realism layer in one release
+APP_VERSION = "1.3.0.3"  # v1.3.0.3: recall audit of all 484 literature calibration entries
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -7774,9 +7774,7 @@ def _render_admin_dashboard() -> None:
             _SLOT_LABELS = {
                 "google_ai": "Google AI Studio (Gemini)",
                 "groq": "Groq",
-                "cerebras": "Cerebras",
                 "sambanova": "SambaNova",
-                "mistral": "Mistral",
                 "openrouter": "OpenRouter",
             }
             _key_rows = [
@@ -8258,8 +8256,6 @@ def _render_admin_dashboard() -> None:
             {"Provider": "Google AI Studio (Gemini 2.5 Flash)", "Daily request cap": 14400, "Daily token cap": 216_000_000},
             {"Provider": "Google AI Studio (Gemini 2.5 Flash Lite)", "Daily request cap": 20, "Daily token cap": 5_000_000},
             {"Provider": "Groq (free defaults)", "Daily request cap": 14400, "Daily token cap": 500_000},
-            {"Provider": "Cerebras", "Daily request cap": 1000, "Daily token cap": 1_000_000},
-            {"Provider": "Mistral AI", "Daily request cap": 2880, "Daily token cap": 33_000_000},
             {"Provider": "SambaNova", "Daily request cap": 28800, "Daily token cap": 200_000},
             {"Provider": "OpenRouter", "Daily request cap": 1000, "Daily token cap": 1_000_000},
         ]
@@ -12966,8 +12962,6 @@ if active_page == 3:
                 "|----------|-----------|--------|\n"
                 "| **Google AI Studio** | Free Gemini | [aistudio.google.com](https://aistudio.google.com) |\n"
                 "| **Groq** | 14,400 req/day | [console.groq.com](https://console.groq.com) |\n"
-                "| **Cerebras** | 1M tokens/day | [cloud.cerebras.ai](https://cloud.cerebras.ai) |\n"
-                "| **Mistral AI** | 1B tokens/month | [console.mistral.ai](https://console.mistral.ai) |\n"
                 "| **SambaNova** | Free 200K tokens/day | [cloud.sambanova.ai](https://cloud.sambanova.ai) |\n"
                 "| **OpenRouter** | Free models | [openrouter.ai](https://openrouter.ai) |\n"
                 "| **OpenAI** | Paid (~$0.15/1M tokens) | [platform.openai.com](https://platform.openai.com) |\n"
@@ -12977,8 +12971,6 @@ if active_page == 3:
                 "Auto-detect from key (recommended)",
                 "Google AI (Gemini Flash) — Free",
                 "Groq (GPT-OSS 120B) — Free",
-                "Cerebras (GPT-OSS 120B) — Free",
-                "Mistral AI (Mistral Small) — Free",
                 "SambaNova (Llama 3.3 70B) — Free",
                 "OpenRouter (Mistral) — Free tier",
                 "OpenAI (GPT-4o-mini)",
@@ -12998,7 +12990,7 @@ if active_page == 3:
                 value=_existing_plain,
                 type="password",
                 key="user_llm_key_input",
-                placeholder="Paste your key here (e.g., AIza..., gsk_..., csk-..., sk-or-..., snova-...)",
+                placeholder="Paste your key here (e.g., AIza..., AQ...., gsk_..., sk-or-..., snova-...)",
             )
 
             if _user_key_input != _existing_plain:
@@ -13014,7 +13006,7 @@ if active_page == 3:
                 st.session_state["user_llm_api_key"] = _user_key_input.strip() if _user_key_input else ""
                 st.session_state["_user_llm_provider_choice"] = _selected_provider
                 # v1.2.1.3: Pass dropdown selection to LLM generator for
-                # providers without distinctive key prefixes (e.g. Mistral AI)
+                # providers without distinctive key prefixes (e.g. SambaNova)
                 if _selected_provider and _selected_provider != "Auto-detect from key (recommended)":
                     os.environ["LLM_PROVIDER_HINT"] = _selected_provider
                 else:
@@ -13027,14 +13019,36 @@ if active_page == 3:
             if _key_val:
                 _detected_provider = "Unknown"
                 _key_valid_format = False
-                if _key_val.startswith("AIza"):
+                # v1.3.0.0: a key belonging to a dropped provider is named as
+                # such rather than shown as unrecognised, so the user is not
+                # left guessing whether they mistyped it. The generator refuses
+                # to build a provider for it (retired_provider_for_key), so it
+                # is never sent anywhere.
+                _retired_provider = None
+                try:
+                    from utils.llm_response_generator import retired_provider_for_key
+                    _retired_provider = retired_provider_for_key(_key_val)
+                except ImportError:
+                    _retired_provider = None
+
+                if _retired_provider:
+                    st.markdown(
+                        f'<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;'
+                        f'padding:8px 12px;margin:6px 0;">'
+                        f'<span style="color:#dc2626;font-size:0.85em;">'
+                        f'That looks like a <strong>{_retired_provider}</strong> key. '
+                        f'{_retired_provider} no longer offers a free tier, so it was '
+                        f'removed and this key cannot be used. Google AI Studio, Groq, '
+                        f'SambaNova, OpenRouter and OpenAI keys all work.</span></div>',
+                        unsafe_allow_html=True,
+                    )
+                elif _key_val.startswith("AIza") or _key_val.startswith("AQ."):
+                    # v1.3.0.0: Google AI Studio keys come in two shapes —
+                    # "AIza..." and, for keys created from late 2026, "AQ...".
                     _detected_provider = "Google AI Studio (Gemini)"
                     _key_valid_format = len(_key_val) >= 30
                 elif _key_val.startswith("gsk_"):
                     _detected_provider = "Groq"
-                    _key_valid_format = len(_key_val) >= 20
-                elif _key_val.startswith("csk-"):
-                    _detected_provider = "Cerebras"
                     _key_valid_format = len(_key_val) >= 20
                 elif _key_val.startswith("sk-or-"):
                     _detected_provider = "OpenRouter"
@@ -13046,14 +13060,12 @@ if active_page == 3:
                       or re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', _key_val)):
                     _detected_provider = "SambaNova"
                     _key_valid_format = len(_key_val) >= 10
-                elif re.match(r'^[a-zA-Z0-9]{32}$', _key_val):
-                    # v1.2.1.3: Mistral keys are 32-char alphanumeric with no prefix
-                    _detected_provider = "Mistral AI"
-                    _key_valid_format = True
                 else:
                     _key_valid_format = len(_key_val) >= 10
 
-                if _key_valid_format:
+                if _retired_provider:
+                    pass  # already reported above
+                elif _key_valid_format:
                     st.markdown(
                         f'<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;'
                         f'padding:8px 12px;margin:6px 0;">'

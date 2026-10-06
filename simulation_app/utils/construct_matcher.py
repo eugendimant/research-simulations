@@ -41,7 +41,7 @@ _DIGIT_TAIL = re.compile(r"\d+$")
 _STOP = {
     "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "my",
     "your", "you", "i", "me", "is", "are", "was", "do", "does", "did", "how",
-    "what", "which", "please", "rate", "scale", "item", "items", "question",
+    "what", "which", "please", "rate", "rating", "ratings", "scale", "item", "items", "question",
     "questions", "survey", "study", "total", "score", "mean", "sum", "avg",
     "average", "response", "answer", "select", "choose", "indicate", "following",
     "statement", "statements", "agree", "disagree", "much", "very", "feel",

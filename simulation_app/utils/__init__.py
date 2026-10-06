@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.9.9 - One release combining the free-provider key workflow and the literature-grounded realism layer. Keys live only in environment variables or Streamlit secrets and every provider in the chain can be verified from the admin page, with the built-in engine as a silent fallback when none is configured. Alongside it, an empirical registry with provenance tiers: a constant may move the data only if it was measured from real responses or verified against a source, every entry declares the designs it applies to, and item dispersion and straight-lining now follow rates measured over four published instruments (48,431 respondents) rather than hand-chosen values.
+Version: 1.3.0.3 - Two findings from review. A key belonging to a provider this app dropped (Cerebras, Mistral AI) is now refused rather than falling through to the "long key means Groq" default, which would have sent the user's credential to a vendor it was never issued for. And published construct norms gain an explicit scale_min: rescaling by a ratio of maxima had no notion of where a scale starts, so every zero-based instrument - a forced-choice proportion like the NPI, a 0-3 per-item mean like the PHQ-9 - landed below the target scale's own minimum and dragged its calibration to the floor. Twenty-one entries are marked zero-based and the rescale now preserves position within the range.
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.9.9"
+__version__ = "1.3.0.3"
 
 
 # =============================================================================

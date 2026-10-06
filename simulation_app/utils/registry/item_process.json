@@ -2951,7 +2951,7 @@
           8,
           50
         ],
-        "keying": "any",
+        "keying": "mixed",
         "design": "any",
         "population": "any",
         "repetition": "any"
@@ -2961,6 +2961,7 @@
       "tier": "T0_MEASURED",
       "provenance": {
         "kind": "dataset",
+        "note": "Keying-restricted on 2026-10-06. Every contributing block is mixed-keyed, and within-person SD is computed on raw, un-recoded items, so a reverse-keyed item contributes the full keying gap to a consistent respondent's spread. Declaring this 'any' let it be compared with same-keyed blocks, where the real value is much lower; measured on the engine, a same-keyed block sits at 0.238 of span and a mixed-keyed one at 0.314 against this 0.319, so the apparent '30% too low' was the benchmark being stated more broadly than it was measured. Item SD is keying-invariant (0.2978 same vs 0.2966 mixed) and its entry stays 'any'.",
         "script": "tools/derive_item_benchmarks.py",
         "retrieved": "2026-10-06",
         "measured_in_population": "online_volunteer",

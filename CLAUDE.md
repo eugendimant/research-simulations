@@ -53,9 +53,16 @@ Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider sta
 | 5 | `simulation_app/utils/__init__.py` | `Version: X.X.X.X` in docstring (line ~5) |
 | 6 | `simulation_app/utils/qsf_preview.py` | `__version__ = "X.X.X.X"` (line ~36) |
 | 7 | `simulation_app/utils/response_library.py` | `__version__ = "X.X.X.X"` (line ~66) |
+| 7b | `simulation_app/utils/instructor_report.py` | `__version__ = "X.X.X.X"` (line ~9) |
 | 8 | `simulation_app/README.md` | `**Version X.X.X.X**` in header (line ~3) |
 | 9 | `simulation_app/README.md` | `## The behavioral engine (vX.X.X.X)` section header |
 | 10 | `simulation_app/README.md` | `(Version X.X.X.X)` in the citation block at the bottom |
+
+`scripts/check_version_sync.py` is the authority and runs in CI before the
+tests: it checks every row above except `BUILD_ID`. Run it before pushing —
+`python3 scripts/check_version_sync.py` — rather than trusting this table,
+which has drifted from it before (`instructor_report.py` was missing until
+v1.3.0.0 and failed a CI run).
 
 ### MANDATORY WORKFLOW — Do this BEFORE every commit:
 
@@ -142,6 +149,10 @@ recoverable by deleting the line. It MUST NEVER happen again.
    `BUILTIN_PROVIDER_SECRETS` and the `_builtin_providers` list in
    `llm_response_generator.py` ARE the redundancy. Shortening the chain is
    silent until the next rate limit, when there is nothing left to fall to.
+   The sole exception is a provider whose free tier no longer exists (Cerebras
+   and Mistral AI, removed in v1.3.0.0): a slot nobody can get a key for is not
+   redundancy. The chain is Google (3 models) → Groq (2 models) → SambaNova →
+   OpenRouter.
 3. **Run "Test providers now" after ANY change to the LLM chain** (`?admin=1`
    → LLM tab). Tests stub the network, so a change can pass CI and still have
    broken every live call. The button sends one real request per configured
@@ -158,7 +169,7 @@ recoverable by deleting the line. It MUST NEVER happen again.
    step and its row in that test's `_SLOT_DOC_NAMES`.
 
 Full policy, with the test that enforces each rule: `docs/KEY_POLICY.md`.
-Setup walkthrough for all six providers: `docs/PROVIDER_SETUP.md`.
+Setup walkthrough for all four providers: `docs/PROVIDER_SETUP.md`.
 
 ---
 
@@ -237,7 +248,7 @@ Runs in this order:
 2. **Full generation** (`_generate_open_response()` in enhanced_simulation_engine.py): Three-level cascade
 
 ### Three-Level Cascade:
-1. **LLM Generator** (llm_response_generator.py): 9 free provider entries, in order — Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Gemini 2.5 Flash Lite → Groq GPT-OSS 120B → Groq Qwen3.6 27B → Cerebras GPT-OSS 120B → SambaNova Llama 3.3 70B → Mistral Small → OpenRouter Mistral Small 3.1. `_builtin_providers` in that file is authoritative
+1. **LLM Generator** (llm_response_generator.py): 7 free provider entries, in order — Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Gemini 2.5 Flash Lite → Groq GPT-OSS 120B → Groq Qwen3.6 27B → SambaNova Llama 3.3 70B → OpenRouter Mistral Small 3.1. `_builtin_providers` in that file is authoritative
 2. **ComprehensiveResponseGenerator** (response_library.py): compositional template engine (opener + intent core + domain elaboration + coda). No Markov chain (the unused `text_generator.py` module that held one was removed in v1.2.8.9)
 3. **TextResponseGenerator** (persona_library.py): Basic template fallback
 

@@ -28,6 +28,10 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _KEY_PATTERNS = [
     ("Groq", r"gsk_[A-Za-z0-9]{40,}"),
     ("Google AI", r"AIzaSy[A-Za-z0-9_\-]{30,}"),
+    # v1.3.0.0: Google AI Studio's newer key shape. Without this the scanner
+    # would have waved a live key through purely because it was issued after
+    # the "AIza" era.
+    ("Google AI (new)", r"AQ\.[A-Za-z0-9_\-]{30,}"),
     ("OpenRouter", r"sk-or-v1-[a-f0-9]{48,}"),
     ("OpenAI-style", r"sk-[A-Za-z0-9]{44,}"),
     ("Cerebras", r"csk-[a-z0-9]{40,}"),

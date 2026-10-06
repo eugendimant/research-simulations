@@ -54,13 +54,24 @@ substitute), other response formats, or economic-game allocations. Adding 5- and
 
 ## Result: before and after
 
+**Read this as a best case, not as a typical run.** The block below is synthetic
+and its target reliability was set to the reference's own value, so alpha and
+mean inter-item *r* move to the reference because they were aimed at it. On the
+default path, with a real QSF and no stated reliability, the engine draws
+`target_alpha ~ U(0.80, 0.90)` and hits that instead: measured across twelve real
+Qualtrics designs, alpha is 0.842 before the realism layer and 0.843 after — it
+does not move, because the engine is matching its own target rather than the
+reference's 0.729. The rows marked "calibrated" below are arithmetic under a
+matched target; the emergent rows are the evidence.
+
 A 5-item, 6-point agreement block, N = 2,436, two conditions, template path
-(no LLM), seed 11 — the same run with the realism layer off and on:
+(no LLM), seed 11, **with the target reliability set to the reference's** — the
+same run with the realism layer off and on:
 
 | metric | engine before | engine after | real data | tolerance |
 |---|---|---|---|---|
-| mean inter-item r | 0.601 | **0.350** | 0.363 | 0.150 |
-| Cronbach's alpha | 0.883 | **0.727** | 0.729 | 0.139 |
+| mean inter-item r *(calibrated)* | 0.601 | **0.350** | 0.363 | 0.150 |
+| Cronbach's alpha *(calibrated)* | 0.883 | **0.727** | 0.729 | 0.139 |
 | within-person SD | 0.715 | **0.990** | 1.020 | 0.250 |
 | identical-answer share | 0.002 | **0.052** | 0.052 | 0.030 |
 | item SD | 1.204 | **1.396** | 1.409 | 0.216 |
@@ -83,6 +94,22 @@ they land inside real-data tolerance without being aimed at — item SD, skew,
 kurtosis, floor / ceiling / midpoint / endpoint shares, distinct options used,
 long-string length, within-person SD and item mean. That is the part that counts
 as evidence.
+
+### Within-person SD is a mixed-keying statistic
+
+`item.likert.any.within_person_sd_fraction_of_span` (0.319 of span) is measured
+on raw, un-recoded items, and every instrument behind it is mixed-keyed. A
+consistent respondent answering 5 to the positive items and 1 to the reverse ones
+contributes the whole keying gap to their own spread, which is why the real value
+exceeds the item SD (0.295) — impossible for recoded items on one construct.
+
+The entry therefore applies to mixed-keyed blocks only, and says so. Compared
+against same-keyed blocks it reads as a 30% shortfall that is not there:
+measured on this engine over four block shapes (8, 10 and 12 items; 5- and
+7-point) and two seeds, a mixed-keyed block sits at **0.314 ± 0.002** of span
+against the benchmark's 0.319 ± 0.045, while a same-keyed block sits at 0.238.
+Item SD is keying-invariant by the same measurement (0.2978 same-keyed vs 0.2966
+mixed), so its entry stays scale- and keying-free.
 
 ## Running it
 
