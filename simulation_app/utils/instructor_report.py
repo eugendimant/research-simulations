@@ -7458,14 +7458,7 @@ class ComprehensiveInstructorReport:
                 html_parts.append("<table><tr><th>DV</th><th>Observed d</th><th>Comparison</th><th>Interpretation</th></tr>")
                 for eff in obs_effects:
                     d_val = abs(_safe_float(eff.get("cohens_d", eff.get("d", 0))))
-                    if d_val < 0.2:
-                        interp = "Negligible"
-                    elif d_val < 0.5:
-                        interp = "Small"
-                    elif d_val < 0.8:
-                        interp = "Medium"
-                    else:
-                        interp = "Large"
+                    interp = _cohens_d_label(d_val).capitalize()  # v1.2.9.1: the one effect-size label helper
                     var_name = eff.get("variable", eff.get("scale", ""))
                     comp = f"{eff.get('condition_high', '')} vs {eff.get('condition_low', '')}"
                     html_parts.append(
