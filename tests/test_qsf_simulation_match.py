@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import numpy as np
 from utils.qsf_preview import QSFPreviewParser
 from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+from utils.enhanced_simulation_engine import _clean_column_name  # noqa: PLC2701
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +192,8 @@ def verify_simulation(qsf_file_path, verbose=False):
         #   scale_name_raw = str(scale.get("name", "")).strip()
         #   scale_name = scale_name_raw.replace(" ", "_")
         #   col_name = f"{scale_name}_{item_num}"
-        scale_name = scale["name"].strip().replace(" ", "_")
+        # The engine sanitises column prefixes (e.g. "1.9Q" -> "1_9Q"), so expect the same.
+        scale_name = _clean_column_name(scale["name"].strip())
         num_items = scale["num_items"]
         scale_points = scale["scale_points"]
         for item in range(1, num_items + 1):

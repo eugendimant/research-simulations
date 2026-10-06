@@ -12274,14 +12274,15 @@ class EnhancedSimulationEngine:
                 try:
                     _rev_idx0 = [r - 1 for r in sorted(reverse_items) if 1 <= r <= num_items]
 
-                    def _construct_matrix() -> np.ndarray:
+                    def _construct_matrix(item_col_names=item_col_names, _rev_idx0=_rev_idx0,
+                                          scale_min=scale_min, scale_max=scale_max) -> np.ndarray:
                         # Alpha/correlation must be judged in the CONSTRUCT direction.
                         _m = np.array([data[c] for c in item_col_names], dtype=float).T
                         if _rev_idx0:
                             _m[:, _rev_idx0] = (scale_min + scale_max) - _m[:, _rev_idx0]
                         return _m
 
-                    def _std_alpha(_m: np.ndarray) -> float:
+                    def _std_alpha(_m: np.ndarray, num_items=num_items) -> float:
                         _c = np.corrcoef(_m.T)
                         _rb = float(np.mean(_c[np.triu_indices_from(_c, k=1)]))
                         return (num_items * _rb) / (1 + (num_items - 1) * _rb) if _rb > 0 else 0.0
