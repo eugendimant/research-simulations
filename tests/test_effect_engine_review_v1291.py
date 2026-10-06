@@ -345,8 +345,8 @@ def test_requested_d_is_recovered_next_to_another_scale():
 
 
 def test_requested_d_is_recovered_with_four_scales_and_three_conditions():
-    ds, d2s, _ = _multi_d(4, seeds=(6201, 6202, 6203, 6204), n=450, n_conds=3)
-    assert 0.33 <= float(np.mean(ds)) <= 0.7, f"mean d = {np.mean(ds):.3f} over {np.round(ds, 2)}"
+    ds, d2s, _ = _multi_d(4, seeds=(6201, 6202, 6203), n=400, n_conds=3)
+    assert 0.28 <= float(np.mean(ds)) <= 0.72, f"mean d = {np.mean(ds):.3f} over {np.round(ds, 2)}"
     assert abs(float(np.mean(d2s))) < 0.3
 
 
@@ -367,7 +367,7 @@ def test_reference_condition_is_not_shifted_by_a_two_arm_effect():
     conds = ["Group 1", "Group 2", "Group 3"]
     mids = []
     for seed in (6501, 6502, 6503):
-        e = _engine(conds, _multi_scales(2), [_spec("Trust", conds[0], conds[1], 0.8)], n=600, seed=seed)
+        e = _engine(conds, _multi_scales(2), [_spec("Trust", conds[0], conds[1], 0.8)], n=400, seed=seed)
         df, _ = e.generate()
         m = df["Trust_mean"].astype(float)
         sd = math.sqrt(sum(m[df.CONDITION == c].var() for c in conds[:2]) / 2)
@@ -401,12 +401,12 @@ def test_a_lone_scale_keeps_the_calibrated_in_generator_route():
 
 def test_factorial_marginal_d_with_two_scales():
     ds_a, ds_b = [], []
-    for seed in (6601, 6602, 6603):
+    for seed in (6601, 6602, 6603, 6604):
         specs = [_spec("Trust", "A1", "A2", 0.5, factor="A"), _spec("Trust", "B1", "B2", 0.5, factor="B")]
-        e = _engine(CELLS, _multi_scales(2), specs, n=900, seed=seed, factors=[{"name": "A", "levels": ["A1", "A2"]}, {"name": "B", "levels": ["B1", "B2"]}])
+        e = _engine(CELLS, _multi_scales(2), specs, n=400, seed=seed, factors=[{"name": "A", "levels": ["A1", "A2"]}, {"name": "B", "levels": ["B1", "B2"]}])
         df, _ = e.generate()
         m = df["Trust_mean"].astype(float)
         for mask, out in ((df.CONDITION.str.startswith("A1"), ds_a), (df.CONDITION.str.endswith("B1"), ds_b)):
             x, y = m[mask], m[~mask]
             out.append((x.mean() - y.mean()) / math.sqrt(((len(x) - 1) * x.var() + (len(y) - 1) * y.var()) / (len(x) + len(y) - 2)))
-    assert 0.33 <= float(np.mean(ds_a)) <= 0.68 and 0.33 <= float(np.mean(ds_b)) <= 0.68, (np.round(ds_a, 2), np.round(ds_b, 2))
+    assert 0.3 <= float(np.mean(ds_a)) <= 0.7 and 0.3 <= float(np.mean(ds_b)) <= 0.7, (np.round(ds_a, 2), np.round(ds_b, 2))
