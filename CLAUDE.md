@@ -172,7 +172,7 @@ Never leave changes uncommitted. Never forget the PR link.
 Runs in this order:
 1. **STEP 0 — Relational/Matching Condition Parsing** (fires FIRST): Detects WHO is matched with WHOM. Political identity detection, ingroup (+0.30) vs outgroup (-0.35 to -0.40). Sets `_handled_by_relational = True` to skip Step 1. Economic game DVs amplify by 1.3×.
 2. **STEP 1 — Simple valence keywords** (ONLY if STEP 0 didn't handle): "positive", "negative", "reward", "punishment". Note: 'lover' and 'hater' are EXCLUDED (identity markers, not valence).
-3. **STEP 2 — Domain-specific semantic effects** (14+ domains): Each domain has keyword→effect mappings grounded in literature.
+3. **STEP 2 — Domain-specific semantic effects** (43 domains): Each domain has keyword→effect mappings grounded in literature.
 4. **STEP 3 — Condition trait modifiers**: Political identity → increased extremity/consistency. Outgroup → negative acquiescence bias.
 5. **STEP 4 — Domain-aware effect magnitude scaling**: Political + economic game: 1.6×. Political only: 1.3×. Economic game only: 1.2×.
 
@@ -320,7 +320,7 @@ Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests 
 
 ---
 
-## DV Detection: `_detect_scales()` (6 types)
+## DV Detection: `_detect_scales()` (11 types)
 
 1. Matrix scales (multi-item Likert)
 2. Numbered items (Scale_1, Scale_2)
@@ -328,8 +328,14 @@ Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests 
 4. Sliders (visual analog)
 5. Single-item DVs (standalone ratings)
 6. Numeric inputs (WTP, quantities)
+7. Constant sum (budget allocation; renormalized to the total)
+8. Rank order (valid 1..k permutations)
+9. Best-worst — **detected only**, no generation
+10. Paired comparison — **detected only**, no generation
+11. Hot spot / heatmap — **detected only**, `_generate_heatmap_response` has no callers
 
-Always include `detected_from_qsf: True` flag.
+`single_choice` is NOT one of them: single-choice items are grouped into
+`likert`/`single_item`. Always include `detected_from_qsf: True` flag.
 
 ---
 
@@ -388,7 +394,7 @@ research-simulations/
 
 ### Code & Architecture
 1. Big-bang rewrites → break into iterations
-2. Forgetting version sync → always use the 9-location checklist
+2. Forgetting version sync → always use the 10-location checklist
 3. Assuming state persists → explicitly save and restore
 4. Skipping validation → users find edge cases you missed
 5. Suppressing exceptions silently (`except Exception: pass`) → always log at minimum
@@ -478,10 +484,12 @@ https://claude.ai/code/[session-id]
 - **Non-LLM max N = 10,000** (`MAX_SIMULATED_N`). Verified to complete in ~60s. LLM max stays at `MAX_FREE_LLM_N`.
 
 ### Next Targets (v1.0.6.x)
-1. Narrative transportation domain (Green & Brock 2000)
-2. Scale type detection expansion (matrix, forced choice, semantic differential)
-3. LLM response validation layer (off-topic detection, meta-commentary screening)
-4. Authority/NFC persona-level interaction in STEP 3
+1. Scale type detection expansion (forced choice, semantic differential — neither is detected today)
+2. LLM response validation layer (off-topic detection, meta-commentary screening)
+3. Authority/NFC persona-level interaction in STEP 3
+
+(Narrative transportation shipped in v1.0.4.9 — STEP 2 DOMAIN 19 plus a
+`narrative_transportation` template set — and matrix detection already exists.)
 
 ### Business Roadmap
 Phase 1 (Foundation): User accounts + persistent workspaces + billing infrastructure

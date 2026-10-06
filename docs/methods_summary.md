@@ -69,7 +69,7 @@ If you haven't built your survey yet — or prefer a faster setup — you can **
 3. **Scales and DVs**: Describe your measures in paragraph or list format. The parser recognizes:
    - Standard scale specifications: `"Trust scale (4 items, 1-7)"`
    - Detailed academic format: `"Perceived Quality (PQ): 3 items (7-point Likert; 1=low, 7=high)"`
-   - Known validated instruments: `"BFI-10"`, `"PANAS"`, `"GAD-7"`, `"PHQ-9"` and others. Two mechanisms recognize these: `WELL_KNOWN_SCALES` (10 entries) supplies expected structure (item count, scale points, subscales), and the construct map supplies published norms for calibration. A name may hit one, the other, or both — `BFI-10`, for instance, matches the generic Big Five patterns (`bfi`/`ipip`/`neo`) rather than a BFI-10-specific entry
+   - Known validated instruments: `"BFI-10"`, `"PANAS"`, `"GAD-7"`, `"PHQ-9"` and others. Three tables recognize these: `KNOWN_SCALES` (`utils/survey_builder.py`, 84 entries) supplies expected structure on this builder path — it is where `GAD-7` (7 items, 0-3), `PHQ-9` (9 items, 0-3) and a `BFI-10`-specific entry (10 items, 1-5) live; `WELL_KNOWN_SCALES` (`utils/qsf_preview.py`, 10 entries) does the same on the QSF path; and the construct map supplies published norms for calibration. A name may hit one, two or all three
    - Numeric measures: `"Willingness to Pay (WTP): 1 item (open-ended numeric)"`
    - Binary measures: `"Manipulation check (Yes/No)"`
 4. **Open-ended questions**: Simply list your qualitative questions
@@ -175,7 +175,7 @@ The system models several well-documented response styles:
 
 **Social Desirability**: Inflation of socially favorable responses. Applied proportionally based on item content, with **domain-sensitive intensity**: highly sensitive topics (prejudice, dishonesty) receive 1.5× the social desirability adjustment, while factual/behavioral reports receive only 0.5×. Based on Nederhof (1985) and Paulhus (2002).
 
-**Midpoint Avoidance**: Cultural variation in willingness to use neutral midpoint. East Asian samples typically show lower midpoint avoidance than Western samples.
+**Midpoint Avoidance** *(table present, not yet wired)*: Cultural variation in willingness to use the neutral midpoint. East Asian samples typically show lower midpoint avoidance than Western samples. The `CULTURAL_RESPONSE_STYLES` table encodes this, but `_apply_cultural_response_style()` is not called during generation and the `midpoint_preference` trait is not read by the engine — tracked as Tier C work in `docs/COVERAGE_ROADMAP.md`.
 
 ### Persona-Demographic Coupling
 
@@ -255,7 +255,7 @@ A key you supply is **appended after** the built-ins, not put ahead of them — 
 
 1. **Batch generation**: 20 persona-guided responses are generated per API call, each tailored to a different participant profile (varying in verbosity, formality, engagement level, and sentiment)
 2. **Draw-with-replacement pooling**: A pool of LLM-generated base responses is pre-built for each question × condition × sentiment bucket; individual participants draw from this pool with deep persona-driven variation applied, ensuring no two responses are identical even when they share a common base
-3. **7-layer deep variation**: Each drawn response passes through word-level micro-variation, sentence restructuring, verbosity control, formality adjustment, engagement modulation, typo injection, and synonym substitution — producing unique output for every participant
+3. **8-layer deep variation**: Each drawn response passes through word-level micro-variation, sentence restructuring, verbosity control, formality adjustment, engagement modulation, typo injection, synonym substitution and punctuation variation (Layers 0-7, several with sub-layers) — producing unique output for every participant
 4. **Smart pool scaling**: Pool size automatically adapts to sample size. Per sentiment bucket the target is `sqrt(participants_per_bucket) * 2.4 + 8`, clamped to [18, 60], where `participants_per_bucket = sample_size / (n_conditions × n_sentiments)` — balancing API efficiency against response diversity
 5. **9-entry failover chain**: see the provider table above; a user-supplied key is appended after all built-ins, so it is used only once the built-in free capacity is spent
 
@@ -440,9 +440,11 @@ Generated datasets include quality metrics:
 
 **Detected but not generated.** The parser recognizes hot-spot/heatmap questions,
 but no data is produced for them — `_generate_heatmap_response` exists in the
-engine and is never called. Best-worst, paired-comparison and single-choice DV
-types likewise have parser paths with no generation behind them; none of these
-occur in the example QSF corpus (see `docs/COVERAGE_ROADMAP.md`).
+engine and is never called. Best-worst and paired-comparison DV types likewise
+have parser paths with no generation behind them; none of these occur in the
+example QSF corpus (see `docs/COVERAGE_ROADMAP.md`). Single-choice items are not
+a separate DV type — they are grouped into `likert`/`single_item` and generate
+normally.
 
 **Not supported.** Semantic differential (bipolar adjective) scales are neither
 detected nor generated; scale-type detection expansion is on the roadmap in
@@ -481,10 +483,10 @@ Synthetic data should never be misrepresented as real participant data in public
 
 The responses exhibit statistical properties matching published research on human survey behavior:
 
-- Mean responses around 4.0-5.2 on 7-point scales (documented positive response bias)
+- Mean responses around 4.0-5.2 on 7-point scales before domain calibration (documented positive response bias); realized DV means span roughly 3.5-5.5 once construct norms apply, with clinical DVs centering lower and satisfaction DVs higher
 - Standard deviations of 1.2-1.8 (typical for Likert data)
 - Cronbach's alphas of 0.75-0.90 for multi-item scales
-- Effect sizes within +/-0.15 of specified targets
+- Effect sizes: configured Cohen's *d* sets the **target**, not a guaranteed outcome. Verify the achieved effect in `Metadata.json` (`effect_sizes_observed`) before relying on the magnitude — as of 1.2.8.7 the realized gap runs several times the configured *d*, and recalibration is in flight. Direction and ordering are reliable; magnitude is not yet.
 
 ### Can I use this for any survey?
 

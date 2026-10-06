@@ -45,19 +45,29 @@ data-validity fixes:**
   (b) fractional (0–0.25) and huge (0–100000) slider ranges no longer collapse
   to a constant — they fill a clean integer grid with realistic spread.
 - **Streamlined:** the type-aware post-processing was extracted from the giant
-  `generate()` into three named helpers; classification regexes compile once. Re-derived 2026-10-06 by parsing all 302 example QSFs (0 parse failures) and
-counting `detected_scales[*]["type"]`, the DV types that actually occur are:
+  `generate()` into three named helpers; classification regexes compile once.
+
+### DV-type census
+
+`_detect_scales()` can emit 11 types. Re-derived 2026-10-06 by parsing all 302
+example QSFs (0 parse failures) and counting `detected_scales[*]["type"]`, the
+types that actually occur are:
 `matrix(991), slider(627), single_item(300), numbered_items(239),
-constant_sum(32), rank_order(27), numeric_input(18)`. (Types with parser code
-paths but **0 occurrences** in real QSFs: `likert`, `numbered`, `single_choice`,
-`best_worst`, `paired_comparison`, `hot_spot`.) Regenerate this census rather
-than editing it — the corpus grows with every auto-collect commit.
+constant_sum(32), rank_order(27), numeric_input(18)`.
+
+The remaining four — `likert`, `best_worst`, `paired_comparison`, `hot_spot` —
+have parser code paths but **0 occurrences** in the corpus. (`single_choice` and
+`numbered` are not types `_detect_scales` emits at all; single-choice items are
+grouped into `likert`/`single_item`.)
+
+Regenerate this census rather than editing it — the corpus grows with every
+auto-collect commit.
 
 | Area | Was | Now |
 |------|-----|-----|
 | **Constant-sum DVs** | Items generated independently — **0%** of rows summed to the total | Renormalized to sum **exactly** to the total (largest-remainder); 100% valid k=2..10 |
 | **Rank-order DVs** | Independent integers — **0%** valid permutations (duplicate ranks) | Valid **1..k permutations** via latent-utility argsort (Plackett-Luce flavor) |
-| **Numeric money/WTP DVs** | ~symmetric around the midpoint (skew≈0, no floor) | **Right-skewed** log-normal (skew≈+1.0), ~12% floor spike at $0, treatment effect preserved |
+| **Numeric money/WTP DVs** | ~symmetric around the midpoint (skew≈0, no floor) | **Right-skewed** log-normal (skew ≈ +0.8 measured), 12% floor spike at $0, treatment effect preserved |
 | **Numeric count/frequency DVs** | ~symmetric | **Right-skewed** (mode low, long tail) |
 | **Joint-DV downstream safety** | consistency-audit + bounds-clip silently re-broke constant-sum 2–7% of the time | joint-constrained DVs exempted from alpha-repair, anti-straight-line jitter, and bounds-clipping |
 | **Topical breadth** | 38 effect domains | **+5 domains**: emotion, misinformation/illusory-truth, aggression, negotiation, charitable giving — grounded, contested effects kept small, bounded by ±0.50 cap |
@@ -67,7 +77,7 @@ The seam is now **correct for every DV type that occurs in real QSFs**. All
 changes are **additive and gated on `type` + name cues**, so generic numeric
 (age/temperature) and all Likert/matrix/slider DVs are **byte-identical**.
 Validated: 38 regression tests in `tests/test_bugfixes_v1264.py`, crash/scoping fuzz
-(2,592 combos), 0 crashes across every example QSF, 0 issues across 10 student QSFs, e2e all-pass.
+(2,592 context × condition × variable combos), 0 crashes across every example QSF, 0 issues across 10 student QSFs, e2e all-pass.
 
 ---
 
@@ -133,13 +143,14 @@ Ordered by (frequency of need × value ÷ risk). These are larger, mostly
 ### Known characteristics (pre-existing, not regressions; noted for transparency)
 - **Automatically-inferred condition effects are directional, not magnitude-calibrated.**
   When no `cohens_d` is configured for a DV, the effect is derived from condition
-  wording via the STEP 0-4 detection pipeline and capped at ±0.50 in normalized
-  units, but it is not fitted to a target d — a contrast such as positive vs.
+  wording via the STEP 0-4 detection pipeline and capped at ±0.50 before the Cohen's-*d*
+  conversion — which bounds the shift that actually reaches generation at roughly
+  ±0.12 normalized units — but it is not fitted to a target d — a contrast such as positive vs.
   negative feedback can land well above typical literature effects. A condition
   named "Control" also carries a small automatic effect rather than exactly zero.
   Configure an explicit effect size for any DV whose effect magnitude matters.
 - **Cross-scale correlations run low.** Correlations between distinct constructs
-  (e.g. Trust–Satisfaction r ≈ 0.33) are below what multi-construct survey data
+  (e.g. Trust–Satisfaction r ≈ 0.40 measured, against a 0.52 target) are below what multi-construct survey data
   typically shows.
 - **Construct norms apply a small ±0.15 calibration nudge, not a mean anchor** —
   a depression/anxiety/Machiavellianism DV with no manipulation centers near the

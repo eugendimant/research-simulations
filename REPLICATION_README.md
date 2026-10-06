@@ -47,7 +47,7 @@ python3 tests/qsf_robustness.py
 # End-to-end simulate a diverse QSF sample — expect "ALL CHECKS PASSED"
 python3 tests/qsf_e2e_sim.py 25
 
-# Crash/scoping fuzz over 2,592 condition×variable combos
+# Crash/scoping fuzz over 2,592 context×condition×variable combos
 python3 tests/effect_fuzz.py
 
 # Deep output-data inspection of the 10 most-recent student QSFs
@@ -55,11 +55,11 @@ python3 tests/student_qsf_inspect.py 30
 ```
 (The standalone harnesses are scripts, not pytest files; run them directly.)
 
-## Headless simulation in code (no Streamlit/network)
+## Headless simulation in code (no Streamlit UI, no network)
 ```python
 import sys; sys.path.insert(0, "simulation_app")
 from utils.qsf_preview import QSFPreviewParser
-import app
+import app          # needs streamlit installed; no server is started
 from utils.enhanced_simulation_engine import EnhancedSimulationEngine
 
 preview = QSFPreviewParser().parse(open("simulation_app/example_files/Coffee_Shop_Loyalty_Programs.qsf", "rb").read())
