@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.9.3"
-BUILD_ID = "20261006-v12903-provider-setup-verification"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.9.4"
+BUILD_ID = "20261006-v12904-builtin-ai-actually-calls-llm"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.9.3"  # v1.2.9.3: Tell users when Built-in AI has no provider key configured instead of claiming the free providers are not responding
+APP_VERSION = "1.2.9.4"  # v1.2.9.4: Tell users when Built-in AI has no provider key configured instead of claiming the free providers are not responding
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -7755,7 +7755,7 @@ def _render_admin_dashboard() -> None:
     with _tab_llm:
         st.markdown("### LLM Provider Chain")
 
-        # v1.2.9.3: Which built-in provider slots have a key right now, and
+        # v1.2.9.4: Which built-in provider slots have a key right now, and
         # whether that key actually works. This is the first thing to check
         # when Built-in AI reports that it is not configured: it confirms
         # whether the deployment secrets landed, without ever showing key
@@ -7787,7 +7787,7 @@ def _render_admin_dashboard() -> None:
                     "getting a free key: docs/PROVIDER_SETUP.md."
                 )
 
-            # v1.2.9.3: "Test providers" — one minimal authenticated call per
+            # v1.2.9.4: "Test providers" — one minimal authenticated call per
             # configured slot, so the answer is whether the key WORKS, not
             # merely whether it is present. Never prints key material.
             st.markdown("#### Test providers")
@@ -13061,7 +13061,7 @@ if active_page == 3:
             )
 
         elif _current_method == "free_llm":
-            # v1.2.9.3: No warning banner and no dead-end buttons here. Built-in
+            # v1.2.9.4: No warning banner and no dead-end buttons here. Built-in
             # AI always produces data: it tries every configured provider in
             # order, and whatever it cannot get from them comes from the built-in
             # text engine instead. A neutral one-liner is all the user needs up
@@ -13084,7 +13084,7 @@ if active_page == 3:
             st.session_state["allow_template_fallback_once"] = True
             st.session_state["_use_abe_v2"] = _current_method in ("abe_v2")
         elif _current_method == "free_llm":
-            # v1.2.9.3: Built-in AI must ALWAYS be able to produce data. When no
+            # v1.2.9.4: Built-in AI must ALWAYS be able to produce data. When no
             # provider key is configured, or every provider fails mid-run, the
             # engine falls through to the built-in (non-LLM) text cascade instead
             # of blocking the run or raising LLMExhaustedMidGeneration. The
@@ -13562,13 +13562,21 @@ if active_page == 3:
             # MAX_FREE_LLM_N OE responses per question — template fallback for the rest.
             _current_gen_method = st.session_state.get("generation_method", "template")
             _free_llm_oe_cap = 0  # 0 = no cap
-            if _current_gen_method == "free_llm" and N > MAX_FREE_LLM_N:
+            if _current_gen_method == "free_llm":
+                # v1.2.9.4: ALWAYS set the cap for Built-in AI, not only when
+                # N > MAX_FREE_LLM_N. The engine's two LLM gates read
+                # "allow_template_fallback and cap == 0" as "do not try the LLM
+                # at all", so leaving the cap at 0 for small runs meant Built-in
+                # AI made zero API calls for N <= 100 — the common case — while
+                # working for N > 100. The cap is an upper bound, so setting it
+                # for every N is a no-op whenever N <= MAX_FREE_LLM_N.
                 _free_llm_oe_cap = MAX_FREE_LLM_N
-                _log(
-                    f"Free LLM OE cap active: LLM will generate OE for first "
-                    f"{MAX_FREE_LLM_N} participants, template for remaining {N - MAX_FREE_LLM_N}",
-                    level="info",
-                )
+                if N > MAX_FREE_LLM_N:
+                    _log(
+                        f"Free LLM OE cap active: LLM will generate OE for first "
+                        f"{MAX_FREE_LLM_N} participants, template for remaining {N - MAX_FREE_LLM_N}",
+                        level="info",
+                    )
 
             # v1.4.2.1: Safety assertion — missing_fields should never be true here
             # because the Generate button is disabled when all_required_complete is False.
@@ -14295,7 +14303,7 @@ if active_page == 3:
                 _health = engine.llm_generator.health_check(timeout=12)
                 _preflight_method = st.session_state.get(_gen_method_key, "free_llm")
                 if not _health["ok"] and _preflight_method == "free_llm":
-                    # v1.2.9.3: Built-in AI never dead-ends. The providers were
+                    # v1.2.9.4: Built-in AI never dead-ends. The providers were
                     # tried in order and none answered (or none is configured),
                     # so carry on and let the built-in text engine supply the
                     # open-ended responses. The post-generation data-source
@@ -14311,7 +14319,7 @@ if active_page == 3:
                     engine.allow_template_fallback = True
                     st.session_state["_builtin_ai_fell_back"] = _health.get(
                         "reason", "unreachable")
-                    # v1.2.9.3: say WHICH of the two states this is, and what
+                    # v1.2.9.4: say WHICH of the two states this is, and what
                     # would change it. "Not responding" for a key that was
                     # never set sends people to wait for a fix that will never
                     # come on its own.
@@ -14334,7 +14342,7 @@ if active_page == 3:
                             "button reports each one separately."
                         )
                 elif not _health["ok"]:
-                    # v1.2.9.3: Only "AI (your API key)" reaches this branch —
+                    # v1.2.9.4: Only "AI (your API key)" reaches this branch —
                     # Built-in AI falls through to the built-in engine above. A
                     # user who supplied their own key DOES need to be told it is
                     # not working, rather than silently getting template text.
@@ -14853,7 +14861,7 @@ if active_page == 3:
                         # Simplified notification for non-advanced users
                         _brief_msg = "Your data was generated successfully."
                         if _ai_count == 0:
-                            # v1.2.9.3: Say WHY accurately. "Temporarily
+                            # v1.2.9.4: Say WHY accurately. "Temporarily
                             # unavailable" is wrong when this deployment simply
                             # has no provider key configured.
                             if st.session_state.get("_builtin_ai_fell_back") == "not_configured":

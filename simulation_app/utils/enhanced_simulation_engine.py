@@ -3472,6 +3472,24 @@ class EnhancedSimulationEngine:
             self.llm_init_error = str(_llm_err)
             self._log(f"LLM generator not available (using templates): {_llm_err}")
 
+    def llm_attempts_allowed(self) -> bool:
+        """Whether this run may call the LLM at all.
+
+        ``allow_template_fallback`` means two different things to the two
+        callers that set it, and conflating them caused a silent regression:
+
+        * "Template Engine" / ABE set it to mean *do not use the LLM*.
+        * "Built-in AI" sets it to mean *fall back gracefully when the LLM is
+          unavailable* — it still wants the LLM tried first.
+
+        ``free_llm_oe_cap > 0`` is what distinguishes the second case: it is an
+        upper bound on LLM-generated open-ended responses, so a caller that
+        wants the LLM attempted with graceful fallback sets a positive cap.
+        Both of the engine's LLM gates (pool prefill and per-participant
+        generation) must agree, so they both read this one predicate.
+        """
+        return (not self.allow_template_fallback) or self.free_llm_oe_cap > 0
+
     @staticmethod
     def _normalize_condition_allocation(
         allocation: Optional[Dict[str, Any]],
@@ -10298,7 +10316,7 @@ class EnhancedSimulationEngine:
             self.llm_generator is not None
             and not _llm_force_off
             and not _llm_throttled_now
-            and (not self.allow_template_fallback or self.free_llm_oe_cap > 0)
+            and self.llm_attempts_allowed()
         )
         if _should_try_llm:
             try:
@@ -12638,7 +12656,8 @@ class EnhancedSimulationEngine:
         # v1.2.2.9: EXCEPTION — when free_llm_oe_cap > 0, the user chose "Proceed
         # (AI for 100, template for rest)".  We MUST prefill so the first 100
         # participants have pool responses ready.
-        if self.llm_generator and self.open_ended_questions and (not self.allow_template_fallback or self.free_llm_oe_cap > 0):
+        if (self.llm_generator and self.open_ended_questions
+                and self.llm_attempts_allowed()):
             try:
                 self.llm_generator.reset_providers()
                 self._log("LLM providers reset before prefill (clean state)")
