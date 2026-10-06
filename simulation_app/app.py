@@ -97,6 +97,10 @@ from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
 from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
 from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport
+try:  # reliable, observable email delivery (v1.2.9.1); the legacy sender below is the fallback
+    from utils import email_delivery as _email_delivery
+except ImportError:  # partial deploy: keep the app loading
+    _email_delivery = None  # type: ignore[assignment]
 from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedCondition, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS, generate_qsf_from_design
 from utils.persona_library import PersonaLibrary, Persona
 from utils.enhanced_simulation_engine import (
@@ -3367,12 +3371,17 @@ SYSTEM INFO:
 - Study Title: {st.session_state.get('study_title', 'N/A')}
 """
 
-                # Try to send via SMTP
-                ok, msg = _send_email(
-                    to_email=FEEDBACK_EMAIL,
-                    subject=subject,
-                    body_text=body,
-                )
+                # Try to send via SMTP (rate-limited like the other student-triggered emails)
+                _fb_allowed, _fb_reason = _user_email_allowed()
+                if _fb_allowed:
+                    ok, msg = _send_email(
+                        to_email=FEEDBACK_EMAIL,
+                        subject=subject,
+                        body_text=body,
+                        kind="feedback",
+                    )
+                else:
+                    ok, msg = False, _fb_reason
 
                 if ok:
                     st.success("✅ Thank you! Your feedback has been sent successfully.")
@@ -3393,13 +3402,15 @@ SYSTEM INFO:
         st.caption(f"Feedback is sent to Dr. Eugen Dimant ({FEEDBACK_EMAIL})")
 
 
-def _send_email_with_smtp(
+def _send_email_with_smtp_legacy(
     to_email: str,
     subject: str,
     body_text: str,
     attachments: Optional[List[Tuple[str, bytes]]] = None,
 ) -> Tuple[bool, str]:
     """
+    Legacy single-attempt SMTP sender, used only when utils/email_delivery.py is unavailable.
+
     Send an email using SMTP (free alternative to SendGrid).
 
     Supports Gmail, Google Workspace, Outlook, or any SMTP provider.
@@ -3511,11 +3522,58 @@ def _secret(name: str, default: Any = "") -> Any:
         return default
 
 
+# ---------------------------------------------------------------------------------------
+# Email (v1.2.9.1): one delivery path with retries, size handling and a delivery log
+# ---------------------------------------------------------------------------------------
+EMAIL_DELIVERY_LOG = BASE_STORAGE / "email_delivery_log.jsonl"
+_DEFAULT_INSTRUCTOR_EMAIL = "edimant@sas.upenn.edu"
+
+
+def _email_config() -> Any:
+    """SMTP settings read from the secrets (None when the delivery module is unavailable)."""
+    if _email_delivery is None:
+        return None
+    return _email_delivery.load_smtp_config(_secret)
+
+
+def _instructor_recipients() -> Tuple[List[str], List[str]]:
+    """(valid, invalid) addresses from INSTRUCTOR_NOTIFICATION_EMAIL; several may be listed."""
+    raw = _secret("INSTRUCTOR_NOTIFICATION_EMAIL", "") or _DEFAULT_INSTRUCTOR_EMAIL
+    if _email_delivery is None:
+        return [str(raw).strip()], []
+    return _email_delivery.parse_recipients(raw)
+
+
+def _send_email_with_smtp(
+    to_email: str,
+    subject: str,
+    body_text: str,
+    attachments: Optional[List[Tuple[str, bytes]]] = None,
+    *,
+    kind: str = "email",
+    body_html: Optional[str] = None,
+) -> Tuple[bool, str]:
+    """Send one email through the reliable delivery path. Returns (ok, user-safe message).
+
+    Every attempt is written to the delivery log (admin dashboard, "Email Delivery" tab).
+    """
+    if _email_delivery is None:
+        return _send_email_with_smtp_legacy(to_email, subject, body_text, attachments)
+    recipients, _invalid = _email_delivery.parse_recipients(to_email)
+    slots = [_email_delivery.Attachment(name, data) for name, data in (attachments or [])]
+    result = _email_delivery.deliver(
+        _email_config(), recipients, subject, body_text, body_html=body_html, attachments=slots,
+        kind=kind, log_path=EMAIL_DELIVERY_LOG,
+    )
+    return result.ok, result.message
+
+
 def _send_email(
     to_email: str,
     subject: str,
     body_text: str,
     attachments: Optional[List[Tuple[str, bytes]]] = None,
+    **kwargs: Any,
 ) -> Tuple[bool, str]:
     """
     Send an email using the configured method (SMTP).
@@ -3525,7 +3583,98 @@ def _send_email(
 
     Returns: (ok, message)
     """
-    return _send_email_with_smtp(to_email, subject, body_text, attachments)
+    return _send_email_with_smtp(to_email, subject, body_text, attachments, **kwargs)
+
+
+def _user_email_allowed() -> Tuple[bool, str]:
+    """Limit student-triggered emails (per session and app-wide) so they cannot use up the mail
+    account's daily quota, which the instructor notification depends on."""
+    import time as _time_mod
+    try:
+        per_session = int(_secret("USER_EMAIL_MAX_PER_SESSION_PER_HOUR", 5) or 5)
+        per_app = int(_secret("USER_EMAIL_MAX_PER_HOUR", 60) or 60)
+    except (TypeError, ValueError):
+        per_session, per_app = 5, 60
+    now = _time_mod.time()
+    times = [t for t in st.session_state.get("_user_email_times", []) if now - t < 3600]
+    if len(times) >= per_session:
+        st.session_state["_user_email_times"] = times
+        return False, "You have reached the email limit for this session. Please download the ZIP instead."
+    if _email_delivery is not None:
+        # a limiter inside the imported module outlives Streamlit's per-interaction script reruns
+        if not _email_delivery.shared_limiter("user-emails", per_app).allow("app"):
+            return False, "The email service is busy right now. Please download the ZIP instead."
+    times.append(now)
+    st.session_state["_user_email_times"] = times
+    return True, ""
+
+
+def _notify_instructor(
+    *,
+    title: str,
+    metadata: Dict[str, Any],
+    files: Dict[str, bytes],
+    zip_bytes: bytes,
+    html_bytes: bytes,
+    md_bytes: bytes,
+    summary_bytes: bytes,
+    usage_summary: str = "",
+    wait: bool = False,
+) -> Any:
+    """Queue the instructor notification (analyses plus data package) in a background thread.
+
+    A thread keeps going when the browser tab closes or Streamlit reruns the script, which used
+    to cancel the send. The outcome (including "SMTP not configured") is written to the delivery
+    log. Never raises; returns the thread (or None).
+    """
+    try:
+        recipients, _invalid = _instructor_recipients()
+        label = metadata.get("generation_method_label", metadata.get("generation_method", "Unknown"))
+        names = ["INSTRUCTOR_Statistical_Report.html", "INSTRUCTOR_Detailed_Analysis.md",
+                 "simulation_output.zip", "User_Study_Summary.md"]
+        if _email_delivery is None:  # legacy best effort
+            body = f"Study: {title}\nGeneration Method: {label}\nSample Size: N={metadata.get('sample_size', 'N/A')}\n"
+            _send_email_with_smtp_legacy(
+                ", ".join(recipients),
+                f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) [{label}] - {title}", body,
+                [("simulation_output.zip", zip_bytes), (names[0], html_bytes), (names[1], md_bytes), (names[3], summary_bytes)],
+            )
+            return None
+        subject, text, html_body = _email_delivery.compose_instructor_notification(
+            title=title, team_name=st.session_state.get("team_name", ""),
+            team_members=st.session_state.get("team_members_raw", ""), generation_label=str(label),
+            mode=str(metadata.get("simulation_mode", "pilot")), metadata=metadata, usage_summary=usage_summary,
+            analysis_markdown=md_bytes.decode("utf-8", "replace"), attachment_names=names,
+            zip_listing=sorted(files.keys())[:40],
+        )
+        attach = _email_delivery.Attachment
+        lean: Tuple[Any, ...] = ()
+        if len(zip_bytes) > 2 * 1024 * 1024:  # a smaller stand-in without large source uploads
+            try:
+                lean_files = {k: v for k, v in files.items() if not k.startswith("Source_Files/")}
+                lean_files["Source_Files/README_omitted.txt"] = (
+                    b"Source files were left out of the emailed copy to keep the message small. "
+                    b"The full package is what the user downloaded.")
+                lean = (attach("simulation_output.zip", _bytes_to_zip(lean_files)),)
+            except Exception as _lean_err:  # noqa: BLE001
+                _app_logging.getLogger(__name__).warning("Lean ZIP for the instructor email failed: %s", _lean_err)
+        slots = [
+            attach(names[0], html_bytes, protected=True),
+            attach(names[1], md_bytes),
+            attach(names[2], zip_bytes, alternatives=lean),
+            attach(names[3], summary_bytes),
+        ]
+        thread = _email_delivery.run_in_background(
+            _email_delivery.deliver, _email_config(), recipients, subject, text,
+            body_html=html_body, attachments=slots, kind="instructor", log_path=EMAIL_DELIVERY_LOG,
+            name="instructor-email",
+        )
+        if wait:
+            thread.join(180)
+        return thread
+    except Exception as _notify_err:  # noqa: BLE001 - never break generation
+        _app_logging.getLogger(__name__).error("Instructor notification could not be queued: %s", _notify_err)
+        return None
 
 
 def _clean_condition_name(condition: str) -> str:
@@ -7691,6 +7840,143 @@ def _load_user_emails() -> list:
     return []
 
 
+def _list_stored_instructor_packages(limit: int = 15) -> List[Dict[str, Any]]:
+    """Newest-first run folders that kept the instructor analyses (see persist_simulation_run)."""
+    found: List[Dict[str, Any]] = []
+    try:
+        if not SIM_RUNS_ROOT.exists():
+            return found
+        for folder in sorted((d for d in SIM_RUNS_ROOT.iterdir() if d.is_dir()), key=lambda d: d.name, reverse=True):
+            html_file = folder / "INSTRUCTOR_Statistical_Report.html"
+            md_file = folder / "INSTRUCTOR_Detailed_Analysis.md"
+            if not (html_file.exists() or md_file.exists()):
+                continue
+            study = ""
+            try:
+                study = str(json.loads((folder / "Metadata.json").read_text(encoding="utf-8")).get("study_title", ""))
+            except Exception:  # noqa: BLE001 - a missing/corrupt Metadata.json only hides the title
+                study = ""
+            found.append({"folder": folder, "name": folder.name, "study": study,
+                          "html": html_file if html_file.exists() else None, "md": md_file if md_file.exists() else None})
+            if len(found) >= limit:
+                break
+    except Exception as _list_err:  # noqa: BLE001
+        _app_logging.getLogger(__name__).warning("Could not list stored instructor packages: %s", _list_err)
+    return found
+
+
+def _resend_stored_instructor_package(pkg: Dict[str, Any]) -> Any:
+    """Email a stored instructor package (analyses plus the run's data CSV) to the instructor recipients."""
+    folder: Path = pkg["folder"]
+    config = _email_config()
+    recipients, _invalid = _instructor_recipients()
+    try:
+        metadata = json.loads((folder / "Metadata.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        metadata = {}
+    md_text = pkg["md"].read_text(encoding="utf-8") if pkg.get("md") else ""
+    subject, text, html_body = _email_delivery.compose_instructor_notification(
+        title=str(metadata.get("study_title") or pkg["name"]), team_name="", team_members="",
+        generation_label=str(metadata.get("generation_method_label", metadata.get("generation_method", "stored run"))),
+        mode=str(metadata.get("simulation_mode", "pilot")), metadata=metadata, usage_summary="",
+        analysis_markdown=md_text, attachment_names=[p.name for p in (pkg.get("html"), pkg.get("md")) if p],
+    )
+    attach = _email_delivery.Attachment
+    slots = []
+    if pkg.get("html"):
+        slots.append(attach(pkg["html"].name, pkg["html"].read_bytes(), protected=True))
+    if pkg.get("md"):
+        slots.append(attach(pkg["md"].name, pkg["md"].read_bytes()))
+    data_csv = folder / "Simulated_Data.csv"
+    if data_csv.exists():
+        slots.append(attach("Simulated_Data.csv", data_csv.read_bytes()))
+    return _email_delivery.deliver(config, recipients, "[RE-SENT] " + subject, text, body_html=html_body,
+                                   attachments=slots, kind="resend", log_path=EMAIL_DELIVERY_LOG)
+
+
+def _render_admin_email_tab() -> None:
+    """Admin "Email Delivery" tab: configuration check, test email, delivery log, stored packages."""
+    st.markdown("### Email delivery")
+    if _email_delivery is None:
+        st.error("The email delivery module (utils/email_delivery.py) is missing on this deployment; the legacy sender "
+                 "is in use and nothing is logged.")
+        return
+    cfg = _email_config()
+    recipients, invalid = _instructor_recipients()
+    info = cfg.public_summary()
+    c1, c2, c3 = st.columns(3)
+    c1.metric("SMTP configured", "yes" if cfg.configured else "NO")
+    c2.metric("Instructor recipients", len(recipients))
+    c3.metric("Max message size", f"{info['max_message_mb']} MB")
+    st.caption(
+        f"Server: {info['server_host'] or '(not set)'} \u00b7 port {info['port']} \u00b7 TLS {'on' if info['tls'] else 'off'} \u00b7 "
+        f"username {'set' if info['username_set'] else 'MISSING'} \u00b7 password {'set' if info['password_set'] else 'MISSING'} \u00b7 "
+        f"recipients: {', '.join(_email_delivery.mask_address(r) for r in recipients) or 'none'}"
+    )
+    if invalid:
+        st.warning(f"Ignored invalid recipient entries in INSTRUCTOR_NOTIFICATION_EMAIL: {', '.join(invalid)}")
+    if not cfg.configured:
+        st.error("SMTP is not configured (SMTP_SERVER, SMTP_USERNAME and SMTP_PASSWORD in the Streamlit secrets). "
+                 "Instructor emails are NOT being sent; the analyses are still stored below.")
+    st.caption("Several recipients can be listed in INSTRUCTOR_NOTIFICATION_EMAIL, separated by commas, for example a "
+               "second inbox that is not behind the Outlook filters.")
+
+    if st.button("Send test email now", key="_admin_email_test_btn", type="primary"):
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with st.spinner("Sending..."):
+            res = _email_delivery.deliver(
+                cfg, recipients, f"[Behavioral Simulation] Test email {stamp}",
+                f"This is a test of the instructor notification path.\nApp version {APP_VERSION}, sent {stamp}.\n",
+                kind="test", log_path=EMAIL_DELIVERY_LOG)
+        if res.ok:
+            st.success(f"Accepted by the mail server after {res.attempts} attempt(s) in {res.elapsed_s}s. "
+                       f"Message-ID: {res.message_id}. If it does not show up in Outlook, check Junk Email and the "
+                       "Microsoft 365 quarantine and search for that Message-ID: the server has taken responsibility "
+                       "for delivery, so the problem is on the receiving side.")
+        else:
+            st.error(f"{res.message} [{res.error_kind or 'error'}; SMTP code {res.smtp_code}; {res.error_detail}]")
+
+    st.markdown("#### Recent deliveries")
+    entries = _email_delivery.read_delivery_log(EMAIL_DELIVERY_LOG, limit=50)
+    if entries:
+        rows = []
+        for e in entries:
+            problem = " ".join(str(x) for x in (e.get("error_kind"), e.get("smtp_code"), e.get("error")) if x)
+            rows.append({
+                "time (UTC)": e.get("ts", ""), "kind": e.get("kind", ""), "ok": "yes" if e.get("ok") else "NO",
+                "attempts": e.get("attempts", 0), "seconds": e.get("elapsed_s", 0),
+                "to": ", ".join(e.get("to", [])), "size MB": round(e.get("message_bytes", 0) / 1048576, 2),
+                "attachments": ", ".join(f"{a.get('name')} ({a.get('bytes', 0) / 1048576:.1f} MB)" for a in e.get("attachments", [])),
+                "reduced": ", ".join(f"{o.get('name')} {o.get('action')}" for o in e.get("omitted", [])),
+                "problem": problem, "Message-ID": e.get("message_id", ""),
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    else:
+        st.info("No email attempts have been recorded since the last restart of this app instance.")
+
+    st.markdown("#### Stored instructor packages")
+    st.caption("Every run keeps its instructor analyses on the server (until the app instance restarts), so they can be "
+               "downloaded or re-sent even when an email did not arrive.")
+    packages = _list_stored_instructor_packages()
+    if not packages:
+        st.info("No stored packages yet.")
+    for idx, pkg in enumerate(packages):
+        with st.expander(f"{pkg['name']}  \u00b7  {pkg['study'] or 'untitled study'}"):
+            d1, d2, d3 = st.columns(3)
+            if pkg.get("html"):
+                d1.download_button("Statistical report (HTML)", pkg["html"].read_bytes(), file_name=pkg["html"].name,
+                                   mime="text/html", key=f"_admin_pkg_html_{idx}")
+            if pkg.get("md"):
+                d2.download_button("Detailed analysis (MD)", pkg["md"].read_bytes(), file_name=pkg["md"].name,
+                                   mime="text/markdown", key=f"_admin_pkg_md_{idx}")
+            if d3.button("Email to instructor recipients", key=f"_admin_pkg_send_{idx}"):
+                res = _resend_stored_instructor_package(pkg)
+                if res.ok:
+                    st.success(f"Accepted by the mail server (Message-ID {res.message_id}).")
+                else:
+                    st.error(f"{res.message} [{res.error_kind}; {res.error_detail}]")
+
+
 def _render_admin_dashboard() -> None:
     """Render the hidden admin dashboard with full diagnostic info."""
     import hashlib
@@ -7789,8 +8075,9 @@ def _render_admin_dashboard() -> None:
     st.caption(f"First simulation: {_first_use} | Last simulation: {_last_use} | All-time participants: {_alltime_participants}")
 
     # ── Tabs ──────────────────────────────────────────────────────────
-    _tab_llm, _tab_failures, _tab_history, _tab_emails, _tab_session, _tab_system, _tab_errors = st.tabs([
-        "LLM Pipeline", "Failure Analytics", "Simulation History", "User Emails", "Session State", "System Info", "Error Logs"
+    _tab_llm, _tab_failures, _tab_history, _tab_emails, _tab_delivery, _tab_session, _tab_system, _tab_errors = st.tabs([
+        "LLM Pipeline", "Failure Analytics", "Simulation History", "User Emails", "Email Delivery", "Session State",
+        "System Info", "Error Logs"
     ])
 
     # ── TAB 1: LLM Pipeline ──────────────────────────────────────────
@@ -8097,6 +8384,9 @@ def _render_admin_dashboard() -> None:
             st.dataframe(_email_table, use_container_width=True, hide_index=True)
         else:
             st.info("No user emails collected yet. Emails are recorded when users send output via email.")
+
+    with _tab_delivery:
+        _render_admin_email_tab()
 
     # ── TAB 5: Session State Explorer ─────────────────────────────────
     with _tab_session:
@@ -15211,6 +15501,36 @@ if active_page == 3:
                 prereg_summary = f"# Preregistration Summary\n\n## Primary Outcomes\n{prereg_outcomes}\n\n## Independent Variables\n{prereg_iv}"
                 files["Source_Files/Preregistration_Summary.txt"] = prereg_summary.encode("utf-8")
 
+            # v1.2.2.1: Wrap zip creation in try/except — if zip fails, still save
+            # the raw DataFrame so the user can at least download the CSV.
+            try:
+                zip_bytes = _bytes_to_zip(files)
+            except Exception as _zip_exc:
+                _log(f"ZIP creation failed: {_zip_exc}", level="warning")
+                # Create minimal ZIP with just the CSV
+                try:
+                    _min_files = {"Simulated_Data.csv": csv_bytes}
+                    if diagnostics_bytes is not None:
+                        _min_files["Simulation_Diagnostics.csv"] = diagnostics_bytes
+                    zip_bytes = _bytes_to_zip(_min_files)
+                except Exception:
+                    zip_bytes = csv_bytes  # Last resort: raw CSV as download
+
+            # v1.2.9.1: package, then hand the instructor notification to a background thread BEFORE
+            # the slower archive/audit work and the remaining Streamlit calls. Streamlit stops a script
+            # run when the browser disconnects or reruns, which used to cancel the send; a thread does
+            # not depend on the session. The outcome lands in the delivery log (admin dashboard).
+            _notify_instructor(
+                title=title,
+                metadata=metadata,
+                files=files,
+                zip_bytes=zip_bytes,
+                html_bytes=comprehensive_html_bytes,
+                md_bytes=comprehensive_bytes,
+                summary_bytes=instructor_bytes,
+                usage_summary=_get_usage_summary(),
+            )
+
             # v1.0.7.3: Persist each run in its own folder + audit newly created runs.
             run_archive_dir = None
             run_audit_summary: Dict[str, Any] = {}
@@ -15222,6 +15542,10 @@ if active_page == 3:
                     instructor_report_md=instructor_report,
                     engine_log=st.session_state.get("_admin_engine_log", []),
                     validation_results=validation_results,
+                    extra_files={
+                        "INSTRUCTOR_Statistical_Report.html": comprehensive_html_bytes,
+                        "INSTRUCTOR_Detailed_Analysis.md": comprehensive_bytes,
+                    },
                 )
                 run_audit_summary = audit_new_runs(
                     output_root=SIM_RUNS_ROOT,
@@ -15241,21 +15565,6 @@ if active_page == 3:
             metadata["run_audit_summary"] = run_audit_summary
             metadata["run_improvement_log"] = str(SIM_RUN_IMPROVEMENT_LOG)
 
-            # v1.2.2.1: Wrap zip creation in try/except — if zip fails, still save
-            # the raw DataFrame so the user can at least download the CSV.
-            try:
-                zip_bytes = _bytes_to_zip(files)
-            except Exception as _zip_exc:
-                _log(f"ZIP creation failed: {_zip_exc}", level="warning")
-                # Create minimal ZIP with just the CSV
-                try:
-                    _min_files = {"Simulated_Data.csv": csv_bytes}
-                    if diagnostics_bytes is not None:
-                        _min_files["Simulation_Diagnostics.csv"] = diagnostics_bytes
-                    zip_bytes = _bytes_to_zip(_min_files)
-                except Exception:
-                    zip_bytes = csv_bytes  # Last resort: raw CSV as download
-
             st.session_state["last_df"] = df
             st.session_state["last_zip"] = zip_bytes
             st.session_state["last_metadata"] = metadata
@@ -15273,81 +15582,6 @@ if active_page == 3:
                 _existing_qn = st.session_state.get("_gen_quality_notes", [])
                 _existing_qn.append("Schema validation warnings found. Review Schema_Validation.json in the download.")
                 st.session_state["_gen_quality_notes"] = _existing_qn
-
-            # v1.0.0: Enhanced instructor email notification with better diagnostics
-            instructor_email = _secret("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu")
-            _email_gen_label = metadata.get('generation_method_label', metadata.get('generation_method', 'Unknown'))
-            subject = f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) [{_email_gen_label}] - {title}"
-
-            # Get usage stats for internal tracking
-            usage_summary = _get_usage_summary()
-
-            # Check if SMTP email is configured before attempting to send
-            smtp_configured = (
-                _secret("SMTP_SERVER", "") and
-                _secret("SMTP_USERNAME", "") and
-                _secret("SMTP_PASSWORD", "")
-            )
-
-            if not smtp_configured:
-                pass  # SMTP not configured — skip instructor notification silently
-            else:
-                body = (
-                    "COMPREHENSIVE INSTRUCTOR ANALYSIS ATTACHED\n"
-                    "=========================================\n\n"
-                    "This email includes detailed statistical analysis that students do NOT receive.\n"
-                    "Users get User_Study_Summary.md and User_Study_Summary.html (browser-viewable) in their download ZIP.\n\n"
-                    "INSTRUCTOR ATTACHMENTS:\n"
-                    "- INSTRUCTOR_Statistical_Report.html - Full visual report with charts, t-tests,\n"
-                    "  ANOVA, Mann-Whitney, chi-squared, regression analysis, and effect sizes.\n"
-                    "  Open in any web browser for best viewing.\n"
-                    "- INSTRUCTOR_Detailed_Analysis.md - Text-based analysis (Markdown format)\n"
-                    "- User_Study_Summary.md - What users receive (for reference)\n\n"
-                    f"Team: {st.session_state.get('team_name','')}\n"
-                    f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
-                    f"Study: {title}\n"
-                    f"Generation Method: {_email_gen_label}\n"
-                    f"Sample Size: N={metadata.get('sample_size', 'N/A')}\n"
-                    f"Conditions: {len(metadata.get('conditions', []))}\n"
-                    f"Open-Ended Questions: {len(metadata.get('open_ended_questions', []))}\n"
-                    f"Generated: {metadata.get('generation_timestamp','')}\n"
-                    f"Run ID: {metadata.get('run_id','')}\n"
-                    + (f"OE Data Sources: {', '.join(metadata.get('oe_data_sources', []))}\n" if metadata.get('oe_data_sources') else "")
-                    + "\n"
-                    "Files in ZIP (what students see):\n"
-                    "- Simulated_Data.csv (the data, Qualtrics export layout)\n"
-                    "- Simulated_Data_Qualtrics_Raw.csv (same data with the 3-row Qualtrics header)\n"
-                    "- Simulation_Diagnostics.csv (simulator-internal columns, keyed by ResponseId)\n"
-                    "- Data_Codebook_Handbook.txt (variable coding)\n"
-                    "- User_Study_Summary.md (study summary in Markdown)\n"
-                    "- User_Study_Summary.html (same summary - opens in any browser)\n"
-                    "- R_Prepare_Data.R (R script)\n"
-                    "- Python_Prepare_Data.py (Python/pandas script)\n"
-                    "- Julia_Prepare_Data.jl (Julia/DataFrames script)\n"
-                    "- SPSS_Prepare_Data.sps (SPSS syntax)\n"
-                    "- Stata_Prepare_Data.do (Stata do-file)\n"
-                    "- Metadata.json, Schema_Validation.json\n"
-                    f"\n{usage_summary}\n"
-                )
-
-                # Log the email attempt for debugging
-                # Instructor notification sent silently (user should not see this)
-
-                ok, msg = _send_email(
-                    to_email=instructor_email,
-                    subject=subject,
-                    body_text=body,
-                    attachments=[
-                        ("simulation_output.zip", zip_bytes),
-                        ("INSTRUCTOR_Statistical_Report.html", comprehensive_html_bytes),  # HTML report with visualizations
-                        ("INSTRUCTOR_Detailed_Analysis.md", comprehensive_bytes),  # Markdown fallback
-                        ("User_Study_Summary.md", instructor_bytes),  # What users receive (for reference)
-                    ],
-                )
-                if ok:
-                    pass  # Instructor notification sent silently
-                else:
-                    pass  # Instructor notification failed silently — not shown to user
 
             progress_bar.progress(100, text="")
             status_placeholder.success("Simulation complete.")
@@ -15832,21 +16066,28 @@ if active_page == 3:
         colE1, colE2 = st.columns([1, 1])
         with colE1:
             if st.button("Send ZIP via email", key="send_zip_email_btn"):
-                if not to_email or "@" not in to_email:
-                    st.error("Please enter a valid email address.")
+                # One address only: this button must not become a way to mail files to a list.
+                _zip_addrs = (_email_delivery.parse_recipients(to_email)[0] if _email_delivery is not None
+                              else ([to_email.strip()] if to_email and "@" in to_email else []))
+                _zip_allowed, _zip_reason = _user_email_allowed() if len(_zip_addrs) == 1 else (True, "")
+                if len(_zip_addrs) != 1:
+                    st.error("Please enter one valid email address.")
+                elif not _zip_allowed:
+                    st.error(_zip_reason)
                 else:
                     # v1.1.0.7: Track user email in admin area
-                    _track_user_email(to_email, source="zip_download")
+                    _track_user_email(_zip_addrs[0], source="zip_download")
                     subject = f"[Behavioral Simulation] Output: {st.session_state.get('study_title','Untitled Study')}"
                     body = (
                         "Attached is the simulation output ZIP (Simulated_Data.csv, Simulation_Diagnostics.csv, metadata, analysis scripts).\n\n"
                         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
                     )
                     ok, msg = _send_email(
-                        to_email=to_email,
+                        to_email=_zip_addrs[0],
                         subject=subject,
                         body_text=body,
                         attachments=[("simulation_output.zip", zip_bytes)],
+                        kind="user_zip",
                     )
                     if ok:
                         st.success(msg)
@@ -15857,6 +16098,7 @@ if active_page == 3:
             instructor_email = _secret("INSTRUCTOR_NOTIFICATION_EMAIL", "")
             if instructor_email:
                 if st.button("Send to instructor too", key="send_to_instructor_btn"):
+                    _inst_allowed, _inst_reason = _user_email_allowed()
                     subject = f"[Behavioral Simulation] Output (team: {st.session_state.get('team_name','') or 'N/A'})"
                     body = (
                         f"Team: {st.session_state.get('team_name','')}\n"
@@ -15864,12 +16106,16 @@ if active_page == 3:
                         f"Study: {st.session_state.get('study_title','')}\n"
                         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
                     )
-                    ok, msg = _send_email(
-                        to_email=instructor_email,
-                        subject=subject,
-                        body_text=body,
-                        attachments=[("simulation_output.zip", zip_bytes)],
-                    )
+                    if _inst_allowed:
+                        ok, msg = _send_email(
+                            to_email=instructor_email,
+                            subject=subject,
+                            body_text=body,
+                            attachments=[("simulation_output.zip", zip_bytes)],
+                            kind="user_to_instructor",
+                        )
+                    else:
+                        ok, msg = False, _inst_reason
                     if ok:
                         st.success(msg)
                     else:

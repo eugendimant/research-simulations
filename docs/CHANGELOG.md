@@ -54,6 +54,22 @@ lookup) is untouched; only the text post-processing after a response is drawn ch
 - New root README, `docs/guide/how-effects-work.md`, `docs/guide/limitations.md`, `LICENSE`
   (PolyForm Noncommercial 1.0.0) and `CITATION.cff`.
 
+**Email delivery**
+- The instructor notification used to be fire-and-forget: when SMTP was not configured or a send failed (message too
+  large, transient server error, refused recipient) the code path was a bare `pass`, and it ran at the very end of a
+  script run that Streamlit cancels when the browser tab closes or reruns. It is now queued in a background thread
+  right after the package is built, retried with backoff on transient errors, logged (`data/email_delivery_log.jsonl`),
+  and visible in the admin dashboard (Email Delivery tab: configuration check, test-email button, delivery log, stored
+  instructor packages to download or re-send).
+- Messages carry real MIME types (`text/html`, `text/markdown`, `application/zip` instead of `application/octet-stream`),
+  `Date`/`Message-ID`/`Auto-Submitted` headers and a text plus HTML body that repeats the headline numbers and the full
+  analysis, so the content arrives even when a filter strips attachments. Oversized messages shrink gracefully (ZIP
+  without large source uploads, then dropped, with a note). Several instructor recipients are supported.
+- Student-triggered emails (ZIP, feedback, "send to instructor too") are rate-limited per session and app-wide so they
+  cannot exhaust the mail account's daily quota that the instructor notification depends on; the ZIP button accepts a
+  single address.
+- Each run's instructor analyses are archived with the run, so they survive a failed email.
+
 **Tests:** `tests/test_effect_fidelity_v1291.py` (recovery on long/binary scales, true null, game DVs,
 metadata, seeds, reverse scoring) and `tests/test_quality_v1291.py` (text safety, numeric text
 boxes, collector hardening, exported scripts).

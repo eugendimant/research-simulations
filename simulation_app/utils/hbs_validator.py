@@ -123,11 +123,15 @@ class HBSValidator:
     # ------------------------------------------------------------------
 
     def __init__(self, benchmarks: Optional[Dict[str, Dict[str, Any]]] = None,
-                 seed: Optional[int] = None) -> None:
+                 seed: Optional[int] = None,
+                 protected_columns: Optional[Any] = None) -> None:
         """Initialise the validator, optionally overriding default benchmarks.
 
         Args:
             benchmarks: Optional dict to merge with / override ``BENCHMARKS``.
+            protected_columns: Optional names of columns that hold structured answers (ages,
+                IDs, ZIP codes, counts) and must never be treated as free text. v1.2.9.1: the
+                length/uniqueness corrections used to append filler words to such cells.
             seed: Optional RNG seed. v1.2.8.4: the validator's perturbations now use
                 a PER-INSTANCE ``random.Random`` instead of the process-global
                 ``random`` module, so the engine no longer has to seed the global
@@ -136,6 +140,7 @@ class HBSValidator:
                 zero cross-session interference (Codex P2: de-serialize multi-user runs).
         """
         self._rng = random.Random(seed)
+        self._protected_columns = {str(c) for c in (protected_columns or ())}
         self._benchmarks = dict(self.BENCHMARKS)
         if benchmarks:
             for key, val in benchmarks.items():
@@ -817,7 +822,7 @@ class HBSValidator:
             import pandas as _pd
             if isinstance(df, _pd.DataFrame):
                 from utils import detect_oe_columns
-                return detect_oe_columns(df)
+                return [c for c in detect_oe_columns(df) if c not in self._protected_columns]
         except (ImportError, Exception):
             pass
 

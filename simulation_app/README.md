@@ -175,7 +175,9 @@ research-simulations/
 
 ## Configuration
 
-Email delivery is optional. Set these Streamlit secrets to enable it: `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `INSTRUCTOR_NOTIFICATION_EMAIL`.
+Email delivery is optional. Set these Streamlit secrets to enable it: `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `INSTRUCTOR_NOTIFICATION_EMAIL` (several addresses may be listed, separated by commas, for example a second inbox outside the Outlook filters).
+
+Every run sends the instructor notification (the statistical report, the detailed analysis, the student ZIP) from a background thread, so closing the browser tab no longer cancels it. Transient SMTP errors are retried with backoff. The message repeats the headline numbers and the full analysis in its body, and when it would exceed `EMAIL_MAX_MESSAGE_MB` (default 15, counted after base64 encoding) the ZIP shrinks to a copy without source uploads, or is left out, with a note in the message. Emails that students trigger from the download page are limited per session (`USER_EMAIL_MAX_PER_SESSION_PER_HOUR`, default 5) and for the whole app (`USER_EMAIL_MAX_PER_HOUR`, default 60) so they cannot use up the mail account's daily quota that the instructor notification depends on. Every attempt (including "SMTP not configured") is written to `data/email_delivery_log.jsonl` and shown in the admin dashboard (`?admin=1`, tab Email Delivery), which also has a test-email button and keeps each run's instructor analyses for download or re-sending.
 
 ## Credits and license
 

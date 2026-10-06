@@ -567,3 +567,29 @@ def test_email_send_still_works_with_configured_secrets(monkeypatch):
     monkeypatch.setattr(st, "secrets", {})
     ok, message = app._send_email_with_smtp("instructor@example.org", "Subject", "Body")
     assert not ok and "not configured" in message
+
+
+def test_structured_text_boxes_are_left_exactly_as_generated_by_the_text_passes():
+    """IDs, ages, ZIP codes and counts must not receive filler words, typos or length padding."""
+    questions = [
+        {"name": "MTurkID", "variable_name": "MTurkID", "question_text": "Please key in your MTurk ID."},
+        {"name": "Prolific", "variable_name": "Prolific", "question_text": "What is your Prolific ID?"},
+        {"name": "Age", "variable_name": "Age", "question_text": "What is your age?"},
+        {"name": "Zipcode", "variable_name": "Zipcode", "question_text": "What is your ZIP code?"},
+        {"name": "Tickets", "variable_name": "Tickets", "question_text": "How many tickets would you buy? (enter a number)"},
+        {"name": "Why", "variable_name": "Why", "question_text": "Please explain why you chose that option."},
+    ]
+    scale = {"name": "DV", "variable_name": "DV", "type": "likert", "num_items": 3, "scale_points": 7,
+             "scale_min": 1, "scale_max": 7, "reverse_items": []}
+    e = eng.EnhancedSimulationEngine(
+        study_title="Structured boxes", study_description="A study of choices", sample_size=150, conditions=["A", "B"],
+        factors=[], scales=[scale], additional_vars=[], demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        open_ended_questions=questions, seed=3)
+    e.llm_generator.disable_permanently("test")
+    df, _meta = e.generate()
+    assert all(re.fullmatch(r"A[A-Z0-9]{12,13}", str(v)) for v in df["MTurkID"]), df["MTurkID"].head().tolist()
+    assert all(re.fullmatch(r"[0-9a-f]{24}", str(v)) for v in df["Prolific"])
+    assert all(re.fullmatch(r"\d{2}", str(v)) for v in df["Age"])
+    assert all(re.fullmatch(r"\d{5}", str(v)) for v in df["Zipcode"])
+    assert all(re.fullmatch(r"\d{1,2}", str(v)) for v in df["Tickets"])
+    assert df["Why"].astype(str).str.split().str.len().mean() > 4  # free text is still real text

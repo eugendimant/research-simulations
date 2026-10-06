@@ -3566,6 +3566,9 @@ class EnhancedSimulationEngine:
         # DV columns; do not add a second, prose-filled column with the same name.
         self.open_ended_questions, self._oe_dropped_as_dv_duplicates = _drop_oe_duplicating_dvs(
             self.open_ended_questions, self.scales)
+        # Columns whose answers are structured (ages, IDs, ZIP codes, counts, demographics), not prose:
+        # the stylometric, validation and tidy passes must leave them exactly as generated.
+        self._structured_oe_columns: Set[str] = set()
         self.study_context = study_context or {}
         # v1.0.5.1: Extract condition descriptions for domain detection and effect sizing
         self.condition_descriptions: Dict[str, str] = {}
@@ -13315,7 +13318,9 @@ class EnhancedSimulationEngine:
                     elif any(kw in _demo_search_text for kw in ("income", "salary", "earn", "household income")):
                         _inc = int(np.clip(_d_rng.lognormal(10.8, 0.8), 15000, 300000))
                         _demo_responses.append(str(_inc))
-                    elif any(kw in _demo_search_text for kw in ("state", "location", "country", "city", "zip")):
+                    elif any(kw in _demo_search_text for kw in ("zip", "postal", "postcode")):
+                        _demo_responses.append(f"{int(_d_rng.randint(10000, 99999)):05d}")
+                    elif any(kw in _demo_search_text for kw in ("state", "location", "country", "city")):
                         _us_states = ["California", "Texas", "Florida", "New York",
                                       "Pennsylvania", "Illinois", "Ohio", "Georgia",
                                       "North Carolina", "Michigan", "Other"]
@@ -13324,6 +13329,7 @@ class EnhancedSimulationEngine:
                         # Generic demographic — generate short factual answers
                         _demo_responses.append(str(int(np.clip(_d_rng.normal(40, 15), 1, 99))))
                 data[col_name] = _demo_responses
+                self._structured_oe_columns.add(col_name)
                 self._log(f"Generated demographic data for '{col_name}' ({n} values)")
                 continue  # Skip normal OE text generation
 
@@ -13345,6 +13351,7 @@ class EnhancedSimulationEngine:
                     _n_rng = np.random.RandomState((self.seed + _ni * 100 + col_hash) % (2**31))
                     _num_responses.append(_draw_numeric_answer(_numeric_spec, _n_rng))
                 data[col_name] = _num_responses
+                self._structured_oe_columns.add(col_name)
                 self._log(f"Generated numeric answers for '{col_name}' ({_numeric_spec.get('kind')}, {n} values)")
                 continue  # Skip normal OE text generation
 
@@ -14165,6 +14172,7 @@ class EnhancedSimulationEngine:
                         _known_oe_names.add(oeq.get("name", ""))
                 _known_oe_names.discard("")
                 _oe_cols = _detect_oe(df, known_oe_names=_known_oe_names or None)
+                _oe_cols = [c for c in _oe_cols if c not in self._structured_oe_columns]
                 if _oe_cols:
                     _applied = 0
                     _n_states = len(_hbs_participant_states)
@@ -14191,7 +14199,7 @@ class EnhancedSimulationEngine:
                 # v1.2.8.4: seed the validator per-run so its perturbations are
                 # reproducible WITHOUT seeding the process-global RNG (which let us
                 # drop the run-wide _GLOBAL_RNG_LOCK that serialized concurrent users).
-                _validator = HBSValidator(seed=self.seed)
+                _validator = HBSValidator(seed=self.seed, protected_columns=self._structured_oe_columns)
                 df, _validation_report = _validator.validate_and_correct(df)
                 self._log(f"ABE 3.0: Validation complete — {_validation_report.get('summary', 'ok')}")
             except Exception as _val_err:
@@ -14210,6 +14218,8 @@ class EnhancedSimulationEngine:
                     _known_final.add(str(_oeq.get("name", "") or ""))
             _known_final.discard("")
             for _col in _detect_oe_final(df, known_oe_names=_known_final or None):
+                if _col in self._structured_oe_columns:
+                    continue
                 for _idx in df.index:
                     _val = df.at[_idx, _col]
                     if isinstance(_val, str) and len(_val) > 10:
