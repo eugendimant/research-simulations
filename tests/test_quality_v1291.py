@@ -544,9 +544,10 @@ def test_email_send_still_works_with_configured_secrets(monkeypatch):
         def login(self, user, password):
             sent["login"] = (user, password)
 
-        def send_message(self, msg):
+        def send_message(self, msg, from_addr=None, to_addrs=None, **_kw):
             sent["to"] = msg["To"]
             sent["subject"] = msg["Subject"]
+            sent["envelope"] = (from_addr, list(to_addrs or []))
             sent["attachments"] = [part.get_filename() for part in msg.get_payload() if part.get_filename()]
 
         def quit(self):
@@ -561,6 +562,7 @@ def test_email_send_still_works_with_configured_secrets(monkeypatch):
     assert sent["host"] == "smtp.example.org" and sent["port"] == 587 and sent["tls"] is True
     assert sent["login"] == ("sender@example.org", "app-password")
     assert sent["to"] == "instructor@example.org" and sent["subject"] == "Subject"
+    assert sent["envelope"] == ("sender@example.org", ["instructor@example.org"])  # explicit envelope: no header-derived recipients
     assert sent["attachments"] == ["results.zip"] and sent["quit"] is True
 
     # without any configuration the function reports it instead of raising

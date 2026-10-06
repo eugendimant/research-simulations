@@ -7715,7 +7715,8 @@ def _access_code_matches(supplied: str, secret_name: str) -> bool:
         return False
     # Guess limit shared by every session (a new browser tab is a new session): after 20 wrong codes in
     # 10 minutes all access-code gates refuse everything, the right code included, until the window passes.
-    guard = _email_delivery.shared_limiter("access-code-failures", 20, 600.0) if _email_delivery is not None else None
+    _limits = globals().get("_email_delivery")  # None when the helper module is missing (or in an isolated test namespace)
+    guard = _limits.shared_limiter("access-code-failures", 20, 600.0) if _limits is not None else None
     if guard is not None and guard.remaining("app") <= 0:
         return False
     plain, digest = "", ""
