@@ -151,6 +151,51 @@ def load_smtp_config(get_secret: Callable[[str, Any], Any]) -> SMTPConfig:
     )
 
 
+_FREE_MAIL_DOMAINS = frozenset({"gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com",
+                                "icloud.com", "aol.com", "proton.me", "protonmail.com", "gmx.com", "mail.com"})
+
+
+def _domain_of(address: str) -> str:
+    return address.rsplit("@", 1)[1].strip().strip(">").lower() if "@" in address else ""
+
+
+def _registrable(domain: str) -> str:
+    """Last two labels of a host or domain name (good enough to compare mail setups)."""
+    labels = [part for part in domain.lower().strip(".").split(".") if part]
+    return ".".join(labels[-2:])
+
+
+def deliverability_warnings(config: SMTPConfig, recipients: Sequence[str]) -> List[str]:
+    """Plain-language findings about settings that make the receiving mail system hold, junk or
+    silently drop a message that the SMTP server accepted (the "sent, but never arrived" case)."""
+    findings: List[str] = []
+    sender = config.sender_address
+    from_domain = _registrable(_domain_of(sender))
+    login_domain = _registrable(_domain_of(config.username))
+    host_domain = _registrable(config.server)
+    recipient_domains = {_registrable(_domain_of(r)) for r in recipients if _domain_of(r)} - {""}
+    if from_domain and from_domain in recipient_domains and from_domain not in (login_domain, host_domain):
+        findings.append(
+            f"The From address ({mask_address(sender)}) is on the recipient's own domain ({from_domain}) but the message is "
+            f"sent through {config.server or 'another server'}. Microsoft 365 and Google treat that as spoofing "
+            "(SPF/DKIM/DMARC) and may quarantine or silently drop it. Use a From address that belongs to the sending "
+            "account (SMTP_FROM_EMAIL = the SMTP username), or send through your institution's own mail server.")
+    elif from_domain and login_domain and from_domain != login_domain:
+        findings.append(
+            f"The From address ({mask_address(sender)}) differs from the SMTP login ({mask_address(config.username)}). Many "
+            "servers rewrite or reject that, and receivers may mark it as spoofed. Set SMTP_FROM_EMAIL to the login address "
+            "unless the account is allowed to send as that address.")
+    sender_domain = _domain_of(sender)
+    if sender_domain in _FREE_MAIL_DOMAINS and recipient_domains and sender_domain not in {_domain_of(r) for r in recipients}:
+        findings.append(
+            f"The sender is a free-mail address ({sender_domain}). Institutional filters often put the first messages from "
+            "such an address into Junk or quarantine: mark one message as 'Not junk' and add the sender address to the "
+            "Safe Senders list in Outlook.")
+    if config.server and not config.use_tls and config.port != 465:
+        findings.append("TLS is switched off (SMTP_USE_TLS). Most servers refuse a login or deliver such mail as untrusted.")
+    return findings
+
+
 def parse_recipients(value: Any, limit: int = _MAX_RECIPIENTS) -> Tuple[List[str], List[str]]:
     """Split a secret such as ``"a@x.edu, Name <b@y.com>; c@z.org"`` into (valid, invalid).
 
@@ -678,6 +723,7 @@ def compose_instructor_notification(
     attachment_names: Sequence[str],
     zip_listing: Sequence[str] = (),
     max_inline_chars: int = 120_000,
+    report_problem: str = "",
 ) -> Tuple[str, str, str]:
     """Return (subject, plain-text body, HTML body) for the instructor notification.
 
@@ -685,7 +731,9 @@ def compose_instructor_notification(
     useful even when a mail filter strips every attachment. All user-controlled text is escaped
     in the HTML part and stripped of line breaks in the subject.
     """
-    subject = _clean_header(f"[Behavioral Simulation] Output ({mode or 'pilot'}) [{generation_label}] - {title}", 200)
+    problem = _clean_header(str(report_problem or ""), 400)
+    flag = "[REPORT ERROR] " if problem else ""
+    subject = _clean_header(f"{flag}[Behavioral Simulation] Output ({mode or 'pilot'}) [{generation_label}] - {title}", 200)
     n = metadata.get("sample_size", "N/A")
     conditions = metadata.get("conditions") or []
     oe = metadata.get("open_ended_questions") or []
@@ -708,6 +756,9 @@ def compose_instructor_notification(
         facts.append(("Recommended exclusions", ", ".join(f"{k}={v}" for k, v in excl.items())))
 
     lines = ["INSTRUCTOR NOTIFICATION", "=" * 60, ""]
+    if problem:
+        lines += ["WARNING: the data were generated, but part of the instructor analysis could not be built:",
+                  f"  {problem}", "  The attachments named below may be short placeholders. The student package is not affected.", ""]
     lines += [f"{k}: {v}" for k, v in facts if str(v).strip()]
     lines += ["", "ATTACHMENTS (what students do NOT receive: the analyses)", ""]
     lines += [f"- {name}" for name in attachment_names]
@@ -733,7 +784,11 @@ def compose_instructor_notification(
         for r in effects)
     html_body = (
         "<html><body style='font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111'>"
-        f"<h2 style='margin:0 0 8px'>Instructor notification</h2><table>{rows}</table>"
+        f"<h2 style='margin:0 0 8px'>Instructor notification</h2>"
+        + (f"<p style='color:#b00020'><b>Warning:</b> the data were generated, but part of the instructor analysis could not "
+           f"be built: {esc(problem)}. The attachments may be short placeholders. The student package is not affected.</p>"
+           if problem else "")
+        + f"<table>{rows}</table>"
         "<h3>Attachments</h3><ul>" + "".join(f"<li>{esc(name)}</li>" for name in attachment_names) + "</ul>"
         + (f"<h3>Largest observed condition differences</h3><table cellpadding='3' border='1' style='border-collapse:collapse'>"
            f"<tr><th>Variable</th><th>Contrast</th><th>Cohen's d (1 minus 2)</th></tr>{eff_rows}</table>" if effects else "")

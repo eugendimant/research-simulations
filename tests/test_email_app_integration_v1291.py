@@ -137,6 +137,23 @@ def test_single_mode_sends_everything_in_one_message(app_env, monkeypatch):
     assert _last_log_entries(tmp)[0]["kind"] == "instructor"
 
 
+def test_a_failed_report_is_flagged_in_the_subject_and_body_of_the_instructor_email(app_env):
+    app, _st, _tmp = app_env
+    thread = app._notify_instructor(
+        title="Coffee study", metadata=_metadata(), files={}, zip_bytes=b"PK", html_bytes=b"<html>Report Error</html>",
+        md_bytes=b"# Comprehensive Report\nReport generation encountered an error", summary_bytes=b"# Summary",
+        report_problem="instructor analysis: KeyError: 'DV_mean' <b>x</b>\r\nBcc: attacker@example.org")
+    thread.join(30)
+    summary_msg = RecordingSMTP.sent[0][0]
+    subject = str(summary_msg["Subject"])
+    assert subject.startswith("[REPORT ERROR] [Behavioral Simulation]") and "\n" not in subject and "\r" not in subject
+    assert summary_msg["Bcc"] is None  # header injection through the error text is impossible
+    text = summary_msg.get_body(preferencelist=("plain",)).get_content()
+    assert "could not be built" in text and "KeyError" in text
+    html_part = summary_msg.get_body(preferencelist=("html",)).get_content()
+    assert "&lt;b&gt;x&lt;/b&gt;" in html_part and "<b>x</b>" not in html_part
+
+
 def test_instructor_notification_records_a_visible_failure_when_smtp_is_missing(app_env, monkeypatch):
     app, st, tmp = app_env
     monkeypatch.setattr(st, "secrets", {})

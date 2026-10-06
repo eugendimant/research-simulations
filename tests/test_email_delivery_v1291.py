@@ -527,3 +527,36 @@ def test_every_delivery_is_mirrored_to_stderr_without_secrets(capsys):
     err = capsys.readouterr().err
     assert "EMAIL-DELIVERY" in err and "OK" in err and "o***r@example.edu" in err
     assert FAKE_LOGIN_VALUE not in err and "owner@example.edu" not in err
+
+
+# ---- deliverability findings ------------------------------------------------------------------
+def _cfg(**kw):
+    base = dict(server="smtp.gmail.com", username="sender@gmail.com", password=FAKE_LOGIN_VALUE, from_email="")
+    base.update(kw)
+    return ed.SMTPConfig(**base)
+
+
+def test_deliverability_warns_when_the_from_address_is_on_the_recipients_own_domain():
+    findings = ed.deliverability_warnings(_cfg(from_email="owner@sas.upenn.edu"), ["owner@sas.upenn.edu"])
+    assert len(findings) == 1 and "spoofing" in findings[0] and "upenn.edu" in findings[0]
+    assert "owner@sas.upenn.edu" not in findings[0]  # addresses are masked
+
+
+def test_deliverability_is_quiet_for_a_login_on_the_same_domain_as_the_from_address():
+    cfg = _cfg(server="smtp.office365.com", username="owner@sas.upenn.edu")
+    assert ed.deliverability_warnings(cfg, ["other@sas.upenn.edu"]) == []
+
+
+def test_deliverability_flags_free_mail_senders_and_a_login_that_differs_from_the_from_address():
+    free = ed.deliverability_warnings(_cfg(), ["owner@sas.upenn.edu"])
+    assert len(free) == 1 and "Safe Senders" in free[0]
+    differs = ed.deliverability_warnings(_cfg(server="smtp.work.org", username="a@work.org", from_email="b@other.org"),
+                                         ["x@sas.upenn.edu"])
+    assert len(differs) == 1 and "differs from the SMTP login" in differs[0]
+
+
+def test_deliverability_ignores_api_style_logins_and_flags_disabled_tls():
+    api = _cfg(server="smtp.sendgrid.net", username="apikey", from_email="alerts@myapp.org")
+    assert ed.deliverability_warnings(api, ["x@sas.upenn.edu"]) == []
+    plain = _cfg(server="smtp.work.org", username="a@work.org", use_tls=False)
+    assert any("TLS is switched off" in f for f in ed.deliverability_warnings(plain, ["x@sas.upenn.edu"]))

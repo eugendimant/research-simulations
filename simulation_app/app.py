@@ -3620,6 +3620,7 @@ def _notify_instructor(
     summary_bytes: bytes,
     usage_summary: str = "",
     wait: bool = False,
+    report_problem: str = "",
 ) -> Any:
     """Queue the instructor notification (analyses plus data package) in a background thread.
 
@@ -3645,7 +3646,7 @@ def _notify_instructor(
             team_members=st.session_state.get("team_members_raw", ""), generation_label=str(label),
             mode=str(metadata.get("simulation_mode", "pilot")), metadata=metadata, usage_summary=usage_summary,
             analysis_markdown=md_bytes.decode("utf-8", "replace"), attachment_names=names,
-            zip_listing=sorted(files.keys())[:40],
+            zip_listing=sorted(files.keys())[:40], report_problem=report_problem,
         )
         attach = _email_delivery.Attachment
         lean: Tuple[Any, ...] = ()
@@ -7922,6 +7923,8 @@ def _render_admin_email_tab() -> None:
     if not cfg.configured:
         st.error("SMTP is not configured (SMTP_SERVER, SMTP_USERNAME and SMTP_PASSWORD in the Streamlit secrets). "
                  "Instructor emails are NOT being sent; the analyses are still stored below.")
+    for _finding in _email_delivery.deliverability_warnings(cfg, recipients):
+        st.warning(_finding)
     st.caption("Several recipients can be listed in INSTRUCTOR_NOTIFICATION_EMAIL, separated by commas, for example a "
                "second inbox that is not behind the Outlook filters.")
 
@@ -15394,6 +15397,7 @@ if active_page == 3:
             stata_bytes = stata_script.encode("utf-8")
             # v1.2.3: Wrap report generation in try/except to prevent report errors
             # from crashing the entire simulation. Data generation succeeded at this point.
+            _report_problems: List[str] = []  # v1.2.9.1: surfaced in the instructor email subject and body
             try:
                 # User study summary (included in user's download ZIP)
                 instructor_report = InstructorReportGenerator().generate_markdown_report(
@@ -15408,6 +15412,8 @@ if active_page == 3:
                 )
                 instructor_bytes = instructor_report.encode("utf-8")
             except Exception as report_err:
+                _log(f"Study summary generation failed: {report_err}", level="error")
+                _report_problems.append(f"study summary: {type(report_err).__name__}: {report_err}")
                 instructor_report = f"# Study Summary\n\nReport generation encountered an error: {report_err}\n\nData was generated successfully."
                 instructor_bytes = instructor_report.encode("utf-8")
 
@@ -15441,9 +15447,11 @@ if active_page == 3:
                 )
                 comprehensive_html_bytes = comprehensive_html.encode("utf-8")
             except Exception as comp_report_err:
+                _log(f"Comprehensive instructor report failed: {comp_report_err}", level="error")
+                _report_problems.append(f"instructor analysis: {type(comp_report_err).__name__}: {comp_report_err}")
                 comprehensive_report = f"# Comprehensive Report\n\nReport generation encountered an error: {comp_report_err}\n\nData was generated successfully."
                 comprehensive_bytes = comprehensive_report.encode("utf-8")
-                comprehensive_html = f"<html><body><h1>Report Error</h1><p>{comp_report_err}</p></body></html>"
+                comprehensive_html = f"<html><body><h1>Report Error</h1><p>{html_escape(str(comp_report_err))}</p></body></html>"
                 comprehensive_html_bytes = comprehensive_html.encode("utf-8")
 
             # Generate HTML version of study summary (easy to open and well-formatted)
@@ -15452,7 +15460,7 @@ if active_page == 3:
                 instructor_html = _markdown_to_html(instructor_report, title=f"User Study Summary: {study_title}")
                 instructor_html_bytes = instructor_html.encode("utf-8")
             except Exception:
-                instructor_html_bytes = f"<html><body><pre>{instructor_report}</pre></body></html>".encode("utf-8")
+                instructor_html_bytes = f"<html><body><pre>{html_escape(str(instructor_report))}</pre></body></html>".encode("utf-8")
 
             files = {
                 "Simulated_Data.csv": csv_bytes,
@@ -15538,6 +15546,7 @@ if active_page == 3:
                 md_bytes=comprehensive_bytes,
                 summary_bytes=instructor_bytes,
                 usage_summary=_get_usage_summary(),
+                report_problem="; ".join(_report_problems),
             )
 
             # v1.0.7.3: Persist each run in its own folder + audit newly created runs.
