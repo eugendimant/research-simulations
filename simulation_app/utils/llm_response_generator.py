@@ -2065,7 +2065,14 @@ def detect_provider_from_key(api_key: str, provider_hint: str = "") -> Optional[
         return {"name": "groq", "api_url": GROQ_API_URL, "model": GROQ_MODEL}
     elif key.startswith("sk-or-"):
         return {"name": "openrouter", "api_url": OPENROUTER_API_URL, "model": OPENROUTER_MODEL}
-    elif key.startswith("AIza"):
+    elif key.startswith("AIza") or key.startswith("AQ."):
+        # v1.3.0.0: Google AI Studio issues two key shapes. The long-standing
+        # one starts "AIza"; keys created from late 2026 start "AQ." instead.
+        # Both authenticate the same way (see _call_llm_api, which sends the
+        # key as a Bearer header AND as ?key= on googleapis.com endpoints), so
+        # the only thing a new-format key needed was to be recognised here —
+        # without this branch it fell through to the >30-char default and was
+        # sent to Groq's endpoint, where it can only ever be rejected.
         return {"name": "google_ai", "api_url": GOOGLE_AI_API_URL, "model": GOOGLE_AI_MODEL}
     elif key.startswith("snova-") or key.startswith("sambanova-"):
         return {"name": "sambanova", "api_url": SAMBANOVA_API_URL, "model": SAMBANOVA_MODEL}
@@ -2106,7 +2113,7 @@ def get_supported_providers() -> List[Dict[str, str]]:
         },
         {
             "name": "Google AI Studio (Gemini)",
-            "prefix": "AIza...",
+            "prefix": "AIza... or AQ....",
             "url": "https://aistudio.google.com",
             "free_tier": "Gemini 2.5 Flash (15 RPM, 1M TPM) + Flash Lite (30 RPM, 250K TPM)",
             "recommended": True,

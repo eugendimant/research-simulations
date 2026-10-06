@@ -41,7 +41,9 @@ entries in the provider chain.
 2. Sign in with a Google account.
 3. Click **Create API key**.
 4. If asked to pick a project, choose any existing one or **Create project**.
-5. Copy the key (it starts with `AIzaSy`) and save it in your password manager.
+5. Copy the key and save it in your password manager. AI Studio issues two
+   shapes — older keys start `AIzaSy`, keys created from late 2026 start
+   `AQ.`. Both work; the app recognises either.
 
 Secret name to use: **`GOOGLE_API_KEY`**
 
@@ -51,7 +53,7 @@ requests/minute, 1M tokens/minute. No card required.
 Caveats: limits are per project, not per key, so a second key in the same
 project does not double anything. AI Studio's free tier is not offered in every
 country; if the key page refuses to issue one, that is a region block rather
-than a fault, and the next five providers still work.
+than a fault, and the other three providers still work.
 
 ---
 
@@ -122,7 +124,7 @@ repository, by design.
 4. Click **Save**. Streamlit restarts the app and picks the keys up.
 
 ```toml
-GOOGLE_API_KEY = "AIzaSy..."
+GOOGLE_API_KEY = "AIzaSy..."   # or "AQ...."
 GROQ_API_KEY = "gsk_..."
 SAMBANOVA_API_KEY = "..."
 OPENROUTER_API_KEY = "sk-or-v1-..."
@@ -139,7 +141,7 @@ git-ignored, so it cannot be committed by accident) and fill it in, or export
 the same names as environment variables:
 
 ```bash
-export GOOGLE_API_KEY="AIzaSy..."
+export GOOGLE_API_KEY="AIzaSy..."   # or "AQ...."
 streamlit run simulation_app/app.py
 ```
 

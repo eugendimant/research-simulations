@@ -12990,7 +12990,7 @@ if active_page == 3:
                 value=_existing_plain,
                 type="password",
                 key="user_llm_key_input",
-                placeholder="Paste your key here (e.g., AIza..., gsk_..., csk-..., sk-or-..., snova-...)",
+                placeholder="Paste your key here (e.g., AIza..., AQ...., gsk_..., sk-or-..., snova-...)",
             )
 
             if _user_key_input != _existing_plain:
@@ -13019,7 +13019,9 @@ if active_page == 3:
             if _key_val:
                 _detected_provider = "Unknown"
                 _key_valid_format = False
-                if _key_val.startswith("AIza"):
+                if _key_val.startswith("AIza") or _key_val.startswith("AQ."):
+                    # v1.3.0.0: Google AI Studio keys come in two shapes —
+                    # "AIza..." and, for keys created from late 2026, "AQ...".
                     _detected_provider = "Google AI Studio (Gemini)"
                     _key_valid_format = len(_key_val) >= 30
                 elif _key_val.startswith("gsk_"):

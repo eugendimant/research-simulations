@@ -33,8 +33,9 @@ os.chdir(os.path.join(os.path.dirname(__file__), '..'))
 from utils.response_library import ComprehensiveResponseGenerator
 from utils.llm_response_generator import (
     _call_llm_api, _parse_json_responses, _build_batch_prompt, SYSTEM_PROMPT,
+    GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_PRIMARY, _DEFAULT_GOOGLE_AI_KEY,
     GROQ_API_URL, GROQ_MODEL, _DEFAULT_GROQ_KEY,
-    CEREBRAS_API_URL, CEREBRAS_MODEL, _DEFAULT_CEREBRAS_KEY,
+    SAMBANOVA_API_URL, SAMBANOVA_MODEL, _DEFAULT_SAMBANOVA_KEY,
     OPENROUTER_API_URL, OPENROUTER_MODEL, _DEFAULT_OPENROUTER_KEY,
 )
 
@@ -94,8 +95,9 @@ PERSONAS = [
 ]
 
 PROVIDERS = [
+    ("Google AI", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_PRIMARY, _DEFAULT_GOOGLE_AI_KEY),
     ("Groq", GROQ_API_URL, GROQ_MODEL, _DEFAULT_GROQ_KEY),
-    ("Cerebras", CEREBRAS_API_URL, CEREBRAS_MODEL, _DEFAULT_CEREBRAS_KEY),
+    ("SambaNova", SAMBANOVA_API_URL, SAMBANOVA_MODEL, _DEFAULT_SAMBANOVA_KEY),
     ("OpenRouter", OPENROUTER_API_URL, OPENROUTER_MODEL, _DEFAULT_OPENROUTER_KEY),
 ]
 
@@ -123,9 +125,10 @@ def main() -> None:
     lines.append("")
     lines.append("| Provider | Model | Free Tier |")
     lines.append("|----------|-------|-----------|")
-    lines.append(f"| **Groq** (built-in) | `{GROQ_MODEL}` | 14,400 requests/day |")
-    lines.append(f"| **Cerebras** (built-in) | `{CEREBRAS_MODEL}` | 1M tokens/day |")
-    lines.append(f"| **OpenRouter** (built-in) | `{OPENROUTER_MODEL}` | Free models |")
+    lines.append(f"| **Google AI** | `{GOOGLE_AI_MODEL_PRIMARY}` | 30 requests/minute |")
+    lines.append(f"| **Groq** | `{GROQ_MODEL}` | 14,400 requests/day |")
+    lines.append(f"| **SambaNova** | `{SAMBANOVA_MODEL}` | 20 requests/minute |")
+    lines.append(f"| **OpenRouter** | `{OPENROUTER_MODEL}` | Free models |")
     lines.append("| **Template Engine** (fallback) | N/A — rule-based | Unlimited, no API needed |")
     lines.append("")
     lines.append("### Persona Profiles Used")
@@ -238,7 +241,7 @@ def main() -> None:
     lines.append("| Provider | Avg Time/Question | Avg Response Length | Avg Uniqueness | Questions Answered |")
     lines.append("|----------|-------------------|--------------------|----------------|-------------------|")
 
-    for provider_name in ["Groq", "Cerebras", "OpenRouter", "Template"]:
+    for provider_name in ["Google AI", "Groq", "SambaNova", "OpenRouter", "Template"]:
         stats = overall_stats.get(provider_name, [])
         if stats:
             avg_time = sum(s["time"] for s in stats) / len(stats)
@@ -259,8 +262,8 @@ def main() -> None:
     lines.append("| **Persona fidelity** | Excellent — LLM follows verbosity/formality/engagement | Good — template selection + post-processing transformations |")
     lines.append("| **Condition reference** | Often references experimental condition explicitly | Uses condition for template category selection |")
     lines.append("| **Speed** | 2-5s per batch of 20 | <0.001s per response |")
-    lines.append("| **Reliability** | 3-provider chain (Groq → Cerebras → OpenRouter) | 100% — no external dependencies |")
-    lines.append("| **Cost** | Free (built-in keys, ~14K+ requests/day combined) | Free |")
+    lines.append("| **Reliability** | 4-provider chain (Google AI → Groq → SambaNova → OpenRouter) | 100% — no external dependencies |")
+    lines.append("| **Cost** | Free tiers; keys come from the deployment, not the repository | Free |")
     lines.append("")
 
     doc = "\n".join(lines)

@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.3.0.0 - Cerebras and Mistral AI removed from the built-in free-provider chain. Cerebras now requires a payment card and Mistral no longer issues free API keys, so both slots could only ever report "not configured"; the chain is now Google AI Studio (three Gemini models), Groq (two models), SambaNova and OpenRouter. Setup docs, the deployment secrets template, the admin LLM tab and the chain-order test move with it. No key is still a supported state: the built-in engine writes the open-ended text and no error banner appears.
+Version: 1.3.0.0 - Cerebras and Mistral AI removed from the built-in free-provider chain. Cerebras now requires a payment card and Mistral no longer issues free API keys, so both slots could only ever report "not configured"; the chain is now Google AI Studio (three Gemini models), Groq (two models), SambaNova and OpenRouter. Setup docs, the deployment secrets template, the admin LLM tab and the chain-order test move with it. Google AI Studio's newer key shape ("AQ." rather than "AIza") is now recognised everywhere a key is detected or validated — previously such a key was routed to Groq's endpoint and could only be rejected. No key is still a supported state: the built-in engine writes the open-ended text and no error banner appears.
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
