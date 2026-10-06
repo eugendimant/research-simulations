@@ -13136,12 +13136,11 @@ if active_page == 3:
                 else:
                     st.caption("📊 Large effect")
 
-                effect_direction = st.radio(
-                    "Direction",
-                    options=["Higher in treatment", "Lower in treatment"],
-                    key="effect_direction",
-                    horizontal=True
-                )
+                # The direction is set by the two selects below ("Higher-scoring" and
+                # "Lower-scoring" condition). A separate Higher/Lower radio used to sit here:
+                # it flipped the sign of the effect while the confirmation text still said
+                # "higher in <first condition>", so the text and the data disagreed.
+                st.caption("Which condition scores higher is chosen below.")
 
             # Level selection
             if len(factor_levels) >= 2:
@@ -13171,7 +13170,9 @@ if active_page == 3:
                             level_high=level_high,
                             level_low=level_low,
                             cohens_d=effect_d,
-                            direction="positive" if "Higher" in effect_direction else "negative",
+                            # "positive" = the higher-scoring condition scores higher (the engine
+                            # lowers the other level by the same amount).
+                            direction="positive",
                         )
                     )
                     st.success(
