@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.9.0"
-BUILD_ID = "20261006-v12900-serve-howto-pdf-in-app"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.9.1"
+BUILD_ID = "20261006-v12901-builtin-ai-not-configured"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.9.0"  # v1.2.9.0: Serve the student-facing how-to guide PDF from the app so its link survives the repository being made private
+APP_VERSION = "1.2.9.1"  # v1.2.9.1: Tell users when Built-in AI has no provider key configured instead of claiming the free providers are not responding
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -7754,6 +7754,36 @@ def _render_admin_dashboard() -> None:
     # ── TAB 1: LLM Pipeline ──────────────────────────────────────────
     with _tab_llm:
         st.markdown("### LLM Provider Chain")
+
+        # v1.2.9.1: Which built-in provider slots actually have a key right now.
+        # This is the first thing to check when Built-in AI reports that it is
+        # not configured: it confirms whether the deployment secrets landed,
+        # without ever showing key material.
+        st.markdown("#### Built-in Provider Keys")
+        try:
+            from utils.llm_response_generator import (
+                BUILTIN_PROVIDER_SECRETS as _BPS,
+                builtin_provider_key_status as _bpks,
+            )
+            _key_status = _bpks()
+            _key_rows = [
+                {
+                    "Provider": _slot,
+                    "Secret name": " or ".join(_BPS[_slot]),
+                    "Configured": "Yes" if _configured else "No",
+                }
+                for _slot, _configured in _key_status.items()
+            ]
+            st.dataframe(_key_rows, use_container_width=True, hide_index=True)
+            if not any(_key_status.values()):
+                st.warning(
+                    "No built-in provider key is configured, so Built-in AI has "
+                    "nothing to call. Set at least one of the secret names above "
+                    "(see docs/DEPLOYMENT_SECRETS.md)."
+                )
+        except Exception as _key_status_err:  # pragma: no cover - diagnostics only
+            st.caption(f"Could not read provider key status: {_key_status_err}")
+
         if _display_llm_calls > 0 or _display_pool > 0 or _current_llm_stats:
             st.markdown(f"**Active Provider:** `{_last_provider}`")
             st.markdown(f"**Total API Calls (all-time):** {_display_llm_calls}")
@@ -12972,6 +13002,27 @@ if active_page == 3:
         elif _current_method == "free_llm":
             _llm_avail = _llm_status.get("available", False) if _llm_status else False
             if not _llm_avail and _has_open_ended:
+                # v1.2.9.1: Distinguish "this deployment has no built-in provider
+                # key configured" from "configured providers are down right now".
+                # Telling a user to wait a few hours for a key that was never set
+                # leaves them stuck — the two cases need different copy.
+                _llm_reason = (_llm_status or {}).get("reason", "unreachable")
+                if _llm_reason == "not_configured":
+                    _notice_title = 'Built-in AI is not configured on this deployment'
+                    _notice_body = (
+                        'No free-provider API key is set for this instance, so there is '
+                        'nothing for Built-in AI to call. Numeric data is unaffected \u2014 '
+                        'use the Adaptive Behavioral Engine 3.0 below for open-ended text, '
+                        'or paste your own free API key. If you administer this deployment, '
+                        'set the provider keys as Streamlit secrets (see the deployment notes '
+                        'in docs/DEPLOYMENT_SECRETS.md).'
+                    )
+                else:
+                    _notice_title = 'Free AI providers are currently not responding'
+                    _notice_body = (
+                        'This typically resolves within a few hours. You can still generate '
+                        'data using one of the alternatives below, or try again later.'
+                    )
                 # v1.1.0.6: Visually clean notice with action buttons instead of alarming warning
                 st.markdown(
                     '<div style="background:linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);'
@@ -12980,10 +13031,9 @@ if active_page == 3:
                     '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">'
                     '<span style="font-size:1.0em;">&#128268;</span>'
                     '<span style="color:#92400e;font-size:0.88em;font-weight:600;">'
-                    'Free AI providers are currently not responding</span></div>'
+                    f'{_notice_title}</span></div>'
                     '<span style="color:#78350f;font-size:0.82em;line-height:1.5;">'
-                    'This typically resolves within a few hours. You can still generate data '
-                    'using one of the alternatives below, or try again later.</span>'
+                    f'{_notice_body}</span>'
                     '</div>',
                     unsafe_allow_html=True,
                 )
@@ -13000,7 +13050,8 @@ if active_page == 3:
                         st.rerun()
                 with _pre_c2:
                     if st.button("Switch to Adaptive Behavioral Engine 3.0", key="_pre_switch_template",
-                                 type="secondary", use_container_width=True,
+                                 type="primary" if _llm_reason == "not_configured" else "secondary",
+                                 use_container_width=True,
                                  help="Instant generation, runs entirely offline"):
                         st.session_state[_gen_method_key] = "abe_v2"
                         st.session_state["allow_template_fallback_once"] = True
@@ -14215,6 +14266,23 @@ if active_page == 3:
                 _health = engine.llm_generator.health_check(timeout=12)
                 if not _health["ok"]:
                     progress_bar.progress(0, text="")
+                    # v1.2.9.1: "not_configured" means this deployment has no
+                    # provider key at all — retrying will never help, so say that
+                    # and point at the engine that works offline.
+                    _hc_unconfigured = _health.get("reason") == "not_configured"
+                    if _hc_unconfigured:
+                        _hc_title = 'Built-in AI is not configured on this deployment'
+                        _hc_body = (
+                            'No free-provider API key is set for this instance, so there is '
+                            'nothing for Built-in AI to call. Retrying will not help. '
+                            'Pick one of these instead:'
+                        )
+                    else:
+                        _hc_title = 'AI providers are not responding'
+                        _hc_body = (
+                            'The free AI text generation service could not be reached. '
+                            'Your data quality options:'
+                        )
                     st.markdown(
                         '<div style="background:linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);'
                         'border:1px solid #FDBA74;border-radius:12px;padding:20px 24px;margin:12px 0;'
@@ -14222,16 +14290,23 @@ if active_page == 3:
                         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
                         '<span style="font-size:1.3em;">&#9888;</span>'
                         '<span style="font-size:1.05em;font-weight:700;color:#9A3412;">'
-                        'AI providers are not responding</span></div>'
+                        f'{_hc_title}</span></div>'
                         '<span style="color:#7C2D12;font-size:0.88em;line-height:1.5;">'
-                        'The free AI text generation service could not be reached. '
-                        'Your data quality options:</span></div>',
+                        f'{_hc_body}</span></div>',
                         unsafe_allow_html=True,
                     )
+                    if _hc_unconfigured and _health.get("missing_secrets"):
+                        st.caption(
+                            "Deployment administrators: set any of these as Streamlit "
+                            "secrets to switch Built-in AI back on \u2014 "
+                            + ", ".join(_health["missing_secrets"])
+                            + " (details in docs/DEPLOYMENT_SECRETS.md)."
+                        )
                     _hc1, _hc2, _hc3 = st.columns(3)
                     with _hc1:
                         if st.button("Try again", key="_preflight_retry",
-                                     type="primary", use_container_width=True,
+                                     type="secondary" if _hc_unconfigured else "primary",
+                                     use_container_width=True,
                                      help="Re-test the AI providers"):
                             # Preserve existing method; set all flags explicitly
                             _retry_method = st.session_state.get(_gen_method_key, "free_llm")
@@ -14253,7 +14328,8 @@ if active_page == 3:
                             _navigate_to(3)
                     with _hc3:
                         if st.button("Use Adaptive Engine 3.0", key="_preflight_abe_v2",
-                                     type="secondary", use_container_width=True,
+                                     type="primary" if _hc_unconfigured else "secondary",
+                                     use_container_width=True,
                                      help="Instant generation with narrative intelligence"):
                             st.session_state["allow_template_fallback_once"] = True
                             st.session_state[_gen_method_key] = "abe_v2"
