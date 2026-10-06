@@ -8185,7 +8185,7 @@ class EnhancedSimulationEngine:
         # "High" and "Low" conditions still showed d ~0.24, a configured d got an
         # unrequested boost, and names like "Paid"/"Fair"/"Maintain" matched 'ai'.
 
-        # v1.2.9.5: LAST RESORT, and it has to be last.
+        # v1.2.9.6: LAST RESORT, and it has to be last.
         #
         # The substring map near the top reaches about 40 of the 201 published
         # norms, and only when the variable name happens to contain the mapped
@@ -8604,7 +8604,7 @@ class EnhancedSimulationEngine:
         # =====================================================================
         condition_effect = self._get_effect_for_condition(condition, variable_name)
 
-        # v1.2.9.5: a condition effect is specified in Cohen's d — a GAP DIVIDED BY
+        # v1.2.9.6: a condition effect is specified in Cohen's d — a GAP DIVIDED BY
         # AN SD — so it has to travel with whatever SD this variable ends up with.
         # The domain calibration below widens or narrows the within-person SD by
         # `variance_adjustment` (an intention scale gets +0.05, a moral-identity
