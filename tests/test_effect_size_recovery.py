@@ -37,7 +37,31 @@ DESIGNS = [
 ]
 
 
-def _recovered_d(target_d, lo, hi, items, seed=7, n=N_PER_RUN):
+#: Seeds averaged by `_recovered_d`. Recovered d is a random variable: at
+#: n=1000 its standard error is roughly 0.065, so a single draw tested against a
+#: +/-30% band around d=0.5 (a half-width of 0.15, about 2.3 SE) fails by chance
+#: often enough to be a flaky gate rather than a measurement. Averaging three
+#: seeds cuts the SE to about 0.037 and makes the assertion a statement about the
+#: engine rather than about seed 7. See the note on item-count overshoot below.
+RECOVERY_SEEDS = (7, 13, 21)
+
+
+def _recovered_d(target_d, lo, hi, items, seeds=RECOVERY_SEEDS, n=N_PER_RUN):
+    """Mean recovered d over `seeds`.
+
+    KNOWN LIMIT, pre-existing and also present on main: the engine over-recovers
+    a configured d on long composites. Averaged over seeds, an 8-item 7-point
+    scale returns about 1.14x the configured value. That is inside the +/-30%
+    band this file asserts, but it is a real bias and not noise: a longer
+    composite averages away more item-level noise than the effect scaling
+    anticipates. Worth narrowing; not narrowed here.
+    """
+    return float(np.mean([
+        _recovered_d_once(target_d, lo, hi, items, seed=s, n=n) for s in seeds
+    ]))
+
+
+def _recovered_d_once(target_d, lo, hi, items, seed=7, n=N_PER_RUN):
     scales = [{
         "name": "Attitude", "variable_name": "Attitude", "num_items": items,
         "scale_points": hi - lo + 1, "scale_min": lo, "scale_max": hi,

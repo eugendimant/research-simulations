@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.9.4 - Built-in AI reports "not configured" when a deployment supplies no free-provider key (keys are resolved per instance from env vars or st.secrets, so a configured deployment picks them up), with the documented secret names surfaced in-app; plus privacy, reproducibility, export fidelity and a how-to guide served from the app: embedded API keys and default passwords removed (secrets via env or st.secrets), opt-in survey sharing, user-controlled seed with deterministic output, Qualtrics-faithful Simulated_Data.csv plus Simulation_Diagnostics.csv sidecar, analysis scripts that recode reverse items and match the delivered files, the student how-to guide PDF served via st.download_button so distribution no longer depends on the repository being public
+Version: 1.2.9.8 - One release combining the free-provider key workflow and the literature-grounded realism layer. Keys live only in environment variables or Streamlit secrets and every provider in the chain can be verified from the admin page, with the built-in engine as a silent fallback when none is configured. Alongside it, an empirical registry with provenance tiers: a constant may move the data only if it was measured from real responses or verified against a source, every entry declares the designs it applies to, and item dispersion and straight-lining now follow rates measured over four published instruments (48,431 respondents) rather than hand-chosen values.
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.9.4"
+__version__ = "1.2.9.8"
 
 
 # =============================================================================

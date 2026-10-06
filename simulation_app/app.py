@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.9.4"
-BUILD_ID = "20261006-v12904-builtin-ai-actually-calls-llm"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.9.8"
+BUILD_ID = "20261006-v12098-combined-keys-and-realism"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.9.4"  # v1.2.9.4: Tell users when Built-in AI has no provider key configured instead of claiming the free providers are not responding
+APP_VERSION = "1.2.9.8"  # v1.2.9.8: the free-provider key workflow and the literature-grounded realism layer in one release
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
