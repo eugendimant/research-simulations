@@ -907,6 +907,11 @@ def _infer_numeric_answer_spec(
         hard_hi = float(nmax) if nmax not in (None, "") else None
         if hard_lo is not None and hard_hi is not None and hard_lo < hard_hi:
             lo_hi = (hard_lo, hard_hi)
+        elif hard_lo is None and hard_hi is not None and 0 < hard_hi < float("inf"):
+            # Max only (Min left blank): what these boxes ask for (counts, amounts, percentages, ages, years)
+            # is never negative, so the window is 0..Max. Without this a declared "at most 2" was ignored
+            # and the draw came from the generic count distribution (0-13), or from a "(0-100)" in the text.
+            lo_hi = (0.0, hard_hi)
     except (TypeError, ValueError):
         lo_hi = None
         hard_lo = hard_hi = None
