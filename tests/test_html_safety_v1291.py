@@ -169,3 +169,58 @@ def test_a_policy_or_refresh_tag_typed_by_a_user_is_shown_as_text_not_applied():
     assert out.count("<meta ") == 1  # only our own policy tag is live markup
     assert "&lt;meta http-equiv=&#x27;refresh&#x27;" in out or "&lt;meta http-equiv='refresh'" in out
 
+
+# ---- findings of the browser red-team (headless Chromium, 126 vectors x 3 layers) ----------------------------
+@pytest.mark.parametrize("payload", [
+    "<svg><style><img src=x onerror=\"document.title='PWNED'\"></style></svg>",
+    "<math><style><img src=x onerror=alert(1)></style></math>",
+    "<svg><title><img src=x onerror=alert(1)></title></svg>",
+    "<svg><desc><img src=x onerror=alert(1)></desc></svg>",
+    "<svg><foreignObject><img src=x onerror=alert(1)></foreignObject></svg>",
+    "<textarea><img src=x onerror=alert(1)></textarea>",
+    "<title><img src=x onerror=alert(1)></title>",
+    "<div style=\"background:ur\\6c(http://evil/c)\">x</div>",
+    "<div style=\"background:u\\72l(http://evil/c)\">x</div>",
+    "<div style=\"width:exp\\72 ession(alert(1))\">x</div>",
+    "<style>p{background:url/**/(http://evil/c)}</style>",
+    "<style>@\\69mport 'http://evil/x.css';</style>",
+    "<div style=\"background:image-set('http://evil/c' 1x)\">x</div>",
+])
+def test_red_team_vectors_are_neutralised_by_the_sanitizer_alone(payload):
+    out = clean(f"<html><head></head><body><p>before</p>{payload}<p>after</p></body></html>")
+    assert _active_content(out) == [], out
+    assert "http://evil" not in re.sub(r"&lt;.*?&gt;", "", out) or "blocked" in out  # no live reference to the attacker host
+    assert "before" in out and "after" in out
+
+
+def test_svg_style_is_shown_as_text_not_kept_as_markup():
+    out = clean("<svg><style><img src=x onerror=alert(1)></style></svg>")
+    assert "<style" not in out and "<img" not in out and "&lt;img" in out
+
+
+def test_tag_like_text_is_always_escaped():
+    out = clean("<p>a < b and c > d <img src=x onerror=alert(1)></p>")
+    assert "<img" not in out and "a &lt; b and c &gt; d" in out
+
+
+def test_pathological_css_is_linear_time():
+    import time
+
+    for doc in ("<style>" + "url(" * 8000 + "</style>", "<style>a{b:url(" + " " * 400 + "}</style>",
+                "<div style='" + "url(" * 4000 + "'>x</div>", "<style>" + "\\6c " * 20000 + "</style>",
+                "<style>" + "/*" * 20000 + "</style>"):
+        started = time.perf_counter()
+        clean(doc)
+        assert time.perf_counter() - started < 1.5, doc[:40]
+
+
+def test_a_stored_report_with_the_previous_policy_keeps_it_as_live_markup():
+    from utils.html_safety import harden_report_html
+
+    legacy_policy = ("default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+                     "form-action 'none'; base-uri 'none'; frame-ancestors 'none'")
+    doc = ("<!DOCTYPE html><html><head><meta http-equiv=\"Content-Security-Policy\" content=\"" + legacy_policy.replace("'", "&#x27;")
+           + "\"><title>t</title></head><body><p>x</p></body></html>")
+    out = harden_report_html(doc)
+    assert out.count("Content-Security-Policy") == 1 and "&lt;meta" not in out
+
