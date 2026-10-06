@@ -136,7 +136,10 @@ Ordered by (frequency of need × value ÷ risk). These are larger, mostly
     - `_validate_participant_responses()` (`:9480`) — longstring, IRV and
       endpoint-utilization checks per persona.
     - `_detect_careless_patterns()` (`:1456`) — the only implementation of
-      alternating-pattern and midpoint-overuse detection; neither reaches output.
+      midpoint-overuse detection, so that never reaches an output column.
+      (Alternating-pattern detection is *not* lost with it: the live exclusion
+      path detects it separately at `:11161` and folds it into
+      `Max_Straight_Line` at `:11169`.)
     - `_detect_well_known_scale()` (`qsf_preview.py:1508`) and
       `_detect_reverse_coded_items()` (`:1530`) — so no QSF-parsed scale carries an
       instrument name or a `reverse_items` list (0 of 427 scales across 40 QSFs).
@@ -145,6 +148,30 @@ Ordered by (frequency of need × value ÷ risk). These are larger, mostly
       `has_display_logic` / `has_skip_logic` booleans are populated.
     Each is cheap to wire or to delete; leaving them defined invites the docs to
     drift back into describing them as live.
+12c. **Knowledge-base tables with no callers** (verified 2026-10-06). Three of the
+    imported tables in `scientific_knowledge_base.py` are never queried during
+    generation, so their entries do not affect any output:
+    - `META_ANALYTIC_DB` (187 entries) with `get_meta_analytic_effect`, imported
+      at `enhanced_simulation_engine.py:273`/`:279`. The 43 STEP 2 domains use
+      keyword-to-effect literals written into the engine instead, which is why
+      automatic effects are not calibrated to any published magnitude.
+    - `CULTURAL_ADJUSTMENTS` (12 entries) with `get_cultural_adjustment`
+      (`:276`/`:282`), alongside the `CULTURAL_RESPONSE_STYLES` table in item 12.
+    - `ORDER_EFFECTS` with `get_order_effect` (`:278`/`:284`).
+    The tables that *are* queried: `GAME_CALIBRATIONS` (`:7109`),
+    `CONSTRUCT_NORMS` (`:7298`), `RESPONSE_TIME_NORMS` (`:11260`, `:11312`) and
+    `compute_fatigue_adjustment` (`:8777`, `:11290`). Wiring `META_ANALYTIC_DB`
+    into the automatic-effect path is the highest-value item in this cluster —
+    it is the obvious fix for the uncalibrated-magnitude characteristic noted
+    below.
+12d. **Ten orphaned open-ended template sets.** `DOMAIN_TEMPLATES` holds 116
+    keys but lookup goes through `domain.value` (`response_library.py:8622`), so
+    the 10 keys that are not `StudyDomain` values can never be selected:
+    `artificial_intelligence`, `climate_change`, `ethical_dilemma`,
+    `forgiveness`, `gratitude_experience`, `gratitude_intervention`,
+    `moral_cleansing`, `narrative_transportation`, `nostalgia`, `sleep_quality`.
+    Several are domains students plausibly study. Either add the matching
+    `StudyDomain` members or alias the keys.
 13. **Sample-source profiles** (MTurk / Prolific / undergrad / nat-rep) — careless
     base-rate, attention-pass, demographic skew, effect-size attenuation. Meta-DB
     `sample` moderators exist, unused.
@@ -153,7 +180,7 @@ Ordered by (frequency of need × value ÷ risk). These are larger, mostly
     der Linden et al. 2010 GFP matrix; Soto et al. 2011 norms).
 15. **Numeracy latent → numeric scale behavior** (round-number heaping, extremes).
 16. **Special-population age profiles** (children/adolescents/older adults:
-    reading speed, comprehension, scale-use) — age floor currently 18.
+    reading speed, comprehension, scale-use) — the minimum age is user-settable (default 18, lower bound 13 in both UIs; `enhanced_simulation_engine.py:10853`) but nothing behavioral keys off it.
 17. **Length-/demographic-conditioned attrition** (Galesic & Bosnjak 2009).
 18. **Fraud subpopulation** (bots/duplicates/speeders) sized by sample source.
 

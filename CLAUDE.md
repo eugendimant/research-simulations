@@ -492,8 +492,11 @@ https://claude.ai/code/[session-id]
 2. LLM response validation layer (off-topic detection, meta-commentary screening)
 3. Authority/NFC persona-level interaction in STEP 3
 
-(Narrative transportation shipped in v1.0.4.9 — STEP 2 DOMAIN 19 plus a
-`narrative_transportation` template set — and matrix detection already exists.)
+(Narrative transportation's STEP 2 domain shipped in v1.0.4.9, and matrix
+detection already exists. Note its `narrative_transportation` template set is
+unreachable: template lookup goes through `domain.value`
+(`response_library.py:8622`) and that key is not a `StudyDomain` value — one of
+ten such orphaned keys.)
 
 ### Business Roadmap
 Phase 1 (Foundation): User accounts + persistent workspaces + billing infrastructure

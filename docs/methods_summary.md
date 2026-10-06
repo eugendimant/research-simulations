@@ -73,7 +73,7 @@ If you haven't built your survey yet — or prefer a faster setup — you can **
    - Numeric measures: `"Willingness to Pay (WTP): 1 item (open-ended numeric)"`
    - Binary measures: `"Manipulation check (Yes/No)"`
 4. **Open-ended questions**: Simply list your qualitative questions
-5. **Research domain**: Pick one of the 16 broad domains the builder offers (free text is also accepted); the 273-domain detector then refines it from your question wording
+5. **Research domain**: Pick one of the 16 broad domains from the dropdown — the only domain widget in the builder is a selectbox (`app.py:5541`), and the domain auto-detected from your description is prepended to the list when it is not one of the 16; the 273-domain detector then refines it from your question wording
 6. **Sample size and effect sizes**: Configure your simulation parameters
 
 The builder outputs the same structured design specification used by the QSF pathway, ensuring identical simulation quality regardless of input method.
@@ -171,7 +171,7 @@ Multi-item scales exhibit realistic internal consistency (Cronbach's alpha) thro
 Response = lambda * Common_Factor + sqrt(1 - lambda^2) * Unique_Error
 ```
 
-Where lambda (factor loading) is derived from the target reliability. Items measuring the same construct share common variance while retaining item-specific variation, producing alpha values from about 0.75 up to ~0.97. Correlation injection is one-sided — it raises alpha toward the target (default 0.75) and never lowers it (`enhanced_simulation_engine.py:11877`, whose comment notes items "often exceed the target") — so a fair share of scales land above 0.90.
+Where lambda (factor loading) is derived from the target reliability. Items measuring the same construct share common variance while retaining item-specific variation, producing alpha values from about 0.75 up to the mid-0.90s. Correlation injection is one-sided — it raises alpha toward the target (default 0.75) and never lowers it (`enhanced_simulation_engine.py:11877`, whose comment notes items "often exceed the target") — so a fair share of scales land above 0.90.
 
 ### Response Style Modeling
 
@@ -263,7 +263,7 @@ If one provider reaches its rate limit or errors, the system automatically tries
 
 A key you supply is **appended after** the built-ins, not put ahead of them — the tool deliberately spends its own free capacity first and reaches your key only once the built-ins are exhausted (`llm_response_generator.py:2508`). Keys supplied through environment variables land at provider-specific positions in the chain. Model assignments and ordering change as free tiers are retired; `_builtin_providers` in `utils/llm_response_generator.py` is authoritative.
 
-**Sample-size cap**: built-in free-tier keys are shared across all users, so the **Built-in AI** method generates LLM open-ended text for the first `MAX_FREE_LLM_N` = 100 participants only and falls back to the Adaptive Behavioral Engine for the remainder. The app warns before generating and reports the resulting split. Supplying your own key removes the cap.
+**Sample-size cap**: built-in free-tier keys are shared across all users, so the **Built-in AI** method generates LLM open-ended text for the first `MAX_FREE_LLM_N` = 100 participants only and falls back to the compositional template engine for the remainder. The app warns before generating and reports the resulting split. Supplying your own key removes the cap.
 
 **Key features:**
 
@@ -273,9 +273,9 @@ A key you supply is **appended after** the built-ins, not put ahead of them — 
 4. **Smart pool scaling**: Pool size automatically adapts to sample size. Per sentiment bucket the target is `sqrt(participants_per_bucket) * 2.4 + 8`, clamped to [18, 60], where `participants_per_bucket = sample_size / (n_conditions × n_sentiments)` — balancing API efficiency against response diversity
 5. **9-entry failover chain**: see the provider table above; a user-supplied key is appended after all built-ins, so it is used only once the built-in free capacity is spent
 
-### Tier 2: Adaptive Behavioral Engine 3.0 (default method, and the LLM fallback)
+### Tier 2: Adaptive Behavioral Engine 3.0 (selected explicitly)
 
-When selected as the primary method or when AI providers are unavailable, the system uses the **Adaptive Behavioral Engine 3.0** — a narrative-enhanced behavioral engine that integrates census-weighted demographics, stylometric voice fingerprinting, and 5 individual-level consistency improvements into the domain template engine. Building on the compositional architecture introduced in v1.2.3.1, ABE 3.0 adds dedicated narrative intent builders (Brotherton 2013, Pennebaker 1997, Green & Brock 2000) and produces highly varied, topic-grounded responses:
+No generation method is pre-selected; ABE 3.0 runs when you pick its tile. It is *not* the within-run LLM fallback: choosing Built-in AI or Your API Key forces `_use_abe_v2 = False` (`app.py:12755`, `:12941`), so when a run exceeds the 100-participant cap, exhausts the open-ended budget, or gets an empty LLM response, the text comes from the compositional template engine (`ComprehensiveResponseGenerator`, `enhanced_simulation_engine.py:3108`). ABE 3.0 takes over mid-run only if you re-select it in the recovery prompt. ABE 3.0 itself is a narrative-enhanced behavioral engine that integrates census-weighted demographics, stylometric voice fingerprinting, and 5 individual-level consistency improvements into the domain template engine. Building on the compositional architecture introduced in v1.2.3.1, ABE 3.0 adds dedicated narrative intent builders (Brotherton 2013, Pennebaker 1997, Green & Brock 2000) and produces highly varied, topic-grounded responses:
 
 1. **Intent-driven composition**: Each response is assembled from opener + intent-matched core + domain-enriched elaboration + coda. Question intent is classified into 16 categories (opinion, explanation, description, emotional reaction, evaluation, prediction, causal explanation, decision explanation, creative belief, personal disclosure, creative narrative, personal story, hypothetical, recommendation, comparison, recall) and templates are selected accordingly
 2. **36 domain vocabulary sets**: Specialized terminology for clinical/mental health, sports, legal, food, developmental, personality, cognitive, neuroscience, financial and cross-cultural work, among 26 other domains, so responses use field-appropriate language
@@ -342,8 +342,15 @@ The response generation system has been trained on **hundreds of scientific insi
 **273 research domains** are keyword-detectable, via 3,452 keyword patterns.
 **189** of them are grouped into the 23 categories below (191 memberships — two
 domains, `social_media` and `algorithmic_fairness`, are cross-listed); the other
-84 are detectable but ungrouped. **116** domains carry dedicated open-ended
-template sets, 68 of which fall inside these categories.
+84 are detectable but ungrouped. **104** of the detectable domains carry a reachable
+open-ended template set, 68 of them inside these categories. (`DOMAIN_TEMPLATES`
+holds 116 keys, but template lookup goes through `domain.value`
+(`response_library.py:8622`), so the 10 keys that are not `StudyDomain` values —
+`artificial_intelligence`, `climate_change`, `ethical_dilemma`, `forgiveness`,
+`gratitude_experience`, `gratitude_intervention`, `moral_cleansing`,
+`narrative_transportation`, `nostalgia`, `sleep_quality` — can never be
+selected. Two more, `general` and `survey_feedback`, are reachable as fallbacks
+but are not keyword-detectable domains.)
 
 The table is generated from `DOMAIN_CATEGORIES` in `utils/response_library.py`,
 which is authoritative. "Example domains" lists the first few members of each
@@ -412,15 +419,18 @@ responses. These columns ship: `Max_Straight_Line`, `Flag_StraightLine`,
 - **Straight-lining**: same response repeated across items
 - **Response time anomalies**: unrealistically fast completion
 
-Alternating-pattern (1-7-1-7) and midpoint-overuse detection are implemented in
-`_detect_careless_patterns()` but it has no callers, so neither appears as an
-output column.
+Alternating patterns (1-7-1-7) **are** detected, in the live exclusion path
+(`enhanced_simulation_engine.py:11161-11167`), and folded into the shipped
+`Max_Straight_Line` column by taking the worse of the two streaks (`:11169`),
+which in turn drives `Flag_StraightLine`. Midpoint overuse is implemented only
+in `_detect_careless_patterns()` (`:1512`), which has no callers, so it never
+reaches an output column.
 
 ### Validation Metrics
 
 Generated datasets include quality metrics:
 
-- Achieved effect sizes — Cohen's *d*, both group means and both Ns (no confidence intervals; the only 95% CIs in the project are per-condition means in the emailed instructor report)
+- Achieved effect sizes — Cohen's *d*, both group means and both Ns (no confidence intervals). 95% CIs appear in the emailed instructor report, as per-condition means, and in the password-gated Analytics Dashboard, which also plots Cohen's *d* with 95% CIs (`app.py:2753`, `:2958`) — though that dashboard returns early unless `plotly` is importable, and `plotly` is not in `requirements.txt`
 - Condition balance verification
 - Missing data rates
 - Response distribution statistics
@@ -503,7 +513,7 @@ The responses exhibit statistical properties matching published research on huma
 
 - Mean responses around 4.0-5.2 on 7-point scales before domain calibration (documented positive response bias); realized DV means span roughly 3.5-5.5 once construct norms apply, with clinical DVs centering lower and satisfaction DVs higher
 - Standard deviations of 1.2-1.8 (typical for Likert data)
-- Cronbach's alphas from about 0.75 up to ~0.97 for multi-item scales (raised toward the target, never lowered)
+- Cronbach's alphas from about 0.75 up to the mid-0.90s for multi-item scales (raised toward the target, never lowered)
 - Effect sizes: configured Cohen's *d* sets the **target**, not a guaranteed outcome. Verify the achieved effect in `Metadata.json` (`effect_sizes_observed`) before relying on the magnitude — as of 1.2.8.7 the realized gap runs several times the configured *d*, and recalibration is in flight. Direction and ordering are reliable; magnitude is not yet.
 
 ### Can I use this for any survey?
