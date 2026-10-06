@@ -87,6 +87,28 @@ def _report_clean_column_name(name: str) -> str:
     return clean.strip('_') or "Variable"
 
 
+def _numeric_column_names(df: "pd.DataFrame") -> List[str]:
+    """Names of the numeric (non-boolean) columns of ``df``, in column order.
+
+    Text answers (open-ended questions) must never reach a mean, SD or range: ``df[cols].min()`` on a
+    text column raised a UFuncTypeError that used to replace both instructor analyses with a stub.
+    """
+    names: List[str] = []
+    for name, dtype in zip(df.columns, df.dtypes):
+        if pd.api.types.is_numeric_dtype(dtype) and not pd.api.types.is_bool_dtype(dtype):
+            names.append(name)
+    return names
+
+
+def _scale_column_registry(metadata: Dict[str, Any]) -> Dict[str, List[str]]:
+    """Map each scale name to the item columns the engine generated for it (``scale_generation_log``)."""
+    registry: Dict[str, List[str]] = {}
+    for entry in (metadata.get("scale_generation_log") or []):
+        if isinstance(entry, dict):
+            registry[str(entry.get("name", ""))] = list(entry.get("columns_generated") or [])
+    return registry
+
+
 def _find_scale_columns(df: "pd.DataFrame", scale: Dict[str, Any],
                         col_registry: Optional[Dict[str, List[str]]] = None) -> List[str]:
     """Find DataFrame columns for a scale using multiple name strategies.
@@ -100,35 +122,44 @@ def _find_scale_columns(df: "pd.DataFrame", scale: Dict[str, Any],
     2. variable_name cleaned with _report_clean_column_name
     3. name cleaned with _report_clean_column_name
     4. Legacy: name.replace(' ', '_')
+
+    v1.2.9.1: only numeric columns are returned. A prefix match used to pick up an open-ended TEXT column
+    whose name starts with the scale name (``Punitive_Pilot_03`` for scale ``Punitive_Pilot``), and the text
+    then reached numeric statistics. When several columns share the prefix, the ones whose remainder is
+    purely digits (``<prefix>_1``, ``<prefix>_2``, ...) win over longer names such as ``<prefix>_Pilot_1``.
     """
     scale_name = scale.get("name", "Scale")
+    numeric = _numeric_column_names(df)
+    numeric_set = set(numeric)
+
+    def _by_prefix(prefix: str) -> List[str]:
+        lead = f"{prefix}_"
+        loose = [c for c in numeric if str(c).startswith(lead) and str(c)[-1:].isdigit()]
+        strict = [c for c in loose if str(c)[len(lead):].isdigit()]
+        return sorted(strict or loose, key=str)
 
     # Strategy 1: Column registry from engine's scale_generation_log
     if col_registry:
         cols = col_registry.get(scale_name, [])
         if cols:
-            existing = [c for c in cols if c in df.columns]
+            existing = [c for c in cols if c in numeric_set]
             if existing:
                 return existing
 
     # Strategy 2: variable_name with clean column name (matches engine)
     var_name = str(scale.get("variable_name", "")).strip()
     if var_name:
-        prefix = _report_clean_column_name(var_name)
-        cols = [c for c in df.columns if c.startswith(f"{prefix}_") and c[-1].isdigit()]
+        cols = _by_prefix(_report_clean_column_name(var_name))
         if cols:
-            return sorted(cols)
+            return cols
 
     # Strategy 3: display name with clean column name
-    prefix = _report_clean_column_name(scale_name)
-    cols = [c for c in df.columns if c.startswith(f"{prefix}_") and c[-1].isdigit()]
+    cols = _by_prefix(_report_clean_column_name(scale_name))
     if cols:
-        return sorted(cols)
+        return cols
 
     # Strategy 4: Legacy fallback — simple space-to-underscore
-    prefix = scale_name.replace(' ', '_')
-    cols = [c for c in df.columns if c.startswith(f"{prefix}_") and c[-1].isdigit()]
-    return sorted(cols)
+    return _by_prefix(str(scale_name).replace(' ', '_'))
 
 
 def _hypothesis_text(hypothesis: Any) -> str:
@@ -144,6 +175,16 @@ def _hypothesis_text(hypothesis: Any) -> str:
                 return str(value).strip()
         return ""
     return "" if hypothesis is None else str(hypothesis).strip()
+
+
+def _is_finite_number(value: Any) -> bool:
+    """True for a real, finite number (bools, None, NaN and +/-inf are not)."""
+    if isinstance(value, bool) or value is None:
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -2458,17 +2499,26 @@ class ComprehensiveInstructorReport:
         if scales:
             lines.append("| Scale | Items | Expected Range | Actual Range | Status |")
             lines.append("|-------|-------|---------------|--------------|--------|")
+            # v1.2.9.1: same column lookup as the analysis below (registry first, numeric columns only). Matching
+            # "<name>_<digits>" by hand picked up an open-ended TEXT column (UFuncTypeError, both analyses stubbed)
+            # and missed names such as "1.9Q" whose columns are "1_9Q_1".
+            _range_registry = _scale_column_registry(metadata)
             for scale in scales:
                 s_name = str(scale.get("name", "Unknown")).strip().replace(" ", "_")
                 n_items = scale.get("num_items", 5)
                 s_min = scale.get("scale_min", 1)
                 s_max = scale.get("scale_max", 7)
-                cols = [c for c in df.columns if c.startswith(f"{s_name}_") and c[len(s_name)+1:].isdigit()]
+                cols = _find_scale_columns(df, scale, _range_registry)
                 if cols:
                     actual_min = df[cols].min().min()
                     actual_max = df[cols].max().max()
+                    if not (_is_finite_number(actual_min) and _is_finite_number(actual_max)):
+                        lines.append(f"| {s_name} | {len(cols)} | [{s_min}-{s_max}] | no answers | ⚠️ Review |")
+                        continue
                     status = "✅ Pass" if actual_min >= s_min and actual_max <= s_max else "⚠️ Review"
                     lines.append(f"| {s_name} | {len(cols)} | [{s_min}-{s_max}] | [{actual_min}-{actual_max}] | {status} |")
+                else:
+                    lines.append(f"| {s_name} | 0 | [{s_min}-{s_max}] | no columns found | ⚠️ Review |")
             lines.append("")
 
         # Response uniqueness check for open-ended (v1.2.5.1: centralized detection)
@@ -2601,10 +2651,7 @@ class ComprehensiveInstructorReport:
         df_clean = df
 
         # v1.4.11: Build column registry from scale_generation_log if available
-        _gen_log = metadata.get("scale_generation_log", [])
-        _col_registry: Dict[str, List[str]] = {}
-        for _entry in _gen_log:
-            _col_registry[str(_entry.get("name", ""))] = list(_entry.get("columns_generated", []))
+        _col_registry: Dict[str, List[str]] = _scale_column_registry(metadata)
 
         for scale in scales:
             scale_name = scale.get("name", "Scale")
@@ -5268,10 +5315,7 @@ class ComprehensiveInstructorReport:
         all_scale_results = []
 
         # v1.0.6.3: Build column registry for HTML report (same as markdown)
-        _html_gen_log = metadata.get("scale_generation_log", [])
-        _html_col_registry: Dict[str, List[str]] = {}
-        for _entry in _html_gen_log:
-            _html_col_registry[str(_entry.get("name", ""))] = list(_entry.get("columns_generated", []))
+        _html_col_registry: Dict[str, List[str]] = _scale_column_registry(metadata)
 
         for scale in scales:
             scale_name = scale.get("name", "Scale")

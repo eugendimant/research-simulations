@@ -157,6 +157,47 @@ def test_hypothesis_lines_never_claim_support(stats_mode):
 
 
 # ---------------------------------------------------------------------------
+# 3. Open-ended text columns and odd scale names in the markdown tables
+# ---------------------------------------------------------------------------
+def test_text_column_sharing_the_scale_prefix_is_not_a_scale_column():
+    df = _base_frame(10)
+    cols = _likert_items(df, "Punitive_Pilot", k=3)
+    df["Punitive_Pilot_03"] = "I think the punishment was fair because of the story."
+    scale = _scale("Punitive_Pilot", 3)
+    assert ir._find_scale_columns(df, scale) == cols  # prefix match: the text column is left out
+    assert ir._find_scale_columns(df, scale, {"Punitive_Pilot": cols + ["Punitive_Pilot_03"]}) == cols  # even a bad registry
+    # a longer name that merely starts with the prefix is not an item of the shorter scale
+    _likert_items(df, "Punitive", k=2, seed=9)
+    df["Punitive_Pilot_mean"] = 4.0
+    assert ir._find_scale_columns(df, _scale("Punitive", 2)) == ["Punitive_1", "Punitive_2"]
+
+
+def test_markdown_range_table_survives_text_columns_and_lists_digit_leading_scales(stats_mode):
+    df = _base_frame(30)
+    cols_a = _likert_items(df, "Punitive_Pilot", {"Treatment": 0.8}, k=3)
+    df["Punitive_Pilot_03"] = "free text answer"  # open-ended question named like an item
+    cols_b = [f"1_9Q_{i}" for i in (1, 2)]
+    for col in cols_b:
+        df[col] = np.random.RandomState(2).randint(1, 8, len(df))
+    meta = _meta(df, [_scale("Punitive_Pilot", 3), _scale("1.9Q", 2)], {"Punitive_Pilot": cols_a, "1.9Q": cols_b})
+    md, html = _both_reports(df, meta)
+    _assert_clean(md, html)
+    table = md.split("### Automated Quality Checks")[1].split("###")[0]
+    assert re.search(r"\| Punitive_Pilot \| 3 \|", table), table
+    assert re.search(r"\| 1\.9Q \| 2 \|", table), table  # used to be left out: "1.9Q" never matched "1_9Q_1"
+    # the text column is not described as a scale item anywhere in the DV analysis
+    assert "| Punitive_Pilot_03 |" not in md
+
+
+def test_scale_without_any_numeric_column_is_reported_not_dropped_or_crashed():
+    df = _base_frame(10)
+    df["Q7_1"] = "text"
+    md, html = _both_reports(df, _meta(df, [_scale("Q7", 1)], {"Q7": ["Q7_1"]}))
+    assert "| Q7 | 0 |" in md and "no columns found" in md
+    assert "Report Error" not in html
+
+
+# ---------------------------------------------------------------------------
 # 2. The app delivers each document on its own
 # ---------------------------------------------------------------------------
 def _load_app():
