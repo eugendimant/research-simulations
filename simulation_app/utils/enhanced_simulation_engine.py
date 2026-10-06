@@ -13643,6 +13643,27 @@ class EnhancedSimulationEngine:
         return result
 
     def generate_explainer(self) -> str:
+        # Qualtrics-style delivery: Simulated_Data.csv holds the participant-facing
+        # columns plus Qualtrics metadata; internal columns live in the diagnostics sidecar.
+        try:
+            from .qualtrics_export import (
+                QUALTRICS_METADATA_COLUMNS as _qx_meta_cols,
+                QUALTRICS_COLUMN_DESCRIPTIONS as _qx_meta_desc,
+                split_columns as _qx_split,
+            )
+            _qx_ok = True
+        except ImportError:
+            _qx_ok = False
+            _qx_meta_cols, _qx_meta_desc = [], {}
+            _qx_split = None
+
+        _all_names = [c for c, _ in self.column_info]
+        if _qx_ok:
+            _facing_names, _internal_names = _qx_split(_all_names)
+        else:
+            _facing_names, _internal_names = _all_names, []
+        _facing_set = set(_facing_names)
+
         lines = [
             "=" * 70,
             "COLUMN EXPLAINER - Simulated Behavioral Experiment Data",
@@ -13656,16 +13677,83 @@ class EnhancedSimulationEngine:
             f"Conditions: {len(self.conditions)}",
             f"Detected Domains: {', '.join(self.detected_domains[:5])}",
             "",
-            "-" * 70,
-            "VARIABLE DESCRIPTIONS",
-            "-" * 70,
-            "",
         ]
 
-        for col_name, description in self.column_info:
+        if _qx_ok:
+            lines.extend([
+                "-" * 70,
+                "DELIVERED FILES",
+                "-" * 70,
+                "",
+                "Simulated_Data.csv",
+                "    The dataset, laid out like a Qualtrics export (one header row). It starts",
+                "    with the Qualtrics metadata columns, followed by the survey columns.",
+                "    Analysis scripts in this folder read this file.",
+                "Simulated_Data_Qualtrics_Raw.csv",
+                "    Same rows and columns with the three-row Qualtrics header: column names,",
+                "    question text, and an ImportId row. Use it to practice the usual step of",
+                "    deleting rows 2-3 before analysis.",
+                "Simulation_Diagnostics.csv",
+                "    Simulator bookkeeping for each response, keyed by ResponseId (same row order).",
+                "    A real survey export has none of these columns. It is a separate file so the",
+                "    main dataset looks like data collected from real respondents.",
+                "If Simulation_Diagnostics.csv is not in the ZIP, the Qualtrics-format build was",
+                "unavailable for this run and Simulated_Data.csv is the unprocessed simulator table.",
+                "",
+                "-" * 70,
+                "QUALTRICS METADATA COLUMNS (Simulated_Data.csv)",
+                "-" * 70,
+                "",
+            ])
+            for _mc in _qx_meta_cols:
+                lines.append(_mc)
+                lines.append(f"    {_qx_meta_desc.get(_mc, '')}")
+                lines.append("")
+            lines.extend([
+                "Rows are sorted by StartDate. Start times are spread over one to four days and",
+                "are generated from the random seed; they are not the time you ran the tool.",
+                "Responses that stop before the end of the survey have Finished = 0, a Progress",
+                "below 100, blank cells after the point where they stopped, and a shorter Duration.",
+                "",
+                "-" * 70,
+                "SURVEY COLUMNS (Simulated_Data.csv)",
+                "-" * 70,
+                "",
+            ])
+            _survey_cols = [(c, d) for c, d in self.column_info if c in _facing_set]
+        else:
+            lines.extend(["-" * 70, "VARIABLE DESCRIPTIONS", "-" * 70, ""])
+            _survey_cols = list(self.column_info)
+
+        for col_name, description in _survey_cols:
             lines.append(f"{col_name}")
             lines.append(f"    {description}")
             lines.append("")
+
+        if _qx_ok:
+            lines.extend([
+                "-" * 70,
+                "DIAGNOSTICS COLUMNS (Simulation_Diagnostics.csv)",
+                "-" * 70,
+                "",
+                "ResponseId",
+                "    Links each row to the same row of Simulated_Data.csv (merge on this column).",
+                "",
+            ])
+            for col_name, description in self.column_info:
+                if col_name in _facing_set:
+                    continue
+                if col_name.endswith("_mean"):
+                    description = f"{description} (researcher composite; not in Simulated_Data.csv, compute it from the item columns)"
+                lines.append(f"{col_name}")
+                lines.append(f"    {description}")
+                lines.append("")
+            lines.extend([
+                "Exclude_Recommended is the simulator's own flag. In a real analysis you would",
+                "apply your preregistered exclusion rules to Duration (in seconds), Finished and",
+                "the attention-check columns of Simulated_Data.csv instead.",
+                "",
+            ])
 
         lines.extend(["-" * 70, "EXPERIMENTAL CONDITIONS", "-" * 70, ""])
         # v1.0.0: Guard against division by zero when no conditions
@@ -13701,11 +13789,54 @@ class EnhancedSimulationEngine:
         )
         return "\n".join(lines)
 
+    # ------------------------------------------------------------------
+    # Analysis-script helpers (R / Python / Julia / SPSS / Stata)
+    # ------------------------------------------------------------------
+    _EXCLUSION_NOTE = (
+        "Real analyses apply preregistered exclusion rules to the Duration (in seconds), "
+        "Finished and attention-check columns of Simulated_Data.csv. Exclude_Recommended is the "
+        "simulator's own flag; it is stored in Simulation_Diagnostics.csv and joined on ResponseId "
+        "for this optional step only."
+    )
+
+    def _export_script_scales(self, df: Optional[pd.DataFrame], lowercase: bool = False) -> List[Dict[str, Any]]:
+        """Scale specs for analysis scripts, restricted to item columns present in the delivered CSV.
+
+        When ``df`` is given, only items that exist as columns are referenced, so a script never
+        names a column the file does not contain. Composites are computed by the script itself
+        (the delivered CSV has no ``<Scale>_mean`` columns).
+        """
+        cols = set(df.columns) if df is not None and hasattr(df, "columns") else None
+        out: List[Dict[str, Any]] = []
+        for scale in self.scales:
+            raw = str(scale.get("name", "Scale")).strip() or "Scale"
+            name = _clean_column_name(raw)
+            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
+            points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
+            reverse = _safe_parse_reverse_items(scale.get("reverse_items", []))
+            items = [f"{name}_{i}" for i in range(1, num_items + 1)]
+            if cols is not None:
+                items = [it for it in items if it in cols]
+                if not items:
+                    continue
+            rev = sorted(r for r in reverse if f"{name}_{r}" in items)
+            if lowercase:
+                name = name.lower()
+                items = [it.lower() for it in items]
+            out.append({"raw": raw, "name": name, "items": items, "reverse": rev, "points": points})
+        return out
+
+    def _export_has_gender(self, df: Optional[pd.DataFrame]) -> bool:
+        if df is not None and hasattr(df, "columns"):
+            return "Gender" in df.columns
+        return bool(self.demographics.get("include_gender_column", True))
+
     def generate_r_export(self, df: pd.DataFrame) -> str:
         """
-        Generate R-compatible export with proper factor coding.
+        Generate R data-preparation script for Simulated_Data.csv.
 
-        Returns an R script that loads and prepares Simulated.csv.
+        Composites are computed from the item columns; Simulation_Diagnostics.csv is
+        joined on ResponseId for the optional exclusion step.
         """
         def _r_quote(x: str) -> str:
             x = str(x).replace("\\", "\\\\").replace('"', '\\"')
@@ -13726,48 +13857,46 @@ class EnhancedSimulationEngine:
             "  library(dplyr)",
             "})",
             "",
-            "# Load the data",
-            'data <- read_csv("Simulated.csv", show_col_types = FALSE)',
+            "# Load the data (Qualtrics-style export; one header row)",
+            'data <- read_csv("Simulated_Data.csv", show_col_types = FALSE)',
             "",
             "# Convert CONDITION to factor with proper levels",
             f"data$CONDITION <- factor(data$CONDITION, levels = c({condition_levels}))",
             "",
         ]
 
-        # v1.2.0.9: Only include Gender factor conversion if Gender column exists in output
-        if self.demographics.get("include_gender_column", True):
+        if self._export_has_gender(df):
             lines.extend([
                 "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
                 'data$Gender <- factor(data$Gender)',
                 "",
             ])
 
-        for scale in self.scales:
-            scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
-            scale_name = _clean_column_name(scale_name_raw)
-            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
-            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
-            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
-
-            items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
-
-            if reverse_items:
-                lines.append(f"# {scale_name_raw} - reverse code items {sorted(reverse_items)}")
-                for r_item in sorted(reverse_items):
-                    item_name = f"{scale_name}_{r_item}"
-                    max_val = scale_points
-                    lines.append(f"data${item_name}_R <- {max_val + 1} - data${item_name}")
+        for sc in self._export_script_scales(df):
+            if sc["reverse"]:
+                lines.append(f"# {sc['raw']} - reverse code items {sc['reverse']}")
+                for r_item in sc["reverse"]:
+                    item_name = f"{sc['name']}_{r_item}"
+                    lines.append(f"data${item_name}_R <- {sc['points'] + 1} - data${item_name}")
                 lines.append("")
 
-            lines.append(f"# Create {scale_name_raw} composite")
-            item_list = ", ".join([f"data${item}" for item in items])
-            lines.append(f"data${scale_name}_composite <- rowMeans(cbind({item_list}), na.rm = TRUE)")
+            lines.append(f"# Create {sc['raw']} composite from the item columns")
+            item_list = ", ".join([f"data${item}" for item in sc["items"]])
+            lines.append(f"data${sc['name']}_composite <- rowMeans(cbind({item_list}), na.rm = TRUE)")
             lines.append("")
 
         lines.extend(
             [
-                "# Filter excluded participants (optional)",
-                "data_clean <- data[data$Exclude_Recommended == 0, ]",
+                "# Optional exclusion step",
+                f"# {self._EXCLUSION_NOTE}",
+                'if (file.exists("Simulation_Diagnostics.csv")) {',
+                '  diagnostics <- read_csv("Simulation_Diagnostics.csv", show_col_types = FALSE)',
+                '  data <- left_join(data, diagnostics[, c("ResponseId", "Exclude_Recommended")], by = "ResponseId")',
+                "  data_clean <- data[!is.na(data$Exclude_Recommended) & data$Exclude_Recommended == 0, ]",
+                "} else {",
+                '  message("Simulation_Diagnostics.csv not found; no exclusions applied.")',
+                "  data_clean <- data",
+                "}",
                 "",
                 'cat("Total N:", nrow(data), "\\n")',
                 'cat("Clean N:", nrow(data_clean), "\\n")',
@@ -13780,9 +13909,10 @@ class EnhancedSimulationEngine:
 
     def generate_python_export(self, df: pd.DataFrame) -> str:
         """
-        Generate Python-compatible export script with pandas (v2.4.5).
+        Generate Python (pandas) data-preparation script for Simulated_Data.csv.
 
-        Returns a Python script that loads and prepares Simulated.csv.
+        Composites are computed from the item columns; Simulation_Diagnostics.csv is
+        merged on ResponseId for the optional exclusion step.
         """
         def _py_quote(x: str) -> str:
             x = str(x).replace("\\", "\\\\").replace("'", "\\'")
@@ -13797,10 +13927,11 @@ class EnhancedSimulationEngine:
             f"# Run ID: {self.run_id}",
             "# ============================================================",
             "",
+            "import os",
             "import pandas as pd",
             "import numpy as np",
             "",
-            "# Load the data",
+            "# Load the data (Qualtrics-style export; one header row)",
             "data = pd.read_csv('Simulated_Data.csv')",
             "",
             "# Convert CONDITION to categorical with proper order",
@@ -13809,57 +13940,57 @@ class EnhancedSimulationEngine:
             "",
         ]
 
-        # v1.2.0.9: Only include Gender conversion if Gender column exists in output
-        if self.demographics.get("include_gender_column", True):
+        if self._export_has_gender(df):
             lines.extend([
                 "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
                 "data['Gender'] = pd.Categorical(data['Gender'])",
                 "",
             ])
 
-        for scale in self.scales:
-            scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
-            scale_name = _clean_column_name(scale_name_raw)
-            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
-            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
-            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
-
-            items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
-
-            if reverse_items:
-                lines.append(f"# {scale_name_raw} - reverse code items {sorted(reverse_items)}")
-                for r_item in sorted(reverse_items):
-                    item_name = f"{scale_name}_{r_item}"
-                    max_val = scale_points
-                    lines.append(f"data['{item_name}_R'] = {max_val + 1} - data['{item_name}']")
+        scales = self._export_script_scales(df)
+        for sc in scales:
+            if sc["reverse"]:
+                lines.append(f"# {sc['raw']} - reverse code items {sc['reverse']}")
+                for r_item in sc["reverse"]:
+                    item_name = f"{sc['name']}_{r_item}"
+                    lines.append(f"data['{item_name}_R'] = {sc['points'] + 1} - data['{item_name}']")
                 lines.append("")
 
-            lines.append(f"# Create {scale_name_raw} composite")
-            item_list = ", ".join([f"'{item}'" for item in items])
-            lines.append(f"data['{scale_name}_composite'] = data[[{item_list}]].mean(axis=1)")
+            lines.append(f"# Create {sc['raw']} composite from the item columns")
+            item_list = ", ".join([f"'{item}'" for item in sc["items"]])
+            lines.append(f"data['{sc['name']}_composite'] = data[[{item_list}]].mean(axis=1)")
             lines.append("")
 
         lines.extend([
-            "# Filter excluded participants (optional)",
-            "data_clean = data[data['Exclude_Recommended'] == 0].copy()",
+            "# Optional exclusion step",
+            f"# {self._EXCLUSION_NOTE}",
+            "if os.path.exists('Simulation_Diagnostics.csv'):",
+            "    diagnostics = pd.read_csv('Simulation_Diagnostics.csv')",
+            "    data = data.merge(diagnostics[['ResponseId', 'Exclude_Recommended']], on='ResponseId', how='left')",
+            "    data_clean = data[data['Exclude_Recommended'] == 0].copy()",
+            "else:",
+            "    print('Simulation_Diagnostics.csv not found; no exclusions applied.')",
+            "    data_clean = data.copy()",
             "",
             "print(f'Total N: {len(data)}')",
             "print(f'Clean N: {len(data_clean)}')",
             "",
             "# Ready for analysis",
-            "# Example: data_clean.groupby('CONDITION')['Scale_composite'].mean()",
         ])
+        if scales:
+            lines.append(f"# Example: data_clean.groupby('CONDITION')['{scales[0]['name']}_composite'].mean()")
 
         return "\n".join(lines)
 
     def generate_julia_export(self, df: pd.DataFrame) -> str:
         """
-        Generate Julia-compatible export script with DataFrames.jl (v2.4.5).
+        Generate Julia (DataFrames.jl) data-preparation script for Simulated_Data.csv.
 
-        Returns a Julia script that loads and prepares Simulated.csv.
+        Composites are computed from the item columns; Simulation_Diagnostics.csv is
+        joined on ResponseId for the optional exclusion step.
         """
         def _jl_quote(x: str) -> str:
-            x = str(x).replace("\\", "\\\\").replace('"', '\\"')
+            x = str(x).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
             return f'"{x}"'
 
         condition_levels = ", ".join([_jl_quote(c) for c in self.conditions])
@@ -13876,7 +14007,7 @@ class EnhancedSimulationEngine:
             "using CategoricalArrays",
             "using Statistics",
             "",
-            "# Load the data",
+            "# Load the data (Qualtrics-style export; one header row)",
             'data = CSV.read("Simulated_Data.csv", DataFrame)',
             "",
             "# Convert CONDITION to categorical with proper order",
@@ -13885,59 +14016,61 @@ class EnhancedSimulationEngine:
             "",
         ]
 
-        # v1.2.0.9: Only include Gender conversion if Gender column exists in output
-        if self.demographics.get("include_gender_column", True):
+        if self._export_has_gender(df):
             lines.extend([
                 "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
                 "data.Gender = categorical(data.Gender)",
                 "",
             ])
 
-        for scale in self.scales:
-            scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
-            scale_name = _clean_column_name(scale_name_raw)
-            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
-            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
-            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
-
-            items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
-
-            if reverse_items:
-                lines.append(f"# {scale_name_raw} - reverse code items {sorted(reverse_items)}")
-                for r_item in sorted(reverse_items):
-                    item_name = f"{scale_name}_{r_item}"
-                    max_val = scale_points
-                    lines.append(f'data.{item_name}_R = {max_val + 1} .- data.{item_name}')
+        scales = self._export_script_scales(df)
+        for sc in scales:
+            if sc["reverse"]:
+                lines.append(f"# {sc['raw']} - reverse code items {sc['reverse']}")
+                for r_item in sc["reverse"]:
+                    item_name = f"{sc['name']}_{r_item}"
+                    lines.append(f'data.{item_name}_R = {sc["points"] + 1} .- data.{item_name}')
                 lines.append("")
 
-            lines.append(f"# Create {scale_name_raw} composite")
-            item_syms = ", ".join([f":{item}" for item in items])
-            lines.append(f"data.{scale_name}_composite = mean.(eachrow(data[:, [{item_syms}]]))")
+            lines.append(f"# Create {sc['raw']} composite from the item columns (missing values skipped)")
+            item_syms = ", ".join([f":{item}" for item in sc["items"]])
+            lines.append(
+                f"data.{sc['name']}_composite = [isempty(collect(skipmissing(collect(r)))) ? missing : "
+                f"mean(skipmissing(collect(r))) for r in eachrow(data[:, [{item_syms}]])]"
+            )
             lines.append("")
 
         lines.extend([
-            "# Filter excluded participants (optional)",
-            "data_clean = filter(row -> row.Exclude_Recommended == 0, data)",
+            "# Optional exclusion step",
+            f"# {self._EXCLUSION_NOTE}",
+            'if isfile("Simulation_Diagnostics.csv")',
+            '    diagnostics = CSV.read("Simulation_Diagnostics.csv", DataFrame)',
+            "    data = leftjoin(data, select(diagnostics, [:ResponseId, :Exclude_Recommended]), on = :ResponseId)",
+            "    data_clean = filter(row -> coalesce(row.Exclude_Recommended, 1) == 0, data)",
+            "else",
+            '    println("Simulation_Diagnostics.csv not found; no exclusions applied.")',
+            "    data_clean = copy(data)",
+            "end",
             "",
             'println("Total N: ", nrow(data))',
             'println("Clean N: ", nrow(data_clean))',
             "",
             "# Ready for analysis",
-            "# Example: combine(groupby(data_clean, :CONDITION), :Scale_composite => mean)",
         ])
+        if scales:
+            lines.append(
+                f"# Example: combine(groupby(data_clean, :CONDITION), :{scales[0]['name']}_composite => x -> mean(skipmissing(x)))"
+            )
 
         return "\n".join(lines)
 
     def generate_spss_export(self, df: pd.DataFrame) -> str:
         """
-        Generate SPSS syntax file for data preparation (v2.4.5).
+        Generate SPSS syntax for data preparation of Simulated_Data.csv.
 
-        Returns SPSS syntax that prepares the data after import.
+        Composites are computed from the item columns; Simulation_Diagnostics.csv is
+        matched on ResponseId for the optional exclusion step.
         """
-        def _spss_quote(x: str) -> str:
-            x = str(x).replace("'", "''")
-            return f"'{x}'"
-
         lines: List[str] = [
             "* ============================================================.",
             f"* SPSS Data Preparation Syntax - {self.study_title}.",
@@ -13947,54 +14080,47 @@ class EnhancedSimulationEngine:
             "",
             "* Load the data first using:",
             "*   File > Import Data > CSV Data...",
-            "*   Select 'Simulated_Data.csv'.",
+            "*   Select 'Simulated_Data.csv' (one header row; text columns as strings).",
             "",
-            "* Define variable labels and value labels.",
+            "DATASET NAME data WINDOW=FRONT.",
+            "",
+            "* CONDITION is a string column; create a numeric version with value labels.",
+            "AUTORECODE VARIABLES=CONDITION /INTO CONDITION_num /PRINT.",
             "",
         ]
 
-        # Add condition value labels
-        condition_labels = " ".join([f"{i+1} {_spss_quote(c)}" for i, c in enumerate(self.conditions)])
-        lines.extend([
-            "VALUE LABELS CONDITION",
-            f"  {condition_labels}.",
-            "",
-        ])
-
-        # v1.2.0.9: Only include Gender line if Gender column exists in output
-        if self.demographics.get("include_gender_column", True):
+        if self._export_has_gender(df):
             lines.extend([
                 "* Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say).",
-                "* STRING Gender(A20).",
                 "",
             ])
 
-        for scale in self.scales:
-            scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
-            scale_name = _clean_column_name(scale_name_raw)
-            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
-            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
-            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
-
-            items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
-
-            if reverse_items:
-                lines.append(f"* {scale_name_raw} - reverse code items {sorted(reverse_items)}.")
-                for r_item in sorted(reverse_items):
-                    item_name = f"{scale_name}_{r_item}"
-                    max_val = scale_points
-                    lines.append(f"COMPUTE {item_name}_R = {max_val + 1} - {item_name}.")
+        for sc in self._export_script_scales(df):
+            if sc["reverse"]:
+                lines.append(f"* {sc['raw']} - reverse code items {sc['reverse']}.")
+                for r_item in sc["reverse"]:
+                    item_name = f"{sc['name']}_{r_item}"
+                    lines.append(f"COMPUTE {item_name}_R = {sc['points'] + 1} - {item_name}.")
                 lines.append("EXECUTE.")
                 lines.append("")
 
-            lines.append(f"* Create {scale_name_raw} composite.")
-            item_list = " ".join(items)
-            lines.append(f"COMPUTE {scale_name}_composite = MEAN({item_list}).")
+            lines.append(f"* Create {sc['raw']} composite from the item columns.")
+            lines.append(f"COMPUTE {sc['name']}_composite = MEAN({' '.join(sc['items'])}).")
             lines.append("EXECUTE.")
             lines.append("")
 
         lines.extend([
-            "* Filter excluded participants (optional).",
+            "* Optional exclusion step.",
+            f"* {self._EXCLUSION_NOTE}",
+            "* Import 'Simulation_Diagnostics.csv' the same way (File > Import Data > CSV Data...), then run:",
+            "DATASET NAME diag WINDOW=FRONT.",
+            "DATASET ACTIVATE diag.",
+            "SORT CASES BY ResponseId (A).",
+            "DATASET ACTIVATE data.",
+            "SORT CASES BY ResponseId (A).",
+            "MATCH FILES /FILE=* /TABLE='diag' /BY ResponseId.",
+            "EXECUTE.",
+            "",
             "USE ALL.",
             "COMPUTE filter_$=(Exclude_Recommended = 0).",
             "VARIABLE LABELS filter_$ 'Exclude_Recommended = 0 (FILTER)'.",
@@ -14012,9 +14138,11 @@ class EnhancedSimulationEngine:
 
     def generate_stata_export(self, df: pd.DataFrame) -> str:
         """
-        Generate Stata .do file for data preparation (v2.4.5).
+        Generate Stata .do file for data preparation of Simulated_Data.csv.
 
-        Returns Stata commands that prepare the data after import.
+        Composites are computed from the item columns; Simulation_Diagnostics.csv is
+        merged on responseid (Stata lower-cases imported names) for the optional
+        exclusion step.
         """
         def _stata_quote(x: str) -> str:
             x = str(x).replace('"', "'")
@@ -14027,13 +14155,13 @@ class EnhancedSimulationEngine:
             f"// Run ID: {self.run_id}",
             "// ============================================================",
             "",
-            "// Load the data",
-            'import delimited "Simulated_Data.csv", clear',
+            "// Load the data (Qualtrics-style export; one header row)",
+            "// Note: import delimited lower-cases variable names (CONDITION -> condition).",
+            'import delimited "Simulated_Data.csv", clear varnames(1)',
             "",
             "// Label the CONDITION variable",
         ]
 
-        # Add condition value labels
         for i, c in enumerate(self.conditions):
             lines.append(f'label define condition_lbl {i+1} {_stata_quote(c)}, add')
         lines.extend([
@@ -14041,43 +14169,46 @@ class EnhancedSimulationEngine:
             "",
         ])
 
-        # v1.2.0.9: Only include Gender comment if Gender column exists in output
-        if self.demographics.get("include_gender_column", True):
+        if self._export_has_gender(df):
             lines.extend([
                 "// Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
                 "// No numeric encoding needed",
                 "",
             ])
 
-        for scale in self.scales:
-            scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
-            scale_name = _clean_column_name(scale_name_raw).lower()
-            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
-            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
-            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
-
-            items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
-
-            if reverse_items:
-                lines.append(f"// {scale_name_raw} - reverse code items {sorted(reverse_items)}")
-                for r_item in sorted(reverse_items):
-                    item_name = f"{scale_name}_{r_item}"
-                    max_val = scale_points
-                    lines.append(f"gen {item_name}_r = {max_val + 1} - {item_name}")
+        for sc in self._export_script_scales(df, lowercase=True):
+            if sc["reverse"]:
+                lines.append(f"// {sc['raw']} - reverse code items {sc['reverse']}")
+                for r_item in sc["reverse"]:
+                    item_name = f"{sc['name']}_{r_item}"
+                    lines.append(f"gen {item_name}_r = {sc['points'] + 1} - {item_name}")
                 lines.append("")
 
-            lines.append(f"// Create {scale_name_raw} composite")
-            item_list = " ".join(items)
-            lines.append(f"egen {scale_name}_composite = rowmean({item_list})")
+            lines.append(f"// Create {sc['raw']} composite from the item columns")
+            lines.append(f"egen {sc['name']}_composite = rowmean({' '.join(sc['items'])})")
             lines.append("")
 
         lines.extend([
-            "// Filter excluded participants (optional)",
+            "// Optional exclusion step",
+            f"// {self._EXCLUSION_NOTE}",
+            'capture confirm file "Simulation_Diagnostics.csv"',
+            "if _rc == 0 {",
+            "    preserve",
+            '    import delimited "Simulation_Diagnostics.csv", clear varnames(1)',
+            "    keep responseid exclude_recommended",
+            "    tempfile diag",
+            "    save `diag'",
+            "    restore",
+            "    merge 1:1 responseid using `diag', keep(master match) nogenerate",
+            "} else {",
+            '    display "Simulation_Diagnostics.csv not found; no exclusions applied."',
+            "    gen exclude_recommended = 0",
+            "}",
+            "",
+            'display "Total N: " _N',
             "preserve",
             "keep if exclude_recommended == 0",
-            "",
-            '// Display counts',
-            'display "Total N: " _N',
+            'display "Clean N: " _N',
             "",
             "// Summary statistics",
             "summarize",
