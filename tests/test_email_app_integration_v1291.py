@@ -93,7 +93,16 @@ def _wait_for_threads():
             thread.join(30)
 
 
-def test_instructor_notification_goes_out_in_a_thread_with_the_whole_package(app_env):
+def _attachment_types(msg):
+    return {p.get_filename(): p.get_content_type() for p in msg.walk() if p.get_filename()}
+
+
+def _last_log_entries(tmp, count=1):
+    lines = (tmp / "email_delivery_log.jsonl").read_text(encoding="utf-8").splitlines()
+    return [json.loads(line) for line in lines[-count:]]
+
+
+def test_instructor_notification_goes_out_in_a_thread_as_summary_plus_attachments(app_env):
     app, _st, tmp = app_env
     files = {"Simulated_Data.csv": b"a,b\n1,2\n"}
     thread = app._notify_instructor(
@@ -101,16 +110,31 @@ def test_instructor_notification_goes_out_in_a_thread_with_the_whole_package(app
         html_bytes=b"<html>report</html>", md_bytes=b"# Analysis\nt = 2.0", summary_bytes=b"# Summary", usage_summary="USAGE")
     assert isinstance(thread, threading.Thread) and thread.daemon
     thread.join(30)
-    (msg, to_addrs), = RecordingSMTP.sent
-    assert to_addrs == ["owner@example.edu", "second@example.org"]  # several recipients are supported
-    types = {p.get_filename(): p.get_content_type() for p in msg.walk() if p.get_filename()}
-    assert types == {"INSTRUCTOR_Statistical_Report.html": "text/html", "INSTRUCTOR_Detailed_Analysis.md": "text/markdown",
-                     "simulation_output.zip": "application/zip", "User_Study_Summary.md": "text/markdown"}
-    text = msg.get_body(preferencelist=("plain",)).get_content()
-    assert "t = 2.0" in text and "Team 7" in text and "DV_mean" in text  # the analysis also travels in the body
-    entry = json.loads((tmp / "email_delivery_log.jsonl").read_text(encoding="utf-8").splitlines()[-1])
-    assert entry["ok"] and entry["kind"] == "instructor" and entry["attempts"] == 1
-    assert "owner@example.edu" not in json.dumps(entry)  # addresses are masked in the log
+    (summary_msg, to1), (package_msg, to2) = RecordingSMTP.sent
+    assert to1 == to2 == ["owner@example.edu", "second@example.org"]  # several recipients are supported
+    # message 1: no attachments, the analysis is in the body, so a filter that holds attachments cannot take it away
+    assert _attachment_types(summary_msg) == {}
+    text = summary_msg.get_body(preferencelist=("plain",)).get_content()
+    assert "t = 2.0" in text and "Team 7" in text and "DV_mean" in text
+    # message 2: the attachments with real MIME types, threaded to message 1
+    assert _attachment_types(package_msg) == {
+        "INSTRUCTOR_Statistical_Report.html": "text/html", "INSTRUCTOR_Detailed_Analysis.md": "text/markdown",
+        "simulation_output.zip": "application/zip", "User_Study_Summary.md": "text/markdown"}
+    assert package_msg["In-Reply-To"] == summary_msg["Message-ID"] and package_msg["Subject"].endswith("[attachments]")
+    first, second = _last_log_entries(tmp, 2)
+    assert first["kind"] == "instructor_summary" and second["kind"] == "instructor_package" and first["ok"] and second["ok"]
+    assert "owner@example.edu" not in json.dumps([first, second])  # addresses are masked in the log
+
+
+def test_single_mode_sends_everything_in_one_message(app_env, monkeypatch):
+    app, st, tmp = app_env
+    monkeypatch.setattr(st, "secrets", {**SECRETS, "INSTRUCTOR_EMAIL_MODE": "single"})
+    thread = app._notify_instructor(title="t", metadata=_metadata(), files={}, zip_bytes=b"PK", html_bytes=b"<html/>",
+                                    md_bytes=b"# m", summary_bytes=b"s")
+    thread.join(30)
+    (msg, _to), = RecordingSMTP.sent
+    assert len(_attachment_types(msg)) == 4 and "# m" in msg.get_body(preferencelist=("plain",)).get_content()
+    assert _last_log_entries(tmp)[0]["kind"] == "instructor"
 
 
 def test_instructor_notification_records_a_visible_failure_when_smtp_is_missing(app_env, monkeypatch):
@@ -120,8 +144,9 @@ def test_instructor_notification_records_a_visible_failure_when_smtp_is_missing(
                                     md_bytes=b"m", summary_bytes=b"s")
     thread.join(30)
     assert RecordingSMTP.sent == []
-    entry = json.loads((tmp / "email_delivery_log.jsonl").read_text(encoding="utf-8").splitlines()[-1])
-    assert entry["ok"] is False and entry["error_kind"] == "config" and "SMTP_SERVER" in entry["error"]
+    first, second = _last_log_entries(tmp, 2)
+    assert first["ok"] is False and first["error_kind"] == "config" and "SMTP_SERVER" in first["error"]
+    assert second["error_kind"] == "skipped"  # no point attempting the attachment message
 
 
 def test_instructor_notification_survives_transient_smtp_errors(app_env, monkeypatch):
@@ -133,9 +158,9 @@ def test_instructor_notification_survives_transient_smtp_errors(app_env, monkeyp
     thread = app._notify_instructor(title="t", metadata=_metadata(), files={}, zip_bytes=b"PK", html_bytes=b"h",
                                     md_bytes=b"m", summary_bytes=b"s")
     thread.join(60)
-    assert len(RecordingSMTP.sent) == 1
-    entry = json.loads((tmp / "email_delivery_log.jsonl").read_text(encoding="utf-8").splitlines()[-1])
-    assert entry["ok"] and entry["attempts"] == 3
+    assert len(RecordingSMTP.sent) == 2  # the summary needed three attempts, the package went through at once
+    first, second = _last_log_entries(tmp, 2)
+    assert first["ok"] and first["attempts"] == 3 and second["ok"] and second["attempts"] == 1
 
 
 def test_oversized_zip_is_replaced_by_a_lean_copy_without_source_uploads(app_env):
@@ -147,7 +172,7 @@ def test_oversized_zip_is_replaced_by_a_lean_copy_without_source_uploads(app_env
     thread = app._notify_instructor(title="t", metadata=_metadata(), files=files, zip_bytes=zip_bytes,
                                     html_bytes=b"<html>report</html>", md_bytes=b"m", summary_bytes=b"s")
     thread.join(60)
-    (msg, _to), = RecordingSMTP.sent
+    _summary_msg, (msg, _to) = RecordingSMTP.sent[0], RecordingSMTP.sent[1]
     sent_zip = next(p for p in msg.walk() if p.get_filename() == "simulation_output.zip").get_payload(decode=True)
     assert len(sent_zip) < 1024 * 1024
     import io
@@ -155,8 +180,8 @@ def test_oversized_zip_is_replaced_by_a_lean_copy_without_source_uploads(app_env
     names = zipfile.ZipFile(io.BytesIO(sent_zip)).namelist()
     assert "Simulated_Data.csv" in names and "Source_Files/survey.pdf" not in names
     assert "reduced to keep the message deliverable" in msg.get_body(preferencelist=("plain",)).get_content()
-    entry = json.loads((tmp / "email_delivery_log.jsonl").read_text(encoding="utf-8").splitlines()[-1])
-    assert entry["ok"] and entry["omitted"][0]["action"] == "replaced"
+    entry = _last_log_entries(tmp)[0]
+    assert entry["ok"] and entry["kind"] == "instructor_package" and entry["omitted"][0]["action"] == "replaced"
 
 
 def test_student_triggered_emails_are_rate_limited_per_session(app_env, monkeypatch):
@@ -212,12 +237,14 @@ def test_admin_email_tab_shows_status_sends_a_test_and_lists_the_log(monkeypatch
     assert not at.exception, [str(e.value) for e in at.exception]
     buttons = {b.key: b for b in at.button}
     assert "_admin_email_test_btn" in buttons
+    next(s for s in at.selectbox if s.key == "_admin_email_test_choice").select("With a .html report")
     buttons["_admin_email_test_btn"].click()
     at.run()
     assert not at.exception, [str(e.value) for e in at.exception]
     assert any("Accepted by the mail server" in s.value for s in at.success)
     (msg, to_addrs), = RecordingSMTP.sent
     assert to_addrs == ["owner@example.edu", "second@example.org"] and msg["Subject"].startswith("[Behavioral Simulation] Test email")
+    assert {p.get_filename(): p.get_content_type() for p in msg.walk() if p.get_filename()} == {"test_report.html": "text/html"}
     log = (tmp_path / "data" / "email_delivery_log.jsonl").read_text(encoding="utf-8").splitlines()
     assert json.loads(log[-1])["kind"] == "test"
     at.run()  # the table of recent deliveries renders the entry

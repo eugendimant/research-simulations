@@ -470,3 +470,60 @@ def test_shared_limiter_is_one_instance_per_name_and_follows_config_changes():
     b = ed.shared_limiter("x", 5)
     assert b is not a and b.max_events == 5
     ed._APP_LIMITERS.clear()
+
+
+# ---------------------------------------------------------------------------------------
+# Split instructor delivery, test attachments, stderr mirror
+# ---------------------------------------------------------------------------------------
+def _package(mode="split", **kw):
+    slots = [ed.Attachment("report.html", b"<html/>", protected=True), ed.Attachment("a.zip", b"PK")]
+    return ed.deliver_instructor_package(CONFIG, ["owner@example.edu"], subject="Subj", text="Analysis text", html_body="<p>x</p>",
+                                         slots=slots, mode=mode, smtp_factory=FakeServer, sleep=_no_sleep, **kw)
+
+
+def test_split_delivery_sends_a_summary_without_attachments_then_a_threaded_package(tmp_path):
+    results = _package(log_path=tmp_path / "l.jsonl")
+    assert [r.ok for r in results] == [True, True]
+    (first, _f, _t1), (second, _f2, _t2) = FakeServer.delivered
+    assert not [p for p in first.walk() if p.get_filename()]
+    assert sorted(p.get_filename() for p in second.walk() if p.get_filename()) == ["a.zip", "report.html"]
+    assert second["In-Reply-To"] == first["Message-ID"] == second["References"]
+    assert second["Subject"] == "Subj [attachments]"
+    assert [e["kind"] for e in reversed(ed.read_delivery_log(tmp_path / "l.jsonl"))] == ["instructor_summary", "instructor_package"]
+
+
+def test_split_delivery_skips_the_package_when_the_first_failure_would_stop_it_too(tmp_path):
+    FakeServer.login_error = smtplib.SMTPAuthenticationError(535, b"5.7.8 Username and Password not accepted")
+    results = _package(log_path=tmp_path / "l.jsonl")
+    assert [r.ok for r in results] == [False, False] and results[1].error_kind == "skipped"
+    assert len(FakeServer.instances) == 1  # the second message was never attempted
+    assert ed.read_delivery_log(tmp_path / "l.jsonl")[0]["error_kind"] == "skipped"
+
+
+def test_split_delivery_still_sends_the_package_after_a_transient_summary_failure(tmp_path):
+    FakeServer.plan = [smtplib.SMTPServerDisconnected("gone")] * 3 + [None]  # the summary exhausts its attempts
+    results = _package(log_path=tmp_path / "l.jsonl")
+    assert results[0].ok is False and results[1].ok is True
+    assert not results[0].message_id or results[1].message_id  # the package goes out without threading headers
+
+
+def test_single_mode_is_one_message_with_everything():
+    results = _package(mode="single")
+    assert len(results) == 1 and len(FakeServer.delivered) == 1
+    assert len([p for p in FakeServer.delivered[0][0].walk() if p.get_filename()]) == 2
+
+
+def test_test_attachments_are_harmless_and_sized_as_advertised():
+    assert ed.build_test_attachments("Body only") == []
+    html = ed.build_test_attachments("With a .html report")[0].data
+    assert b"<script" not in html.lower() and b"http" not in html.lower()
+    sizes = {c: sum(len(a.data) for a in ed.build_test_attachments(c)) for c in ed.TEST_CONTENT_CHOICES}
+    assert sizes["With a 3 MB attachment"] > 3 * 1024 * 1024 and sizes["With a 10 MB attachment"] > 10 * 1024 * 1024
+    assert sizes["With a 10 MB attachment"] * 1.37 < CONFIG.max_message_bytes  # fits the default budget
+
+
+def test_every_delivery_is_mirrored_to_stderr_without_secrets(capsys):
+    ed.deliver(CONFIG, ["owner@example.edu"], "S", "B", smtp_factory=FakeServer, sleep=_no_sleep)
+    err = capsys.readouterr().err
+    assert "EMAIL-DELIVERY" in err and "OK" in err and "o***r@example.edu" in err
+    assert FAKE_LOGIN_VALUE not in err and "owner@example.edu" not in err

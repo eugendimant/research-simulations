@@ -37,6 +37,7 @@ import re
 import smtplib
 import socket
 import ssl
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -534,6 +535,15 @@ def record_delivery(
     logger.log(level, "Email %s delivery %s: attempts=%s elapsed=%ss size=%s kind=%s %s",
                kind, "OK" if result.ok else "FAILED", result.attempts, result.elapsed_s, result.message_bytes,
                result.error_kind, result.error_detail)
+    # The log file lives on an ephemeral disk and the INFO level is usually filtered out of the hosting
+    # platform's logs, so mirror one masked line per delivery to stderr where "Manage app" shows it.
+    try:
+        print(f"EMAIL-DELIVERY {kind} {'OK' if result.ok else 'FAILED'} to={[mask_address(r) for r in recipients]} "
+              f"attempts={result.attempts} seconds={result.elapsed_s} bytes={result.message_bytes} "
+              f"problem={result.error_kind or '-'}:{result.smtp_code or '-'} {result.error_detail} "
+              f"message-id={result.message_id}", file=sys.stderr, flush=True)
+    except Exception:  # noqa: BLE001 - logging must never break a send
+        pass
     if log_path is None:
         return entry
     try:
@@ -590,6 +600,7 @@ def deliver(
     max_attempts: int = 3,
     smtp_factory: Optional[Callable[..., Any]] = None,
     sleep: Callable[[float], None] = time.sleep,
+    extra_headers: Optional[Dict[str, str]] = None,
 ) -> DeliveryResult:
     """Build, size-fit, send (with retries) and log one email. Never raises."""
     recipients = list(recipients)
@@ -619,7 +630,8 @@ def deliver(
                     if body_html:
                         html_body = f"<p><b>{html_lib.escape(note)}</b></p>{body_html}"
                 msg = build_message(from_email=config.sender_address, from_name=config.from_name, recipients=recipients,
-                                    subject=subject, body_text=body, body_html=html_body, attachments=kept)
+                                    subject=subject, body_text=body, body_html=html_body, attachments=kept,
+                                    extra_headers=extra_headers)
                 result = send_with_retries(config, msg, recipients, max_attempts=max_attempts,
                                            smtp_factory=smtp_factory, sleep=sleep)
                 result.attachments = [{"name": a.name, "bytes": len(a.data)} for a in kept]
@@ -777,6 +789,84 @@ def shared_limiter(name: str, max_events: int, window_s: float = 3600.0) -> Rate
             limiter = RateLimiter(max_events, window_s)
             _APP_LIMITERS[name] = limiter
         return limiter
+
+
+_FATAL_KINDS = frozenset({"config", "auth", "quota", "recipient"})
+
+
+def deliver_instructor_package(
+    config: SMTPConfig,
+    recipients: Sequence[str],
+    *,
+    subject: str,
+    text: str,
+    html_body: Optional[str],
+    slots: Sequence[Attachment],
+    mode: str = "split",
+    log_path: Optional[Path] = None,
+    smtp_factory: Optional[Callable[..., Any]] = None,
+    sleep: Callable[[float], None] = time.sleep,
+) -> List[DeliveryResult]:
+    """Send the instructor notification; returns one result per message. Never raises.
+
+    ``split`` (default): message 1 has NO attachments (headline numbers and the full analysis in
+    the body, the kind of message mail filters rarely hold); message 2 carries the attachments and
+    is threaded to the first. If a filter holds or quarantines the attachment message, the analysis
+    still arrives. ``single``: everything in one message.
+    """
+    if str(mode).strip().lower() == "single":
+        return [deliver(config, recipients, subject, text, body_html=html_body, attachments=slots, kind="instructor",
+                        log_path=log_path, smtp_factory=smtp_factory, sleep=sleep)]
+    first = deliver(config, recipients, subject, text, body_html=html_body, attachments=[], kind="instructor_summary",
+                    log_path=log_path, smtp_factory=smtp_factory, sleep=sleep)
+    package_subject = f"{subject} [attachments]"
+    if not first.ok and first.error_kind in _FATAL_KINDS:
+        skipped = DeliveryResult(ok=False, message="Skipped: the summary message failed for a reason that would stop "
+                                 "the attachment message too.", error_kind="skipped", error_class="Skipped",
+                                 error_detail=f"first message failed ({first.error_kind})")
+        record_delivery(log_path, skipped, kind="instructor_package", subject=package_subject, recipients=list(recipients),
+                        host=config.server)
+        return [first, skipped]
+    names = ", ".join(a.name for a in slots) or "(none)"
+    pkg_text = (f"Attachments for the previous message of this run ({subject}):\n{names}\n\n"
+                "The headline numbers and the full analysis are in the body of that message.\n")
+    headers = {"In-Reply-To": first.message_id, "References": first.message_id} if first.message_id else None
+    second = deliver(config, recipients, package_subject, pkg_text, attachments=slots, kind="instructor_package",
+                     log_path=log_path, smtp_factory=smtp_factory, sleep=sleep, extra_headers=headers)
+    return [first, second]
+
+
+TEST_CONTENT_CHOICES = ("Body only", "With a .md attachment", "With a .html report", "With a .zip", "With a 3 MB attachment",
+                        "With a 10 MB attachment")
+
+
+def build_test_attachments(choice: str) -> List[Attachment]:
+    """Harmless sample attachments for the admin test email, to learn which type or size a mail
+    filter delays: a markdown file, an inert HTML page (no scripts, no external resources), a small
+    ZIP, and incompressible ZIPs of about 3 and 10 MB."""
+    import io
+    import zipfile
+
+    def _zip(payload: bytes) -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("sample.bin", payload)
+        return buf.getvalue()
+
+    choice = str(choice)
+    if choice == "With a .md attachment":
+        return [Attachment("test_analysis.md", b"# Test analysis\n\nThis is a harmless test file.\n")]
+    if choice == "With a .html report":
+        page = (b"<!DOCTYPE html><html><head><meta charset='utf-8'><title>Test report</title></head><body>"
+                b"<h1>Test report</h1><p>This is a harmless test page.</p></body></html>")
+        return [Attachment("test_report.html", page)]
+    if choice == "With a .zip":
+        return [Attachment("test_package.zip", _zip(b"harmless sample"))]
+    if choice == "With a 3 MB attachment":
+        return [Attachment("test_3mb.zip", _zip(os.urandom(3 * 1024 * 1024)))]
+    if choice == "With a 10 MB attachment":
+        return [Attachment("test_10mb.zip", _zip(os.urandom(10 * 1024 * 1024)))]
+    return []
 
 
 def run_in_background(target: Callable[..., Any], *args: Any, name: str = "email-delivery", **kwargs: Any) -> threading.Thread:

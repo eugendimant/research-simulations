@@ -3664,9 +3664,13 @@ def _notify_instructor(
             attach(names[2], zip_bytes, alternatives=lean),
             attach(names[3], summary_bytes),
         ]
+        # "split" (default): a summary message without attachments (numbers + full analysis in the body)
+        # and a threaded second message with the attachments, so a mail filter that holds or
+        # quarantines attachments cannot take the analysis with it. INSTRUCTOR_EMAIL_MODE=single sends one.
         thread = _email_delivery.run_in_background(
-            _email_delivery.deliver, _email_config(), recipients, subject, text,
-            body_html=html_body, attachments=slots, kind="instructor", log_path=EMAIL_DELIVERY_LOG,
+            _email_delivery.deliver_instructor_package, _email_config(), recipients,
+            subject=subject, text=text, html_body=html_body, slots=slots,
+            mode=str(_secret("INSTRUCTOR_EMAIL_MODE", "split") or "split"), log_path=EMAIL_DELIVERY_LOG,
             name="instructor-email",
         )
         if wait:
@@ -7921,12 +7925,17 @@ def _render_admin_email_tab() -> None:
     st.caption("Several recipients can be listed in INSTRUCTOR_NOTIFICATION_EMAIL, separated by commas, for example a "
                "second inbox that is not behind the Outlook filters.")
 
+    test_choice = st.selectbox(
+        "Test content", _email_delivery.TEST_CONTENT_CHOICES, key="_admin_email_test_choice",
+        help="Send several tests, one per content type, to learn which type or size your mail system holds back.")
     if st.button("Send test email now", key="_admin_email_test_btn", type="primary"):
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with st.spinner("Sending..."):
             res = _email_delivery.deliver(
-                cfg, recipients, f"[Behavioral Simulation] Test email {stamp}",
-                f"This is a test of the instructor notification path.\nApp version {APP_VERSION}, sent {stamp}.\n",
+                cfg, recipients, f"[Behavioral Simulation] Test email ({test_choice}) {stamp}",
+                f"This is a test of the instructor notification path ({test_choice}).\n"
+                f"App version {APP_VERSION}, sent {stamp}.\n",
+                attachments=_email_delivery.build_test_attachments(test_choice),
                 kind="test", log_path=EMAIL_DELIVERY_LOG)
         if res.ok:
             st.success(f"Accepted by the mail server after {res.attempts} attempt(s) in {res.elapsed_s}s. "

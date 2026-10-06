@@ -16,11 +16,20 @@ import io
 import warnings
 import re
 import math
+import html as _html_lib
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
 import logging
+try:  # neutralises active content in the finished HTML report (v1.2.9.1); never blocks report generation
+    from .html_safety import sanitize_report_html as _sanitize_report_html
+except ImportError:  # imported as a top-level module (scripts) or a partial deploy
+    try:
+        from html_safety import sanitize_report_html as _sanitize_report_html  # type: ignore[no-redef]
+    except ImportError:
+        def _sanitize_report_html(document: str) -> str:  # type: ignore[misc]
+            return document
 logger = logging.getLogger(__name__)
 
 # Try multiple import strategies for scipy
@@ -4891,7 +4900,6 @@ class ComprehensiveInstructorReport:
         # CSS styles for the report (v1.3.4: improved layout with TOC and sections)
         css = """
         <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
             * { box-sizing: border-box; }
             body { font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background: #f0f2f5; color: #1a1a2e; line-height: 1.6; }
             .page-wrapper { max-width: 1200px; margin: 0 auto; display: flex; gap: 30px; align-items: flex-start; }
@@ -4982,6 +4990,7 @@ class ComprehensiveInstructorReport:
 
         # Header
         html_parts.append("<span class='confidential'>CONFIDENTIAL &mdash; INSTRUCTOR ONLY</span>")
+        _e = lambda value: _html_lib.escape(str(value), quote=True)  # noqa: E731 - user-controlled text -> HTML
         html_parts.append("<h1>Comprehensive Simulation &amp; Statistical Report</h1>")
         html_parts.append(f"<p style='color:#64748b;margin-top:-8px;font-size:1.05em;'>Behavioral Experiment Simulation Tool v{__version__}</p>")
 
@@ -4994,22 +5003,22 @@ class ComprehensiveInstructorReport:
 
         # Study Title
         study_title = metadata.get('study_title', 'Untitled Study')
-        html_parts.append(f"<h3>{study_title}</h3>")
+        html_parts.append(f"<h3>{_e(study_title)}</h3>")
 
         # Team Information
         if team_info:
             team_name = team_info.get('team_name', '')
             team_members = team_info.get('team_members', '')
             if team_name:
-                html_parts.append(f"<p><strong>Team:</strong> {team_name}</p>")
+                html_parts.append(f"<p><strong>Team:</strong> {_e(team_name)}</p>")
             if team_members:
                 members_formatted = team_members.replace('\n', ', ').replace(',,', ',').strip(', ')
-                html_parts.append(f"<p><strong>Team Members:</strong> {members_formatted}</p>")
+                html_parts.append(f"<p><strong>Team Members:</strong> {_e(members_formatted)}</p>")
 
         # Study Description / Abstract
         study_description = metadata.get('study_description', '')
         if study_description:
-            html_parts.append(f"<p><strong>Abstract:</strong> {study_description}</p>")
+            html_parts.append(f"<p><strong>Abstract:</strong> {_e(study_description)}</p>")
 
         # Experimental Design (inside same section-block)
         html_parts.append("<h3>Experimental Design</h3>")
@@ -5020,7 +5029,7 @@ class ComprehensiveInstructorReport:
             html_parts.append(f"<p><strong>Conditions ({len(conditions)}):</strong></p>")
             html_parts.append("<ul>")
             for cond in conditions:
-                html_parts.append(f"<li>{cond}</li>")
+                html_parts.append(f"<li>{_e(cond)}</li>")
             html_parts.append("</ul>")
 
         # Factors
@@ -5031,7 +5040,7 @@ class ComprehensiveInstructorReport:
             for factor in factors:
                 factor_name = factor.get('name', 'Factor')
                 levels = factor.get('levels', [])
-                html_parts.append(f"<li>{factor_name}: {', '.join(str(l) for l in levels)}</li>")
+                html_parts.append(f"<li>{_e(factor_name)}: {_e(', '.join(str(l) for l in levels))}</li>")
             html_parts.append("</ul>")
 
         # Scales / DVs
@@ -5043,7 +5052,7 @@ class ComprehensiveInstructorReport:
                 scale_name = scale.get('name', 'Scale')
                 scale_points = scale.get('scale_points', 7)
                 num_items = scale.get('num_items', 1)
-                html_parts.append(f"<li>{scale_name} ({num_items} item{'s' if num_items > 1 else ''}, {scale_points}-point)</li>")
+                html_parts.append(f"<li>{_e(scale_name)} ({_e(num_items)} item{'s' if num_items > 1 else ''}, {_e(scale_points)}-point)</li>")
             html_parts.append("</ul>")
 
         # NOTE: Data Dictionary moved to bottom of report (after Methodology) per user request
@@ -5058,7 +5067,7 @@ class ComprehensiveInstructorReport:
                 if d > 0:
                     var = effect.get('variable', '')
                     direction = effect.get('direction', 'higher')
-                    html_parts.append(f"<li>{var}: d = {d:.2f} ({direction} in treatment)</li>")
+                    html_parts.append(f"<li>{_e(var)}: d = {d:.2f} ({_e(direction)} in treatment)</li>")
             html_parts.append("</ul>")
 
         # ── Study Context / Domain ─────────────────────────────────────
@@ -5068,19 +5077,19 @@ class ComprehensiveInstructorReport:
             html_parts.append("<h3>Research Context</h3>")
             _domain = study_context.get("study_domain", study_context.get("domain", ""))
             if _domain:
-                html_parts.append(f"<p><strong>Research Domain:</strong> {_domain.title()}</p>")
+                html_parts.append(f"<p><strong>Research Domain:</strong> {_e(_domain.title())}</p>")
             if detected_domains:
-                html_parts.append(f"<p><strong>Detected Topic Areas:</strong> {', '.join(detected_domains[:10])}</p>")
+                html_parts.append(f"<p><strong>Detected Topic Areas:</strong> {_e(', '.join(str(x) for x in detected_domains[:10]))}</p>")
             _source = study_context.get("source", "")
             if _source:
                 _source_label = "Conversational Builder" if "builder" in _source else "QSF Upload"
                 html_parts.append(f"<p><strong>Input Method:</strong> {_source_label}</p>")
             _participant_chars = study_context.get("participant_characteristics", "")
             if _participant_chars:
-                html_parts.append(f"<p><strong>Target Participants:</strong> {_participant_chars}</p>")
+                html_parts.append(f"<p><strong>Target Participants:</strong> {_e(_participant_chars)}</p>")
             _persona_domains = study_context.get("persona_domains", [])
             if _persona_domains:
-                html_parts.append(f"<p><strong>Persona Domains Activated:</strong> {', '.join(d.replace('_', ' ').title() for d in _persona_domains)}</p>")
+                html_parts.append(f"<p><strong>Persona Domains Activated:</strong> {_e(', '.join(str(d).replace('_', ' ').title() for d in _persona_domains))}</p>")
         # Open-ended questions summary
         oe_questions = metadata.get("open_ended_questions", [])
         if oe_questions:
@@ -5091,9 +5100,9 @@ class ComprehensiveInstructorReport:
                 var_name = oe.get("variable_name", "") if isinstance(oe, dict) else ""
                 q_ctx = oe.get("question_context", "") if isinstance(oe, dict) else ""
                 if q_text:
-                    _var_tag = f" <code>({var_name})</code>" if var_name else ""
-                    _ctx_tag = f"<br><small style='color:#666;'>Context: {q_ctx}</small>" if q_ctx else ""
-                    html_parts.append(f"<li>{q_text[:120]}{_var_tag}{_ctx_tag}</li>")
+                    _var_tag = f" <code>({_e(var_name)})</code>" if var_name else ""
+                    _ctx_tag = f"<br><small style='color:#666;'>Context: {_e(q_ctx)}</small>" if q_ctx else ""
+                    html_parts.append(f"<li>{_e(str(q_text)[:120])}{_var_tag}{_ctx_tag}</li>")
             html_parts.append("</ul>")
 
         # v1.8.7: LLM Generation Details in HTML report
@@ -6115,4 +6124,6 @@ class ComprehensiveInstructorReport:
                           f"&middot; Software by Dr. Eugen Dimant &middot; PolyForm Noncommercial 1.0.0</p>")
         html_parts.append("</div></div></body></html>")  # close report-container + page-wrapper
 
-        return "\n".join(html_parts)
+        # Safety net: whatever user-controlled text reached the markup, the finished report contains no
+        # script, iframe, form, event handler, external resource or javascript: link.
+        return _sanitize_report_html("\n".join(html_parts))
