@@ -53,9 +53,16 @@ Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider sta
 | 5 | `simulation_app/utils/__init__.py` | `Version: X.X.X.X` in docstring (line ~5) |
 | 6 | `simulation_app/utils/qsf_preview.py` | `__version__ = "X.X.X.X"` (line ~36) |
 | 7 | `simulation_app/utils/response_library.py` | `__version__ = "X.X.X.X"` (line ~66) |
+| 7b | `simulation_app/utils/instructor_report.py` | `__version__ = "X.X.X.X"` (line ~9) |
 | 8 | `simulation_app/README.md` | `**Version X.X.X.X**` in header (line ~3) |
 | 9 | `simulation_app/README.md` | `## The behavioral engine (vX.X.X.X)` section header |
 | 10 | `simulation_app/README.md` | `(Version X.X.X.X)` in the citation block at the bottom |
+
+`scripts/check_version_sync.py` is the authority and runs in CI before the
+tests: it checks every row above except `BUILD_ID`. Run it before pushing —
+`python3 scripts/check_version_sync.py` — rather than trusting this table,
+which has drifted from it before (`instructor_report.py` was missing until
+v1.3.0.0 and failed a CI run).
 
 ### MANDATORY WORKFLOW — Do this BEFORE every commit:
 
