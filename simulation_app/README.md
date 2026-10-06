@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.2.9.0** — a Streamlit app that turns a Qualtrics survey export into a realistic synthetic pilot dataset.
+**Version 1.2.9.3** — a Streamlit app that turns a Qualtrics survey export into a realistic synthetic pilot dataset.
 
 ## What it does
 
@@ -21,25 +21,23 @@ All three use the same behavioral engine for numeric data. They differ only in w
 
 | Method | Open-ended text | Sample size |
 |---|---|---|
-| **Adaptive Behavioral Engine 3.0** (listed first; no method is pre-selected) | ABE 3.0's own narrative engine, offline — no API calls | up to 10,000 |
-| **Built-in AI** | Free LLM providers, keys supplied by the deployment, no setup | **LLM text for the first 100 participants; the compositional template engine for the rest** |
+| **Adaptive Behavioral Engine 3.0** (listed first; no method is pre-selected) | Offline template engine — no API calls | up to 10,000 |
+| **Built-in AI** | Free LLM providers, built-in keys, no setup | **LLM text for the first 100 participants; ABE 3.0 for the rest** |
 | **Your API Key** | Your own provider key | up to 10,000 |
 
 The 100-participant cap on Built-in AI exists to keep shared free-tier keys from being exhausted. The app warns before generating and tells you the split afterwards. Use your own key for larger runs with AI text throughout.
 
-Note which engine covers the remainder: picking Built-in AI or Your API Key sets `_use_abe_v2 = False` (`app.py:12836`, `:13022`), so participants past the cap get text from the compositional template engine (`ComprehensiveResponseGenerator`), not from ABE 3.0. ABE 3.0 generates the text only when you select its own tile, or if you re-select it in the recovery prompt after a mid-run fallback.
-
 Built-in provider chain, tried in order until one responds: Google Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Gemini 2.5 Flash Lite → Groq GPT-OSS 120B → Groq Qwen3.6 27B → Cerebras GPT-OSS 120B → SambaNova Llama 3.3 70B → Mistral Small → OpenRouter Mistral Small 3.1.
 
-## The behavioral engine (v1.2.9.0)
+## The behavioral engine (v1.2.9.3)
 
 **Numeric responses.** Each participant is one person with a persistent identity: eight response-style traits and a latent attitude vector, which together drive their answers. Condition effects are applied as deterministic mean shifts; individual variance is applied separately.
 
-Alongside these, census-weighted demographics are written to `Simulation_Diagnostics.csv` as seven descriptive `ABE3_*` columns (education, income, party ID, ideology, state, region, response style). These are drawn from census margins but are **descriptive only as far as the numeric DVs go** — they do not shift any DV. Two of them, education and response style, do feed the open-ended text's stylometric fingerprint. The `Age` column is a separate normal draw from the mean and SD you set, not a census weighting. `docs/COVERAGE_ROADMAP.md` tracks wiring them into generation.
+Alongside these, census-weighted demographics are exported as seven descriptive `ABE3_*` columns (education, income, party ID, ideology, state, region, response style). These are drawn from census margins but are **descriptive only as far as the numeric DVs go** — they do not shift any DV. Two of them, education and response style, do feed the open-ended text's stylometric fingerprint. The `Age` column is a separate normal draw from the mean and SD you set, not a census weighting. `docs/COVERAGE_ROADMAP.md` tracks wiring them into generation.
 
-**Condition effects.** Forty-three effect-detection domains, each with keyword-to-effect mappings written into the engine as literals. Where the study text names a paradigm that `META_ANALYTIC_DB` has an estimate for — anchoring, default effects, scarcity and so on — the coarse domain multiplier is replaced by one derived from that published estimate (`enhanced_simulation_engine.py:3127`), so an uncalibrated design of that kind gets a literature magnitude rather than a generic domain guess. Paradigms the table does not cover still fall back to the literals. Relational conditions are parsed before simple valence, so "matched with an outgroup member" produces discrimination rather than generic negativity (Iyengar & Westwood 2015). Economic games start from published baselines rather than a generic 50% (dictator 0.28, Engel 2011; trust 0.50, Berg et al. 1995; Johnson & Mislin 2011). The total automatically-detected effect is capped at ±0.50 before the Cohen's-*d* conversion, which bounds the shift that reaches generation at roughly ±0.12 in normalized units.
+**Condition effects.** Forty-three effect-detection domains, each with keyword-to-effect mappings grounded in the literature but written into the engine as literals — the meta-analytic effect table is not consulted at runtime. Relational conditions are parsed before simple valence, so "matched with an outgroup member" produces discrimination rather than generic negativity (Iyengar & Westwood 2015). Economic games start from published baselines rather than a generic 50% (dictator 0.28, Engel 2011; trust 0.50, Berg et al. 1995; Johnson & Mislin 2011). The total automatically-detected effect is capped at ±0.50 before the Cohen's-*d* conversion, which bounds the shift that reaches generation at roughly ±0.12 in normalized units.
 
-**On effect magnitudes.** A configured Cohen's `d` is now recovered, which it was not before v1.2.8.8 — the gap used to run several times the target. Recovery is defined on the scale composite, and two independent measurement runs (N=400, three seeds each) bracketed it at 0.15–0.24 for a configured 0.2, 0.45–0.55 for 0.5 and 0.74–0.86 for 0.8, so expect the composite within roughly a quarter of what you asked for and individual items a little below it. At small `d` the run-to-run spread is wide enough that one dataset can land near zero or above target; `tests/test_effect_size_recovery.py` covers scale widths (5-, 7-, 11-point and 0-100), item counts, and that a null effect stays null. Effects the engine infers from condition wording when you configure no `d` are literature-sized and directional, not fitted to a target you chose, so configure `d` when magnitude matters. Every run writes its achieved effects to `Metadata.json` under `effect_sizes_observed`; check there rather than assuming the configured number. Known deviations are tracked in `docs/COVERAGE_ROADMAP.md`.
+**On effect magnitudes.** A configured Cohen's `d` is recovered to within roughly -8% to +12% across scale widths (5-, 7-, 11-point and 0-100) and item counts, and a null effect stays null (`tests/test_effect_size_recovery.py`). Effects the engine infers from condition wording when you configure no `d` are literature-sized and directional, not fitted to a target you chose, so configure `d` when magnitude matters. Every run writes its achieved effects to `Metadata.json` under `effect_sizes_observed`; check there rather than assuming the configured number. Known deviations are tracked in `docs/COVERAGE_ROADMAP.md`.
 
 **Strategic games.** Where a strategic game is detected, players reason recursively about other players via Level-k (Stahl & Wilson 1994; Nagel 1995) and Cognitive Hierarchy (Camerer, Ho & Chong 2004), with each persona's `strategic_depth` setting its recursion depth. Of the games the engine implements, **beauty contest and stag hunt** are reachable from a QSF today, alongside dictator, trust, ultimatum, public goods, prisoner's dilemma, die-roll, gift exchange, Holt-Laury, bribery and common-pool games. The engine's registry holds 24 games in all; the other twelve — money-request/11-20, minimum-effort coordination, Tullock contest, sender-receiver, public goods with punishment, the three repeated games (PD, trust, public goods), time MPL, BDM, discrete choice and survey-Likert — have no QSF detection path yet.
 
@@ -54,7 +52,7 @@ Alongside these, census-weighted demographics are written to `Simulation_Diagnos
 | Acquiescent Responder | 0.08 | Billiet & McClendon (2000) |
 | Careless Responder | 0.05 | Meade & Craig (2012) |
 
-**Open-ended text.** Compositional assembly (opener + core + elaboration + coda) over all 116 domain template sets, 8 structural archetypes, and domain vocabulary banks, with per-participant stylometric fingerprinting (vocabulary richness, filler and hedge words, contractions, capitalization, typos) held constant across all of a participant's answers. Text is coherent with that participant's numeric responses: straight-liners write short, positive raters don't write negative text.
+**Open-ended text.** Compositional assembly (opener + core + elaboration + coda) over 106 reachable domain template sets (the table holds 116 keys; 10 cannot be selected), 8 structural archetypes, and domain vocabulary banks, with per-participant stylometric fingerprinting (vocabulary richness, filler and hedge words, contractions, capitalization, typos) held constant across all of a participant's answers. Text is coherent with that participant's numeric responses: straight-liners write short, positive raters don't write negative text.
 
 **Realism layers.** Survey fatigue drift, reverse-item failure that is trait-like within session (Woods 2006), domain-sensitive social desirability (Nederhof 1985), typing-error rates calibrated to education, ex-Gaussian response times, inter-item α targeting and cross-DV correlation.
 
@@ -74,15 +72,13 @@ Generation then respects those types: constant-sum items are renormalized to sum
 
 Separately from the parser, the app reads pre-registration documents in OSF, AEA Registry and AsPredicted formats and checks them against the current design (shown only when one is uploaded).
 
-Everything detected is editable before generation, and a "Generate Preview (5 rows)" button gives a rough 5-row sample of the DV and open-ended columns beforehand. It is an approximation, not the real layout: it covers the first five scales only, omits the Qualtrics metadata block the delivered CSV carries, and omits the run-metadata, timing, quality-flag, scale-composite and `ABE3_*` columns, which ship separately in `Simulation_Diagnostics.csv`.
+Everything detected is editable before generation, and a "Generate Preview (5 rows)" button gives a rough 5-row sample of the DV and open-ended columns beforehand. It is an approximation, not the real layout: it covers the first five scales only and omits the run metadata, timing, quality-flag and `ABE3_*` columns the full export carries.
 
 ## Output package
 
 | File | Contents |
 |---|---|
-| `Simulated_Data.csv` | The dataset, laid out like a Qualtrics download: 17 survey-metadata columns (`StartDate`, `ResponseId`, `Duration (in seconds)`, …) then condition, demographics, attention checks and the raw scale items |
-| `Simulation_Diagnostics.csv` | Everything a real Qualtrics export would not have, keyed by `ResponseId`: participant and run IDs, the seed, scale composites (`<Scale>_mean`), timing, the quality flags and `Exclude_Recommended`, and the seven `ABE3_*` columns |
-| `Simulated_Data_Qualtrics_Raw.csv` | The same data with Qualtrics' three-row header (names / question text / ImportId) |
+| `Simulated_Data.csv` | The dataset |
 | `Data_Codebook_Handbook.txt` | Variable and coding descriptions |
 | `R_Prepare_Data.R` | R loading/prep script |
 | `Python_Prepare_Data.py` | pandas |
@@ -101,7 +97,7 @@ pip install -r simulation_app/requirements.txt
 streamlit run simulation_app/app.py     # http://localhost:8501
 ```
 
-Optional dependencies (scipy, matplotlib, pdfplumber, PyMuPDF, requests, openpyxl, jsonschema) are in `requirements-optional.txt`. All are lazy imports with fallbacks — the core app runs without them. `plotly` is listed there too but is also a core requirement, so the analytics dashboard's charts work on a default install.
+Optional dependencies (plotly, scipy, matplotlib, pdfplumber, PyMuPDF, requests, openpyxl, jsonschema) are in `requirements-optional.txt`. All are lazy imports with fallbacks — the core app runs without them.
 
 **Streamlit Community Cloud:** fork, then point a new app at `simulation_app/app.py`.
 
@@ -122,7 +118,7 @@ Pick row and column factors and the app crosses them. A 2×3 — {Dictator game,
 
 ## Research domains
 
-**277 research domains** are keyword-detectable, via 3,473 keyword patterns. 189 of them are grouped into the 23 categories below; the remaining 88 are detectable but ungrouped. All 116 `DOMAIN_TEMPLATES` keys carry a selectable open-ended template set, 68 of them inside the 23 categories — 110 are `StudyDomain` values and the other 6 are reached through `_DOMAIN_TEMPLATE_ALIASES` (`response_library.py:4662`, resolved in the lookup at `:8639`). The categories, as named in `DOMAIN_CATEGORIES`: behavioral economics, social psychology, political science, consumer & marketing, organizational behavior, technology & AI, AI alignment & ethics, ethics & moral psychology, clinical psychology, personality psychology, health psychology, health disparities, education, environmental, financial psychology, decision science, trust & credibility, gaming & entertainment, social media research, innovation & creativity, risk & safety, future of work, digital society.
+**273 research domains** are keyword-detectable, via 3,452 keyword patterns. 189 of them are grouped into the 23 categories below; the remaining 84 are detectable but ungrouped. 104 of them carry a reachable open-ended template set, 68 of which fall inside the 23 categories (`DOMAIN_TEMPLATES` holds 116 keys, but 10 are not `StudyDomain` values and can never be selected — `docs/COVERAGE_ROADMAP.md` item 12d lists them). The categories, as named in `DOMAIN_CATEGORIES`: behavioral economics, social psychology, political science, consumer & marketing, organizational behavior, technology & AI, AI alignment & ethics, ethics & moral psychology, clinical psychology, personality psychology, health psychology, health disparities, education, environmental, financial psychology, decision science, trust & credibility, gaming & entertainment, social media research, innovation & creativity, risk & safety, future of work, digital society.
 
 Calibration knowledge base: 187 meta-analytic effect entries, 68 economic-game calibrations, 201 construct norms, 12 cultural adjustments. Of these the game calibrations, construct norms and response-time norms are queried during generation; the meta-analytic effect entries and the cultural adjustments are tables that nothing calls yet (tracked in `docs/COVERAGE_ROADMAP.md`).
 
@@ -145,7 +141,7 @@ research-simulations/
 ├── simulation_app/
 │   ├── app.py                      # Streamlit entry point + QSF→engine bridge
 │   ├── requirements.txt
-│   ├── utils/                      # 27 modules, including:
+│   ├── utils/                      # 31 modules, including:
 │   │   ├── enhanced_simulation_engine.py   # the simulation pipeline
 │   │   ├── adaptive_behavioral_engine_v2.py
 │   │   ├── qsf_preview.py                  # QSF parsing, DV/condition detection
@@ -179,6 +175,6 @@ Email delivery is optional. Set these Streamlit secrets to enable it: `SMTP_SERV
 Created by Dr. Eugen Dimant. For academic and educational use.
 
 ```
-Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 1.2.9.0) [Computer software].
+Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 1.2.9.3) [Computer software].
 https://github.com/eugendimant/research-simulations
 ```
