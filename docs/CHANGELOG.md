@@ -14,9 +14,12 @@ lookup) is untouched; only the text post-processing after a response is drawn ch
   about 0.1 at N = 2,400, so never calibrate on a single seed.
 - Economic-game outcomes keep the requested effect. The game model overwrote it (observed d -0.02,
   0.13 and 0.09 for a requested 0.5); it is restored afterwards (0.50, 0.50, 0.50).
-- Straight-line repair (audit and HBS validator) runs only with 5+ items and 5+ response options.
-  On binary/3-point scales it randomised honest data and erased the condition effect (observed/requested
-  0.02 on a three-item binary scale and 0.49 on a three-item 3-point scale in 1.2.9.0; 0.93 and 0.99 now).
+- Straight-line repair: the run audit repairs only scales with 5+ items and 5+ response options, and the HBS
+  validator skips every item with fewer than five observed response options. On binary/3-point scales it
+  randomised honest data and erased the condition effect (observed/requested 0.02 on a three-item binary
+  scale and 0.49 on a three-item 3-point scale in 1.2.9.0; 0.93 and 0.99 now). The validator pools numbered
+  items across scales, so a three-item 7-point scale can still be repaired when the straight-line rate exceeds
+  its benchmark (all-equal rows 248 -> 38 at N = 1,500, against 64 on `main`).
 - True-null option ("Also infer small differences from the condition names", Advanced Settings,
   `auto_effects=False`): no inferred offsets and no name-based trait modifiers. For conditions named
   by a specified effect, name-based trait modifiers are skipped too. Label matching uses whole words
