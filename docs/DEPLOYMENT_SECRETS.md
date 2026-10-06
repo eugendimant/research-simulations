@@ -21,13 +21,22 @@ rate-limits or fails.
 | 5 | Mistral AI | `MISTRAL_API_KEY` | https://console.mistral.ai/api-keys |
 | 6 | OpenRouter | `OPENROUTER_API_KEY` | https://openrouter.ai/keys |
 
-With **none** of these set, Built-in AI reports "not configured on this
-deployment" (not "not responding") and the UI recommends the Adaptive
-Behavioral Engine 3.0, which runs entirely offline. Numeric data is never
-affected by these keys.
+### These secrets are optional
 
-Users can always paste their own key in the app ("AI (your API key)") without
-any deployment secret being set.
+The app is fully usable with none of them set. Built-in AI tries every
+configured provider in order and takes whatever it cannot get from them from
+the built-in (non-LLM) text engine instead, so a run always completes: no error
+banner, no disabled button, a complete dataset with an open-ended response for
+every participant. After generation the data-source breakdown reports exactly
+what came from where.
+
+What the keys change is only whether open-ended text is **AI-written** or
+**engine-written**. Numeric data is never affected by them.
+
+Users can also paste their own key in the app ("AI (your API key)") without any
+deployment secret being set. Unlike the deployment secrets, that path reports an
+error when the key does not work — someone who supplies their own key needs to
+know it is failing rather than silently receiving engine-written text.
 
 ## Password-gated pages
 
