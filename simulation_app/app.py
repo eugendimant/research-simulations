@@ -12597,7 +12597,7 @@ if active_page == 2:
                                         f"<span style='background:#E8F4FD;padding:2px 8px;border-radius:4px;"
                                         f"font-size:0.78rem;margin-right:4px;display:inline-block;"
                                         f"margin-bottom:4px;'>"
-                                        f"<b>{_sn}</b> → {_ct.replace('_', ' ')}</span>"
+                                        f"<b>{html_escape(str(_sn))}</b> → {html_escape(str(_ct).replace('_', ' '))}</span>"
                                     )
                             if _badge_parts:
                                 st.markdown(
@@ -14031,7 +14031,7 @@ if active_page == 3:
             '<span style="font-size:1.05em;font-weight:700;color:#991B1B;">'
             'Generation encountered an unexpected error</span></div>'
             '<span style="color:#7F1D1D;font-size:0.88em;line-height:1.5;">'
-            f'The previous generation attempt using <strong>{_stale_method}</strong> '
+            f'The previous generation attempt using <strong>{html_escape(str(_stale_method))}</strong> '
             'crashed during setup. Choose how to proceed:</span></div>',
             unsafe_allow_html=True,
         )
@@ -14728,7 +14728,7 @@ if active_page == 3:
                 '<span style="font-size:1.05em;font-weight:700;color:#991B1B;">'
                 f'Setup error while preparing {_method_name}</span></div>'
                 f'<span style="color:#7F1D1D;font-size:0.88em;line-height:1.5;">'
-                f'Error during input preparation: {str(_setup_exc)[:300]}</span>'
+                f'Error during input preparation: {html_escape(str(_setup_exc)[:300])}</span>'
                 '<div style="margin-top:12px;color:#7F1D1D;font-size:0.85em;">'
                 'Try a different generation method, or click Retry.</div>'
                 '</div>',
@@ -14834,7 +14834,7 @@ if active_page == 3:
                 '<span style="font-size:1.05em;font-weight:700;color:#991B1B;">'
                 f'{_method_name} failed to initialize</span></div>'
                 f'<span style="color:#7F1D1D;font-size:0.88em;line-height:1.5;">'
-                f'Error: {str(_init_exc)[:200]}</span>'
+                f'Error: {html_escape(str(_init_exc)[:200])}</span>'
                 '<div style="margin-top:12px;color:#7F1D1D;font-size:0.85em;">'
                 'Try a different generation method, or click Generate to retry.</div>'
                 '</div>',
@@ -16245,7 +16245,7 @@ if active_page == 3:
             st.markdown(
                 f'<div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;'
                 f'padding:8px 14px;margin:6px 0 10px 0;font-size:0.88em;color:#3730A3;">'
-                f'{_method_icon} <strong>Generation Method:</strong> {_gen_method_label}'
+                f'{_method_icon} <strong>Generation Method:</strong> {html_escape(str(_gen_method_label))}'
                 f'</div>',
                 unsafe_allow_html=True,
             )

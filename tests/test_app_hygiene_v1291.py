@@ -374,3 +374,87 @@ def test_stored_package_keys_are_unique_stable_and_safe():
     assert key.startswith("_admin_pkg_send_20261006_100000__PILOT_S2_")
     odd_a, odd_b = (app._stored_package_key("p_", name) for name in ("run one/é", "run one/e"))
     assert odd_a != odd_b and all(ch.isalnum() or ch in "_.-" for ch in odd_a)
+
+
+# ---- 4. raw-HTML sinks: user, QSF and exception text is escaped -----------------------------------
+_PAYLOAD = "<img src=x onerror=alert(1)>"
+
+
+def test_scale_name_is_escaped_in_the_construct_badges_of_the_design_page(apptest_env):
+    from streamlit.testing.v1 import AppTest
+
+    import app as appmod
+
+    raw = _COFFEE_QSF.read_bytes()
+    from utils.qsf_preview import QSFPreviewParser
+
+    preview = QSFPreviewParser().parse(raw)
+    enhanced = appmod._perform_enhanced_analysis(qsf_content=raw)
+    scales = [_scale("Trust " + _PAYLOAD), _scale("Satisfaction")]
+    conds = ["Control", "No gamified tier", "Gamified No Tier", "Gamified Tier"]
+    at = AppTest.from_file(str(_APP_DIR / "app.py"), default_timeout=300)
+    state = {
+        "active_page": 2, "study_title": "T", "study_description": "D study", "sample_size": 60,
+        "study_input_mode": "upload_qsf", "qsf_preview": preview, "qsf_raw_content": raw, "qsf_file_name": _COFFEE_QSF.name,
+        "enhanced_analysis": enhanced, "advanced_mode": True, "confirmed_scales": scales, "scales_confirmed": True,
+        "open_ended_confirmed": True, "confirmed_open_ended": [], "selected_conditions": conds,
+        "inferred_design": {"conditions": conds, "factors": [], "scales": scales, "open_ended_questions": [],
+                            "attention_checks": [], "manipulation_checks": [], "randomization_level": "Participant-level",
+                            "condition_visibility_map": {}},
+    }
+    for key, value in state.items():
+        at.session_state[key] = value
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    badges = [m.value for m in at.markdown if "border-radius:4px" in m.value and "Trust" in m.value]
+    assert badges, "the construct badges for the two scales should be on the page"
+    assert not [m for m in at.markdown if _PAYLOAD in m.value], "the scale name reached the page as live HTML"
+    assert "&lt;img src=x onerror=alert(1)&gt;" in badges[0], badges[0]
+
+
+def test_engine_failure_banner_shows_the_error_as_text_not_as_html(apptest_env, monkeypatch):
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+
+    def _boom(self, *args, **kwargs):
+        raise RuntimeError("bad <img src=x onerror=alert(2)> input")
+
+    monkeypatch.setattr(EnhancedSimulationEngine, "__init__", _boom)
+    at = _generate_page(["Alpha", "Bravo"], n=40, advanced=False)
+    next(b for b in at.button if b.key == "generate_dataset_btn").click()
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    banners = [m.value for m in at.markdown if "failed to initialize" in m.value]
+    assert banners, [m.value[:80] for m in at.markdown][-6:]
+    assert "<img" not in banners[0] and "bad &lt;img src=x onerror=alert(2)&gt; input" in banners[0]
+
+
+def test_no_raw_html_call_interpolates_exception_text_unescaped():
+    """Static guard: an exception caught in app.py never reaches unsafe_allow_html markup unescaped."""
+    import ast
+    import re
+
+    tree = ast.parse((_APP_DIR / "app.py").read_text(encoding="utf-8"))
+    looks_like_exception = re.compile(r"(^|_)(e|exc|err|error|ex)$|_exc\b|_err\b|exception", re.IGNORECASE)
+
+    def _escaped_names(node):
+        """Names that appear outside any html_escape(...) call inside `node`."""
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "html_escape":
+            return []
+        if isinstance(node, ast.Name):
+            return [node.id]
+        names = []
+        for child in ast.iter_child_nodes(node):
+            names.extend(_escaped_names(child))
+        return names
+
+    offenders = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and any(k.arg == "unsafe_allow_html" for k in node.keywords) and node.args):
+            continue
+        first = node.args[0]
+        for part in ast.walk(first):
+            if isinstance(part, ast.FormattedValue):
+                for name in _escaped_names(part.value):
+                    if looks_like_exception.search(name):
+                        offenders.append((node.lineno, name))
+    assert not offenders, f"unescaped exception text in raw HTML at (line, name): {offenders}"
