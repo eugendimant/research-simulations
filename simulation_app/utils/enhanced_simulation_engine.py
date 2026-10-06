@@ -8265,7 +8265,7 @@ class EnhancedSimulationEngine:
         # "High" and "Low" conditions still showed d ~0.24, a configured d got an
         # unrequested boost, and names like "Paid"/"Fair"/"Maintain" matched 'ai'.
 
-        # v1.2.9.8: LAST RESORT, and it has to be last.
+        # v1.2.9.9: LAST RESORT, and it has to be last.
         #
         # The substring map near the top reaches about 40 of the 201 published
         # norms, and only when the variable name happens to contain the mapped
@@ -8689,7 +8689,7 @@ class EnhancedSimulationEngine:
         # =====================================================================
         condition_effect = self._get_effect_for_condition(condition, variable_name)
 
-        # v1.2.9.8: a condition effect is specified in Cohen's d — a GAP DIVIDED BY
+        # v1.2.9.9: a condition effect is specified in Cohen's d — a GAP DIVIDED BY
         # AN SD — so it has to travel with whatever SD this variable ends up with.
         # The domain calibration below widens or narrows the within-person SD by
         # `variance_adjustment` (an intention scale gets +0.05, a moral-identity
@@ -12302,7 +12302,20 @@ class EnhancedSimulationEngine:
                 # and wrong by an order of magnitude at either end of that range.
                 # The registry declines outside the widths it was measured at, and
                 # a declined lookup keeps the previous constant.
-                _target_share = DEFAULT_STRAIGHTLINE_SHARE
+                #
+                # v1.2.9.9 — the per-width entries were measured at k=3..10
+                # (k=3..9 same-keyed). Past that the lookup declines, and falling
+                # back to the 5.2% default would be worse than doing nothing: the
+                # measured rate is 0.169% at k=10 and 0.124% across a 22-50 item
+                # instrument, so a 22-item Big Five block would have about 40x too
+                # many respondents collapsed to a single value -- and because this
+                # pass now corrects downward as well as up, it would actively
+                # CREATE them, distorting composites, alpha and every
+                # careless-response flag computed from the block. So: the width
+                # entry, else the full-instrument entry, else leave the block
+                # alone. A declined lookup changes nothing, which is the rule the
+                # rest of the registry follows.
+                _target_share = None
                 _sl_hit = None
                 if HAS_EMPIRICAL_REGISTRY:
                     _rev = log_entry.get("reverse_items") or []
@@ -12314,8 +12327,19 @@ class EnhancedSimulationEngine:
                     _sl_hit = _empirical_registry.lookup_best(
                         f"item.likert.{_keying}.k{len(icols)}",
                         "straightlined_share", _sl_sig)
+                    if _sl_hit is None:
+                        _sl_hit = _empirical_registry.lookup_best(
+                            "item.likert5.full_instrument",
+                            "straightlined_share", _sl_sig)
                     if _sl_hit is not None:
                         _target_share = float(_sl_hit.value)
+                elif len(icols) <= 10:
+                    # No registry at all: the old global constant, which was
+                    # roughly right for a block of this width and is the previous
+                    # behaviour. Beyond that width it was never right, so skip.
+                    _target_share = DEFAULT_STRAIGHTLINE_SHARE
+                if _target_share is None:
+                    continue
                 new_cols, report = match_straightlining(
                     cols, smin, smax,
                     target_share=_target_share, rng=_rng,

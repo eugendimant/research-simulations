@@ -248,14 +248,29 @@ def match(
             return ConstructMatch(key=_best_key, score=99.0,
                                   matched_tokens=(_cue,), via_acronym=True,
                                   scale_name=idx.scale_names.get(_best_key, ""))
-        if ranked:
-            best = ranked[0]
-            return ConstructMatch(key=best.key, score=max(best.score, thr),
-                                  matched_tokens=best.matched_tokens,
-                                  via_acronym=True, scale_name=best.scale_name)
-        return ConstructMatch(key=cands[0], score=thr,
-                              matched_tokens=(tok,), via_acronym=True,
-                              scale_name=idx.scale_names.get(cands[0], ""))
+        # Nothing above separated the subscales. What is left must not be a
+        # guess: every candidate shares the acronym, so a ranking built on it
+        # orders them by nothing, and returning the first is returning an
+        # arbitrary subscale. Measured before this guard, every `BFI_*` item
+        # came back as big_five_agreeableness whatever the wording said --
+        # "I get nervous easily" included -- and the calibration downstream then
+        # applied agreeableness's published mean and shape to a neuroticism item.
+        # A subscale needs a distinguishing word of its own and a clear win over
+        # the runner-up; without both, no match, which leaves the item to the
+        # keyword branches that would have handled it anyway.
+        _acr_toks = set(getattr(idx, "acronym_tokens", ()))
+        _discriminating = [
+            m for m in ranked
+            if set(m.matched_tokens) - _acr_toks - {tok}
+        ]
+        if _discriminating:
+            _best = _discriminating[0]
+            _rivals = [m for m in _discriminating[1:]]
+            if not _rivals or _best.score > _rivals[0].score * 1.15:
+                return ConstructMatch(key=_best.key, score=max(_best.score, thr),
+                                      matched_tokens=_best.matched_tokens,
+                                      via_acronym=True, scale_name=_best.scale_name)
+        return None
 
     # 2. content route
     ranked = idx.score(all_tokens)

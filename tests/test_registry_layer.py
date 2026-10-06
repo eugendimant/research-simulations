@@ -418,3 +418,76 @@ def test_survey_wording_reaches_a_numbered_item():
     q, item = _dissonance_engine()._survey_wording_for("attitude_3")
     assert "attitude" in q.lower()
     assert item == "attitude"
+
+
+# ---------------------------------------------------------------------------
+# Long blocks: the straight-lining target must not fall back to a wrong constant
+# ---------------------------------------------------------------------------
+
+def test_long_instruments_use_the_full_instrument_rate_not_the_default():
+    """A 22-50 item block has a measured rate of ~0.12%, not the 5.2% default.
+
+    The per-width entries stop at k=10. Falling back to the global default past
+    that would put roughly 40x too many respondents on a constant row, and since
+    the pass corrects downward too it would create them rather than merely fail
+    to remove them.
+    """
+    from utils import design_signature, empirical_registry
+
+    sig = design_signature.for_block(scale_min=1, scale_max=5, n_items=22,
+                                     keying="mixed")
+    width = empirical_registry.lookup_best(
+        "item.likert.mixed.k22", "straightlined_share", sig)
+    full = empirical_registry.lookup_best(
+        "item.likert5.full_instrument", "straightlined_share", sig)
+
+    assert width is None, "there is no measured 22-item width entry to find"
+    assert full is not None
+    assert full.value < 0.01, "a long instrument's rate is well under one percent"
+
+
+def test_an_unmeasured_block_width_declines_rather_than_guessing():
+    """Between the per-width entries and the full-instrument one, nothing applies.
+
+    12 items is past the measured widths and short of the full-instrument range,
+    so both lookups decline and the engine leaves the block untouched.
+    """
+    from utils import design_signature, empirical_registry
+
+    sig = design_signature.for_block(scale_min=1, scale_max=5, n_items=12,
+                                     keying="mixed")
+    assert empirical_registry.lookup_best(
+        "item.likert.mixed.k12", "straightlined_share", sig) is None
+    assert empirical_registry.lookup_best(
+        "item.likert5.full_instrument", "straightlined_share", sig) is None
+
+
+# ---------------------------------------------------------------------------
+# Acronyms that map to several subscales
+# ---------------------------------------------------------------------------
+
+def test_an_ambiguous_acronym_declines_instead_of_picking_a_subscale():
+    """Every `BFI_*` item used to come back as agreeableness, wording ignored.
+
+    The candidates all share the acronym, so a ranking built on it orders them by
+    nothing; returning the first applied agreeableness's published mean and shape
+    to a neuroticism item. No distinguishing word means no match.
+    """
+    from utils.construct_matcher import match
+
+    assert match(variable_name="BFI_4",
+                 question_text="I get nervous easily") is None
+    assert match(variable_name="BFI_1",
+                 question_text="I am outgoing and sociable") is None
+
+
+def test_an_unambiguous_acronym_still_matches():
+    """The guard must not cost the cases that were already right."""
+    from utils.construct_matcher import match
+
+    pss = match(variable_name="PSS4_1")
+    assert pss is not None and pss.key == "perceived_stress_pss"
+
+    mbi = match(variable_name="MBI_3",
+                question_text="I feel emotionally exhausted by my work")
+    assert mbi is not None and mbi.key == "burnout_emotional_exhaustion"

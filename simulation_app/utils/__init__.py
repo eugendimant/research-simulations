@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.9.8 - One release combining the free-provider key workflow and the literature-grounded realism layer. Keys live only in environment variables or Streamlit secrets and every provider in the chain can be verified from the admin page, with the built-in engine as a silent fallback when none is configured. Alongside it, an empirical registry with provenance tiers: a constant may move the data only if it was measured from real responses or verified against a source, every entry declares the designs it applies to, and item dispersion and straight-lining now follow rates measured over four published instruments (48,431 respondents) rather than hand-chosen values.
+Version: 1.2.9.9 - One release combining the free-provider key workflow and the literature-grounded realism layer. Keys live only in environment variables or Streamlit secrets and every provider in the chain can be verified from the admin page, with the built-in engine as a silent fallback when none is configured. Alongside it, an empirical registry with provenance tiers: a constant may move the data only if it was measured from real responses or verified against a source, every entry declares the designs it applies to, and item dispersion and straight-lining now follow rates measured over four published instruments (48,431 respondents) rather than hand-chosen values.
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.9.8"
+__version__ = "1.2.9.9"
 
 
 # =============================================================================
