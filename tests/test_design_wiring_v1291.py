@@ -315,6 +315,7 @@ def test_the_design_page_starts_from_the_surveys_own_dvs_not_a_generic_main_dv(a
     by_name = {r[0]: r for r in rows}
     assert "Main_DV" not in by_name
     assert any("4 DV(s) detected" in m.value for m in at.markdown)
+    assert any("Back to top" in m.value for m in at.markdown)       # the page-layout rule: the link ends every page
     # types the old page could not show survive (rank_order used to become "matrix", a numeric box "single_item")
     assert by_name["Priorities"][1] == "rank_order" and by_name["Priorities"][2] == 3
     assert by_name["BirthYear"][1] == "numeric_input"
@@ -347,6 +348,7 @@ def test_the_dvs_the_page_hands_to_the_engine_match_what_the_parser_detected(app
     assert [s["variable_name"] for s in at.session_state["confirmed_scales"]] == A_DVS
     assert any("<strong style=\"color:#374151;\">4</strong> DVs" in m.value for m in at.markdown)
     assert not _button(at, "generate_dataset_btn").disabled
+    assert any("Back to top" in m.value for m in at.markdown)
 
 
 def test_a_survey_without_a_detectable_dv_keeps_the_generic_default(app_test):
