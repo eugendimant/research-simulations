@@ -799,3 +799,60 @@ def test_factor_names_and_levels_are_identical_under_different_hash_seeds(tmp_pa
     assert names[3] == ["Apple"]        # ties on length are broken alphabetically, not by set order
     assert names[4] == ["Lion Wolf"]
     assert names[0][-1] == "( Strategic Silence/ Politeness)"
+
+
+# ---- 10. one broken OPTIONAL module must not take the app down -------------------------------------
+class _FailingImport:
+    """A meta-path finder that makes importing `names` fail with `exc` (a half-copied module file)."""
+
+    def __init__(self, names, exc):
+        self.names, self.exc = set(names), exc
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname in self.names:
+            raise self.exc
+        return None
+
+
+@pytest.mark.parametrize("module, error, check", [
+    ("utils.email_delivery", RuntimeError("half-copied file"), lambda app: app._email_delivery is None),
+    ("utils.email_delivery", SyntaxError("invalid syntax"), lambda app: app._email_delivery is None),
+    ("utils.html_safety", AttributeError("module has no attribute"), lambda app: app._harden_report_html("<p>x</p>") == "<p>x</p>"),
+    ("utils.correlation_matrix", ValueError("bad constant"), lambda app: app._HAS_CORRELATION_MODULE is False),
+])
+def test_a_broken_optional_module_is_logged_and_the_app_still_loads(monkeypatch, tmp_path, module, error, check):
+    import logging
+
+    import utils
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delitem(sys.modules, module, raising=False)
+    monkeypatch.delattr(utils, module.rsplit(".", 1)[-1], raising=False)
+    records = []
+
+    class _Collect(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    logger = logging.getLogger("simulation_app")
+    handler = _Collect(level=logging.WARNING)
+    logger.addHandler(handler)
+    hook = _FailingImport({module}, error)
+    sys.meta_path.insert(0, hook)
+    try:
+        app = _load_app_module("_app_hygiene_optional")
+    finally:
+        sys.meta_path.remove(hook)
+        logger.removeHandler(handler)
+    assert check(app)
+    assert any(module in message and type(error).__name__ in message for message in records), records
+
+
+def test_core_modules_are_still_imported_strictly():
+    """Only the optional modules are guarded broadly: the three guards must not swallow a missing core module."""
+    source = (_APP_DIR / "app.py").read_text(encoding="utf-8")
+    head = source[: source.index("APP_TITLE = ")]
+    for core in ("from utils.qsf_preview import", "from utils.enhanced_simulation_engine import (\n    EnhancedSimulationEngine,",
+                 "from utils.survey_builder import"):
+        index = head.index(core)
+        assert not head[max(0, index - 200):index].rstrip().endswith("try:"), core

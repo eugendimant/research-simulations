@@ -97,13 +97,30 @@ from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
 from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
 from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport
+
+
+def _log_optional_import_failure(module: str, exc: BaseException) -> None:
+    """Record why an optional module was skipped; the app keeps loading without it."""
+    import logging
+
+    logging.getLogger("simulation_app").warning(
+        "Optional module %s is unavailable (%s: %s); continuing without it.", module, type(exc).__name__, exc
+    )
+
+
+# The three guards below cover OPTIONAL modules. A partial deploy can fail with more than an
+# ImportError (a SyntaxError in a half-copied file, an AttributeError at import time, ...), and one
+# bad optional module must never take the whole app down, so they catch Exception and log it.
 try:  # reliable, observable email delivery (v1.2.9.1); the legacy sender below is the fallback
     from utils import email_delivery as _email_delivery
-except ImportError:  # partial deploy: keep the app loading
+except Exception as _email_import_exc:  # partial deploy: keep the app loading
+    _log_optional_import_failure("utils.email_delivery", _email_import_exc)
     _email_delivery = None  # type: ignore[assignment]
 try:  # neutralises active content in generated HTML files (v1.2.9.1)
     from utils.html_safety import harden_report_html as _harden_report_html
-except ImportError:  # partial deploy: keep the app loading
+except Exception as _html_safety_import_exc:  # partial deploy: keep the app loading
+    _log_optional_import_failure("utils.html_safety", _html_safety_import_exc)
+
     def _harden_report_html(document: str) -> str:  # type: ignore[misc]
         return document
 from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedCondition, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS, generate_qsf_from_design
@@ -144,7 +161,8 @@ try:
         get_correlation_summary,
     )
     _HAS_CORRELATION_MODULE = True
-except ImportError:
+except Exception as _correlation_import_exc:  # optional module: any import-time failure disables it
+    _log_optional_import_failure("utils.correlation_matrix", _correlation_import_exc)
     _HAS_CORRELATION_MODULE = False
 
 # Verify expected utils version.  If there is a mismatch (stale module cache
@@ -217,8 +235,8 @@ try:
     _self_heal_result = _self_heal_check(APP_VERSION)
     if _self_heal_result:
         _log(_self_heal_result, level="info")
-except Exception:
-    pass  # Self-healing must never crash the app
+except Exception as _self_heal_exc:  # Self-healing must never crash the app
+    _log(f"Self-healing check skipped: {type(_self_heal_exc).__name__}: {_self_heal_exc}", level="warning")
 
 
 # ---------------------------------------------------------------------------
