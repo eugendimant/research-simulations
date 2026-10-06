@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.8.9"
-BUILD_ID = "20261006-v12089-reproducible-faithful-export"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.9.0"
+BUILD_ID = "20261006-v12900-serve-howto-pdf-in-app"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.8.9"  # v1.2.8.9: Reproducibility, privacy and export-fidelity release: secrets removed, seed control, Qualtrics-faithful export, correct analysis scripts
+APP_VERSION = "1.2.9.0"  # v1.2.9.0: Serve the student-facing how-to guide PDF from the app so its link survives the repository being made private
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -8908,6 +8908,32 @@ if active_page == -1:
                 mime="application/pdf",
                 use_container_width=True,
                 key="landing_methods_pdf",
+            )
+
+    # v1.2.9.0: Serve the student-facing "how to simulate your data" guide from the
+    # app itself. Previously this PDF was only reachable through its GitHub URL, so
+    # making the repository private would have broken every shared link to it.
+    guide_pdf_path = (
+        Path(__file__).resolve().parent.parent
+        / "docs" / "papers" / "Simulating_Behavioral_Experiments_with_ChatGPT.pdf"
+    )
+    if guide_pdf_path.exists():
+        st.markdown(
+            '<div style="text-align:center;margin:12px 0 8px 0;">'
+            '<span style="font-size:0.88rem;color:#4B5563;">'
+            '\U0001F4D8 New here? Read the step-by-step guide to simulating your data'
+            '</span></div>',
+            unsafe_allow_html=True,
+        )
+        _guide_dl1, _guide_dl2, _guide_dl3 = st.columns([1, 2, 1])
+        with _guide_dl2:
+            st.download_button(
+                "\u2B07 Download How-To Guide (PDF)",
+                data=guide_pdf_path.read_bytes(),
+                file_name="How_to_simulate_your_data_using_AI.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="landing_howto_pdf",
             )
 
     # v1.9.0: Professional tabbed info sections (replacing generic expanders)
