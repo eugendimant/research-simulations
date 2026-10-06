@@ -19,6 +19,8 @@ APP = ROOT / "simulation_app"
 
 VERSION_RE = r"(\d+(?:\.\d+){2,3})"
 
+# BUILD_ID in app.py is a free-form cache-busting label, not a plain version string, so it is
+# updated by hand per CLAUDE.md and deliberately not checked here.
 # (label, file, regex whose first group is the version)
 LOCATIONS: List[Tuple[str, Path, str]] = [
     ("app.py REQUIRED_UTILS_VERSION", APP / "app.py",
