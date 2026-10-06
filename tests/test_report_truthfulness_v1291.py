@@ -350,7 +350,8 @@ def _unequal_skewed_study():
 def test_html_states_what_is_computed_not_welch_or_rank_based_tests(stats_mode):
     df, meta = _unequal_skewed_study()
     md, html = _reports(df, meta)
-    assert "Variance homogeneity: not met" in html and "Normality (pooled across conditions): not met" in html
+    assert "Variance homogeneity: not met" in html and "Normality: not met" in html
+    assert "Shapiro-Wilk on the pooled scores" in html
     for false_claim in ("Welch's correction applied", "Non-parametric tests also reported", "Mann-Whitney", "Kruskal"):
         assert false_claim not in html and false_claim not in md, false_claim
     assert "pooled-variance t-test shown above assumes equal variances" in html

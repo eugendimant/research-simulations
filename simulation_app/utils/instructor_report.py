@@ -319,8 +319,16 @@ def _report_context(df: pd.DataFrame, metadata: Dict[str, Any], prereg_text: str
         data_conditions = df["CONDITION"].unique().tolist()
         if data_conditions and sum(1 for c in conditions if c in data_conditions) == 0:
             conditions = data_conditions
+    # v1.2.9.1: ONE collision-free display label per condition (Group_1 / Group_2 stay distinct) for every
+    # table, test and contrast; the ordering used everywhere is the metadata order held in ``conditions``.
+    cond_labels = _condition_display_labels(
+        list(conditions) + (df["CONDITION"].dropna().unique().tolist() if "CONDITION" in df.columns else []))
+
+    def _cond_label(cond: Any) -> str:
+        return cond_labels.get(cond) or _clean_condition_name(cond)
+
     return SimpleNamespace(
-        out=[], html=html, df=df,
+        out=[], html=html, df=df, cond_labels=cond_labels, cond_label=_cond_label,
         # v1.2.4.0: the FULL dataset is analysed. Exclude_Recommended is informational (it teaches students about
         # data quality) and must NOT reduce the analysis N: instructors expect the full sample.
         df_clean=df,
@@ -666,11 +674,22 @@ def _align_condition_values(df: pd.DataFrame, metadata_conditions: List[str]) ->
     if not canon:
         return df
 
-    clean_to_canon = {_clean_condition_name(c).lower(): c for c in canon}
+    # A cleaned name shared by several conditions (Group_1 / Group_2 -> "group") is ambiguous: never
+    # use it to relabel a row; a value that already IS a canonical condition is kept as it is.
+    canon_set = set(canon)
+    clean_counts: Dict[str, int] = {}
+    for c in canon:
+        key = _clean_condition_name(c).lower()
+        clean_counts[key] = clean_counts.get(key, 0) + 1
+    clean_to_canon = {_clean_condition_name(c).lower(): c for c in canon
+                      if clean_counts[_clean_condition_name(c).lower()] == 1}
     mapped: List[Any] = []
     changes = 0
 
     for raw in df["CONDITION"].astype(str):
+        if raw in canon_set:
+            mapped.append(raw)
+            continue
         raw_clean = _clean_condition_name(raw)
         raw_low = raw_clean.lower()
 
@@ -1282,203 +1301,951 @@ def _speed_flag_lines(df: "pd.DataFrame", metadata: Dict[str, Any]) -> List[str]
 
 
 # ============================================================================
-# NUMPY-BASED STATISTICAL FUNCTIONS (fallbacks when scipy unavailable)
+# DISTRIBUTION FUNCTIONS AND NUMPY-ONLY STATISTICAL TESTS
+#
+# The deployed app does not ship scipy (simulation_app/requirements.txt lists
+# numpy and pandas only), so every p-value the report prints has to be
+# computable without it.  The functions below are exact to double precision:
+# the regularized incomplete beta function (Student t and F) uses a modified-
+# Lentz continued fraction, the regularized incomplete gamma function (chi-
+# square) a series / continued fraction pair.  When scipy IS importable the
+# report keeps using it through the _p_* / _t_crit wrappers; the two paths agree
+# to better than 1e-9 on every p-value (tests/test_report_statistics_v1291.py
+# compares them on a dense grid).
 # ============================================================================
 
-def _numpy_ttest_ind(group1: np.ndarray, group2: np.ndarray, equal_var: bool = True) -> Tuple[float, float]:
-    """Independent samples t-test using numpy only."""
-    n1, n2 = len(group1), len(group2)
-    m1, m2 = np.mean(group1), np.mean(group2)
-    v1, v2 = np.var(group1, ddof=1), np.var(group2, ddof=1)
+_CF_TINY = 1e-300        # Lentz floor that keeps the continued fractions finite
+_CF_TOL = 1e-15          # relative convergence target of the continued fractions
+_CF_MAX_ITER = 100000    # hard stop; the fractions converge in O(sqrt(df)) steps
 
-    if equal_var:
-        # Pooled variance
-        sp = np.sqrt(((n1 - 1) * v1 + (n2 - 1) * v2) / (n1 + n2 - 2))
-        se = sp * np.sqrt(1/n1 + 1/n2)
-        df = n1 + n2 - 2
-    else:
-        # Welch's t-test
-        se = np.sqrt(v1/n1 + v2/n2)
-        df = (v1/n1 + v2/n2)**2 / ((v1/n1)**2/(n1-1) + (v2/n2)**2/(n2-1))
 
-    t_stat = (m1 - m2) / se if se > 0 else 0
+def _betacf(a: float, b: float, x: float) -> float:
+    """Continued fraction of the incomplete beta function (modified Lentz, DLMF 8.17.22)."""
+    qab = a + b
+    qap = a + 1.0
+    qam = a - 1.0
+    c = 1.0
+    d = 1.0 - qab * x / qap
+    if abs(d) < _CF_TINY:
+        d = _CF_TINY
+    d = 1.0 / d
+    h = d
+    for m in range(1, _CF_MAX_ITER):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        if abs(d) < _CF_TINY:
+            d = _CF_TINY
+        c = 1.0 + aa / c
+        if abs(c) < _CF_TINY:
+            c = _CF_TINY
+        d = 1.0 / d
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d
+        if abs(d) < _CF_TINY:
+            d = _CF_TINY
+        c = 1.0 + aa / c
+        if abs(c) < _CF_TINY:
+            c = _CF_TINY
+        d = 1.0 / d
+        delta = d * c
+        h *= delta
+        if abs(delta - 1.0) < _CF_TOL:
+            break
+    return h
 
-    # Approximate p-value using normal distribution for large samples
-    # For small samples, this is an approximation
-    if df > 30:
-        # Use normal approximation
-        p_value = 2 * (1 - _normal_cdf(abs(t_stat)))
-    else:
-        # Use t-distribution approximation
-        p_value = 2 * _t_sf(abs(t_stat), df)
 
-    return float(t_stat), float(p_value)
+def _betainc(a: float, b: float, x: float, y: Optional[float] = None) -> float:
+    """Regularized incomplete beta function I_x(a, b), accurate to double precision.
+
+    ``y`` may carry ``1 - x`` computed without cancellation (callers that know it
+    in closed form pass it, e.g. ``t^2 / (df + t^2)`` for the t distribution).
+    """
+    if not (a > 0.0 and b > 0.0) or x != x:
+        return float("nan")
+    if y is None:
+        y = 1.0 - x
+    if x <= 0.0:
+        return 0.0
+    if y <= 0.0:
+        return 1.0
+    ln_front = (math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+                + a * math.log(x) + b * math.log(y))
+    front = math.exp(ln_front)
+    if x < (a + 1.0) / (a + b + 2.0):
+        return min(1.0, front * _betacf(a, b, x) / a)
+    return max(0.0, 1.0 - front * _betacf(b, a, y) / b)
+
+
+def _gammainc_reg(a: float, x: float, upper: bool) -> float:
+    """Regularized incomplete gamma function: Q(a, x) when ``upper`` else P(a, x)."""
+    if not a > 0.0 or x != x:
+        return float("nan")
+    if x <= 0.0:
+        return 1.0 if upper else 0.0
+    if math.isinf(x):
+        return 0.0 if upper else 1.0
+    ln_prefix = -x + a * math.log(x) - math.lgamma(a)
+    if x < a + 1.0:                      # series for P(a, x)
+        ap = a
+        term = 1.0 / a
+        total = term
+        for _ in range(_CF_MAX_ITER):
+            ap += 1.0
+            term *= x / ap
+            total += term
+            if abs(term) < abs(total) * 1e-16:
+                break
+        p = total * math.exp(ln_prefix)
+        return max(0.0, 1.0 - p) if upper else min(1.0, p)
+    b = x + 1.0 - a                      # modified-Lentz continued fraction for Q(a, x)
+    c = 1.0 / _CF_TINY
+    d = 1.0 / b
+    h = d
+    for i in range(1, _CF_MAX_ITER):
+        an = -i * (i - a)
+        b += 2.0
+        d = an * d + b
+        if abs(d) < _CF_TINY:
+            d = _CF_TINY
+        c = b + an / c
+        if abs(c) < _CF_TINY:
+            c = _CF_TINY
+        d = 1.0 / d
+        delta = d * c
+        h *= delta
+        if abs(delta - 1.0) < _CF_TOL:
+            break
+    q = math.exp(ln_prefix) * h
+    return min(1.0, q) if upper else max(0.0, 1.0 - q)
 
 
 def _normal_cdf(x: float) -> float:
-    """Standard normal CDF approximation."""
-    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+    """Standard normal CDF (erfc form: no cancellation in the lower tail)."""
+    return 0.5 * math.erfc(-x / math.sqrt(2.0))
+
+
+def _normal_sf(x: float) -> float:
+    """Upper-tail probability of the standard normal distribution."""
+    return 0.5 * math.erfc(x / math.sqrt(2.0))
+
+
+def _norm_ppf(p: float) -> float:
+    """Inverse standard normal CDF (Acklam's approximation plus one Halley step; ~1e-15)."""
+    if p != p or p < 0.0 or p > 1.0:
+        return float("nan")
+    if p == 0.0:
+        return float("-inf")
+    if p == 1.0:
+        return float("inf")
+    a = (-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+         1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00)
+    b = (-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+         6.680131188771972e+01, -1.328068155288572e+01)
+    c = (-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+         -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00)
+    d = (7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+         3.754408661907416e+00)
+    p_low = 0.02425
+    if p < p_low:
+        q = math.sqrt(-2.0 * math.log(p))
+        x = ((((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5])
+             / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0))
+    elif p <= 1.0 - p_low:
+        q = p - 0.5
+        r = q * q
+        x = ((((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q
+             / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1.0))
+    else:
+        q = math.sqrt(-2.0 * math.log1p(-p))
+        x = -((((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5])
+              / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0))
+    err = _normal_cdf(x) - p
+    u = err * math.sqrt(2.0 * math.pi) * math.exp(0.5 * x * x)
+    return x - u / (1.0 + 0.5 * x * u)
 
 
 def _t_sf(t: float, df: float) -> float:
-    """Survival function (1-CDF) for t-distribution, approximated."""
-    # Use normal approximation for large df
-    if df > 100:
-        return 1 - _normal_cdf(t)
-    # For smaller df, use a rough approximation
-    x = df / (df + t**2)
-    # Beta function approximation
-    return 0.5 * _betainc(df/2, 0.5, x)
+    """Upper-tail probability P(T > t) of Student's t distribution with ``df`` degrees of freedom."""
+    if t != t or df != df or not df > 0.0:
+        return float("nan")
+    if math.isinf(t):
+        return 0.0 if t > 0 else 1.0
+    if math.isinf(df):
+        return _normal_sf(t)
+    t2 = t * t
+    denom = df + t2
+    if math.isinf(denom):
+        return 0.0 if t > 0 else 1.0
+    tail = 0.5 * _betainc(0.5 * df, 0.5, df / denom, t2 / denom)
+    return tail if t > 0 else 1.0 - tail
 
 
-def _betainc(a: float, b: float, x: float) -> float:
-    """Incomplete beta function approximation (very rough)."""
-    # For our purposes, a simple approximation
-    if x <= 0:
+def _t_two_sided_p(t: float, df: float) -> float:
+    """Two-sided p-value of a t statistic: P(|T| >= |t|)."""
+    if t != t or df != df or not df > 0.0:
+        return float("nan")
+    if math.isinf(t):
         return 0.0
-    if x >= 1:
-        return 1.0
-    # Use a simple numerical integration
-    steps = 100
-    dx = x / steps
-    result = 0
-    for i in range(steps):
-        xi = (i + 0.5) * dx
-        result += (xi ** (a-1)) * ((1-xi) ** (b-1)) * dx
-    # Normalize (approximate)
-    norm = math.gamma(a) * math.gamma(b) / math.gamma(a + b)
-    return min(1.0, result / norm) if norm > 0 else 0.5
-
-
-def _numpy_f_oneway(*groups) -> Tuple[float, float]:
-    """One-way ANOVA using numpy only."""
-    groups = [np.asarray(g) for g in groups]
-    k = len(groups)  # number of groups
-    n_total = sum(len(g) for g in groups)
-
-    # Grand mean
-    all_data = np.concatenate(groups)
-    grand_mean = np.mean(all_data)
-
-    # Between-group sum of squares
-    ss_between = sum(len(g) * (np.mean(g) - grand_mean)**2 for g in groups)
-
-    # Within-group sum of squares
-    ss_within = sum(np.sum((g - np.mean(g))**2) for g in groups)
-
-    # Degrees of freedom
-    df_between = k - 1
-    df_within = n_total - k
-
-    # Mean squares
-    ms_between = ss_between / df_between if df_between > 0 else 0
-    ms_within = ss_within / df_within if df_within > 0 else 1
-
-    # F statistic
-    f_stat = ms_between / ms_within if ms_within > 0 else 0
-
-    # P-value approximation (using chi-square approximation for large samples)
-    # This is a rough approximation
-    if df_within > 30:
-        p_value = 1 - _chi2_cdf(f_stat * df_between, df_between)
-    else:
-        p_value = _f_sf(f_stat, df_between, df_within)
-
-    return float(f_stat), float(p_value)
-
-
-def _chi2_cdf(x: float, df: float) -> float:
-    """Chi-square CDF approximation."""
-    if x <= 0:
+    if math.isinf(df):
+        return min(1.0, 2.0 * _normal_sf(abs(t)))
+    t2 = t * t
+    denom = df + t2
+    if math.isinf(denom):
         return 0.0
-    # Wilson-Hilferty approximation
-    if df > 0:
-        z = (x/df)**(1/3) - (1 - 2/(9*df))
-        z /= math.sqrt(2/(9*df))
-        return _normal_cdf(z)
-    return 0.5
+    return min(1.0, _betainc(0.5 * df, 0.5, df / denom, t2 / denom))
+
+
+def _t_pdf(t: float, df: float) -> float:
+    """Density of Student's t distribution."""
+    ln_c = math.lgamma(0.5 * (df + 1.0)) - math.lgamma(0.5 * df) - 0.5 * math.log(df * math.pi)
+    return math.exp(ln_c - 0.5 * (df + 1.0) * math.log1p(t * t / df))
+
+
+def _t_isf(p: float, df: float) -> float:
+    """Inverse survival function of Student's t: the t with P(T > t) = p (0 < p < 1)."""
+    if p != p or df != df or not df > 0.0 or p <= 0.0 or p >= 1.0:
+        return float("nan")
+    if p == 0.5:
+        return 0.0
+    if p > 0.5:
+        return -_t_isf(1.0 - p, df)
+    z = -_norm_ppf(p)                    # normal quantile: a good start for large df
+    lo, hi = 0.0, max(1.0, z)
+    for _ in range(2000):                # bracket the root: sf(hi) < p <= sf(lo)
+        if _t_sf(hi, df) < p:
+            break
+        lo = hi
+        hi *= 2.0
+    t = min(max(z, lo), hi)
+    for _ in range(200):                 # safeguarded Newton iteration
+        f = _t_sf(t, df) - p
+        if f > 0.0:
+            lo = t
+        else:
+            hi = t
+        pdf = _t_pdf(t, df)
+        t_new = t + f / pdf if pdf > 0.0 else 0.5 * (lo + hi)
+        if not lo < t_new < hi:
+            t_new = 0.5 * (lo + hi)
+        if abs(t_new - t) <= 1e-14 * max(1.0, abs(t_new)):
+            return t_new
+        t = t_new
+    return t
+
+
+def _t_ppf(q: float, df: float) -> float:
+    """Quantile function of Student's t distribution."""
+    if q != q or q < 0.0 or q > 1.0:
+        return float("nan")
+    if q == 0.0:
+        return float("-inf")
+    if q == 1.0:
+        return float("inf")
+    if q == 0.5:
+        return 0.0
+    return _t_isf(1.0 - q, df) if q > 0.5 else -_t_isf(q, df)
 
 
 def _f_sf(f: float, df1: float, df2: float) -> float:
-    """F-distribution survival function approximation."""
-    if f <= 0:
+    """Upper-tail probability P(F > f) of the F distribution (exact to double precision)."""
+    if f != f or df1 != df1 or df2 != df2 or not (df1 > 0.0 and df2 > 0.0):
+        return float("nan")
+    if f <= 0.0:
         return 1.0
-    # Use normal approximation for large df
-    if df1 > 30 and df2 > 30:
-        z = (f**(1/3) * (1 - 2/(9*df2)) - (1 - 2/(9*df1))) / math.sqrt(2/(9*df1) + f**(2/3) * 2/(9*df2))
-        return 1 - _normal_cdf(z)
-    # Rough approximation
-    return min(1.0, max(0.0, 1 - _chi2_cdf(f * df1, df1)))
+    if math.isinf(f):
+        return 0.0
+    num = df1 * f
+    denom = df2 + num
+    if math.isinf(denom):
+        return 0.0
+    return _betainc(0.5 * df2, 0.5 * df1, df2 / denom, num / denom)
+
+
+def _chi2_sf(x: float, df: float) -> float:
+    """Upper-tail probability P(X > x) of the chi-square distribution."""
+    if x != x or df != df or not df > 0.0:
+        return float("nan")
+    return _gammainc_reg(0.5 * df, 0.5 * x, True)
+
+
+def _chi2_cdf(x: float, df: float) -> float:
+    """CDF of the chi-square distribution (exact to double precision)."""
+    if x != x or df != df or not df > 0.0:
+        return float("nan")
+    return _gammainc_reg(0.5 * df, 0.5 * x, False)
+
+
+# --- scipy-preferring wrappers: every p-value / critical value in the report goes through these ---
+
+def _use_scipy() -> bool:
+    return bool(SCIPY_AVAILABLE and scipy_stats is not None)
+
+
+def _p_t_two_sided(t: float, df: float) -> float:
+    """Two-sided p-value for a t statistic (scipy when importable, otherwise the exact numpy version)."""
+    if _use_scipy():
+        try:
+            return float(2.0 * scipy_stats.t.sf(abs(t), df))
+        except Exception as exc:  # pragma: no cover - defensive: never block a report on scipy quirks
+            logger.warning("scipy t.sf failed (%s); using the numpy implementation", exc)
+    return _t_two_sided_p(t, df)
+
+
+def _p_f_sf(f: float, df1: float, df2: float) -> float:
+    """Upper-tail p-value for an F statistic."""
+    if _use_scipy():
+        try:
+            return float(scipy_stats.f.sf(f, df1, df2))
+        except Exception as exc:  # pragma: no cover
+            logger.warning("scipy f.sf failed (%s); using the numpy implementation", exc)
+    return _f_sf(f, df1, df2)
+
+
+def _p_chi2_sf(x: float, df: float) -> float:
+    """Upper-tail p-value for a chi-square statistic."""
+    if _use_scipy():
+        try:
+            return float(scipy_stats.chi2.sf(x, df))
+        except Exception as exc:  # pragma: no cover
+            logger.warning("scipy chi2.sf failed (%s); using the numpy implementation", exc)
+    return _chi2_sf(x, df)
+
+
+def _t_crit(df: float, conf: float = 0.95) -> float:
+    """Two-sided critical value of Student's t for a ``conf`` interval (1.96 only as df -> infinity)."""
+    if df != df or not df > 0.0:
+        return float("nan")
+    tail = 0.5 * (1.0 - conf)
+    if _use_scipy():
+        try:
+            return float(scipy_stats.t.isf(tail, df))
+        except Exception as exc:  # pragma: no cover
+            logger.warning("scipy t.isf failed (%s); using the numpy implementation", exc)
+    return _t_isf_cached(round(float(tail), 12), round(float(df), 9))
+
+
+_T_ISF_CACHE: Dict[Tuple[float, float], float] = {}
+
+
+def _t_isf_cached(tail: float, df: float) -> float:
+    """Memoised ``_t_isf`` (a report asks for the same few degrees of freedom hundreds of times)."""
+    key = (tail, df)
+    val = _T_ISF_CACHE.get(key)
+    if val is None:
+        val = _t_isf(tail, df)
+        if len(_T_ISF_CACHE) > 4096:
+            _T_ISF_CACHE.clear()
+        _T_ISF_CACHE[key] = val
+    return val
+
+
+# --- numpy implementations of the tests (used when scipy is missing; also directly testable) ---
+
+def _is_constant(values: Any) -> bool:
+    """True when a sample has no variation at all (max == min), robust to float noise in var()."""
+    arr = np.asarray(values, dtype=float)
+    return arr.size > 0 and float(np.max(arr)) == float(np.min(arr))
+
+
+def _numpy_ttest_ind(group1: np.ndarray, group2: np.ndarray, equal_var: bool = True) -> Tuple[float, float]:
+    """Independent-samples t-test (pooled or Welch) with an exact two-sided p; (nan, nan) if undefined."""
+    g1 = np.asarray(group1, dtype=float)
+    g2 = np.asarray(group2, dtype=float)
+    n1, n2 = len(g1), len(g2)
+    if n1 < 2 or n2 < 2 or (_is_constant(g1) and _is_constant(g2)):
+        return float("nan"), float("nan")
+    m1, m2 = float(np.mean(g1)), float(np.mean(g2))
+    v1, v2 = float(np.var(g1, ddof=1)), float(np.var(g2, ddof=1))
+    if equal_var:
+        df = n1 + n2 - 2
+        sp2 = ((n1 - 1) * v1 + (n2 - 1) * v2) / df
+        se = math.sqrt(sp2 * (1.0 / n1 + 1.0 / n2))
+    else:
+        s1, s2 = v1 / n1, v2 / n2
+        se = math.sqrt(s1 + s2)
+        denom = (s1 * s1) / (n1 - 1) + (s2 * s2) / (n2 - 1)
+        df = (s1 + s2) ** 2 / denom if denom > 0 else float("nan")
+    if not se > 0.0 or df != df:
+        return float("nan"), float("nan")
+    t_stat = (m1 - m2) / se
+    return float(t_stat), float(_t_two_sided_p(t_stat, df))
+
+
+def _numpy_f_oneway(*groups) -> Tuple[float, float]:
+    """One-way ANOVA with an exact p-value; (nan, nan) when the within-group variance is zero."""
+    arrays = [np.asarray(g, dtype=float) for g in groups]
+    k = len(arrays)
+    n_total = sum(len(g) for g in arrays)
+    if k < 2 or n_total <= k or all(_is_constant(g) for g in arrays):
+        return float("nan"), float("nan")
+    grand_mean = float(np.mean(np.concatenate(arrays)))
+    ss_between = sum(len(g) * (float(np.mean(g)) - grand_mean) ** 2 for g in arrays)
+    ss_within = sum(float(np.sum((g - np.mean(g)) ** 2)) for g in arrays)
+    df_between, df_within = k - 1, n_total - k
+    if not ss_within > 0.0:
+        return float("nan"), float("nan")
+    f_stat = (ss_between / df_between) / (ss_within / df_within)
+    return float(f_stat), float(_f_sf(f_stat, df_between, df_within))
+
+
+def _rank_average(values: Any) -> Tuple[np.ndarray, np.ndarray]:
+    """Mid-ranks (ties share the average rank) and the sizes of the tie groups."""
+    arr = np.asarray(values, dtype=float)
+    uniq, inverse, counts = np.unique(arr, return_inverse=True, return_counts=True)
+    cum = np.cumsum(counts)
+    mid = cum - (counts - 1) / 2.0
+    return mid[inverse.reshape(-1)], counts
+
+
+def _mwu_exact_sf(u_obs: int, n1: int, n2: int) -> float:
+    """P(U >= u_obs) for the Mann-Whitney U statistic under H0 without ties (exact).
+
+    The number of arrangements giving each U is the coefficient list of the Gaussian binomial
+    [n1+n2 choose min(n1, n2)]_q = prod_{i=1..m} (1 - q^(n+i)) / (1 - q^i), built with vector operations.
+    """
+    m, n = min(n1, n2), max(n1, n2)
+    size = m * n + 1
+    counts = np.zeros(size)
+    counts[0] = 1.0
+    for i in range(1, m + 1):
+        shifted = np.zeros(size)
+        if n + i < size:
+            shifted[n + i:] = counts[:size - (n + i)]
+        counts = counts - shifted                     # multiply by (1 - q^(n+i))
+        pad = (-size) % i                             # divide by (1 - q^i): cumulative sum with stride i
+        padded = np.concatenate([counts, np.zeros(pad)]).reshape(-1, i)
+        counts = np.cumsum(padded, axis=0).reshape(-1)[:size]
+    total = float(counts.sum())
+    u_obs = max(0, int(u_obs))
+    return float(counts[u_obs:].sum()) / total if u_obs < size and total > 0 else 0.0
 
 
 def _numpy_mannwhitneyu(group1: np.ndarray, group2: np.ndarray) -> Tuple[float, float]:
-    """Mann-Whitney U test using numpy only."""
-    n1, n2 = len(group1), len(group2)
+    """Two-sided Mann-Whitney U test matching scipy.stats.mannwhitneyu (method='auto').
 
-    # Combine and rank
-    combined = np.concatenate([group1, group2])
-    ranks = np.argsort(np.argsort(combined)) + 1
+    Returns (U1, p): mid-ranks for ties, tie-corrected variance and continuity correction;
+    the exact distribution when there are no ties and a sample has <= 8 values.
+    """
+    g1 = np.asarray(group1, dtype=float)
+    g2 = np.asarray(group2, dtype=float)
+    n1, n2 = len(g1), len(g2)
+    if n1 == 0 or n2 == 0:
+        return float("nan"), float("nan")
+    ranks, tie_counts = _rank_average(np.concatenate([g1, g2]))
+    u1 = float(np.sum(ranks[:n1]) - n1 * (n1 + 1) / 2.0)
+    u2 = float(n1 * n2 - u1)
+    u_big = max(u1, u2)
+    has_ties = bool(tie_counts.max() > 1)
+    if not has_ties and not (n1 > 8 and n2 > 8):      # scipy's method='auto' rule
+        p = min(1.0, 2.0 * _mwu_exact_sf(int(round(u_big)), n1, n2))
+        return u1, float(p)
+    n = n1 + n2
+    tie_term = float(np.sum(tie_counts.astype(float) ** 3 - tie_counts))
+    var = n1 * n2 / 12.0 * ((n + 1) - tie_term / (n * (n - 1)))
+    if not var > 0.0:
+        return u1, 1.0
+    z = (u_big - n1 * n2 / 2.0 - 0.5) / math.sqrt(var)
+    return u1, float(min(1.0, 2.0 * _normal_sf(z)))
 
-    # Sum of ranks for group 1
-    r1 = np.sum(ranks[:n1])
 
-    # U statistics
-    u1 = r1 - n1 * (n1 + 1) / 2
-    u2 = n1 * n2 - u1
-    u_stat = min(u1, u2)
-
-    # Normal approximation for large samples
-    mu = n1 * n2 / 2
-    sigma = math.sqrt(n1 * n2 * (n1 + n2 + 1) / 12)
-    z = (u_stat - mu) / sigma if sigma > 0 else 0
-    p_value = 2 * (1 - _normal_cdf(abs(z)))
-
-    return float(u_stat), float(p_value)
+def _numpy_kruskal(*groups) -> Tuple[float, float]:
+    """Kruskal-Wallis H test with tie correction and an exact chi-square p (matches scipy.stats.kruskal)."""
+    arrays = [np.asarray(g, dtype=float) for g in groups]
+    k = len(arrays)
+    n = sum(len(g) for g in arrays)
+    if k < 2 or n < 2:
+        return float("nan"), float("nan")
+    ranks, tie_counts = _rank_average(np.concatenate(arrays))
+    h = 0.0
+    start = 0
+    for g in arrays:
+        r = ranks[start:start + len(g)]
+        start += len(g)
+        if len(g):
+            h += float(np.sum(r)) ** 2 / len(g)
+    h = 12.0 / (n * (n + 1)) * h - 3.0 * (n + 1)
+    correction = 1.0 - float(np.sum(tie_counts.astype(float) ** 3 - tie_counts)) / (n ** 3 - n)
+    if not correction > 0.0:
+        return float("nan"), float("nan")
+    h /= correction
+    return float(h), float(_chi2_sf(h, k - 1))
 
 
 def _numpy_levene(*groups) -> Tuple[float, float]:
-    """Levene's test for homogeneity of variances using numpy."""
-    groups = [np.asarray(g) for g in groups]
-    k = len(groups)
+    """Levene / Brown-Forsythe test of equal variances (absolute deviations from the median)."""
+    arrays = [np.asarray(g, dtype=float) for g in groups]
+    return _numpy_f_oneway(*[np.abs(g - np.median(g)) for g in arrays])
 
-    # Use absolute deviations from median (Brown-Forsythe variant)
-    z_groups = [np.abs(g - np.median(g)) for g in groups]
 
-    # Apply one-way ANOVA on the transformed data
-    return _numpy_f_oneway(*z_groups)
+def _swilk_poly(coefs: Tuple[float, ...], x: float) -> float:
+    """Polynomial c0 + c1 x + c2 x^2 + ... (Horner)."""
+    total = 0.0
+    for c in reversed(coefs):
+        total = total * x + c
+    return total
 
 
 def _numpy_shapiro(data: np.ndarray) -> Tuple[float, float]:
-    """Simplified normality test using numpy (skewness/kurtosis based)."""
-    n = len(data)
-    if n < 3:
+    """Shapiro-Wilk W test (Royston's AS R94 algorithm, as used by scipy.stats.shapiro).
+
+    Valid for 3 <= n <= 5000.  Returns (1.0, 1.0) for fewer than 3 values or constant data.
+    """
+    x = np.sort(np.asarray(data, dtype=float).ravel())
+    n = len(x)
+    if n < 3 or not float(x[-1] - x[0]) > 0.0:
         return 1.0, 1.0
+    nn2 = n // 2
+    if n == 3:
+        a = [math.sqrt(0.5)]
+    else:
+        an25 = n + 0.25
+        m = [_norm_ppf((i - 0.375) / an25) for i in range(1, nn2 + 1)]
+        summ2 = 2.0 * sum(v * v for v in m)
+        ssumm2 = math.sqrt(summ2)
+        rsn = 1.0 / math.sqrt(n)
+        c1 = (0.0, 0.221157, -0.147981, -2.07119, 4.434685, -2.706056)
+        c2 = (0.0, 0.042981, -0.293762, -1.752461, 5.682633, -3.582633)
+        a1 = _swilk_poly(c1, rsn) - m[0] / ssumm2
+        if n > 5:
+            a2 = -m[1] / ssumm2 + _swilk_poly(c2, rsn)
+            fac = math.sqrt((summ2 - 2.0 * m[0] ** 2 - 2.0 * m[1] ** 2) / (1.0 - 2.0 * a1 ** 2 - 2.0 * a2 ** 2))
+            a = [a1, a2] + [-m[i] / fac for i in range(2, nn2)]
+        else:
+            fac = math.sqrt((summ2 - 2.0 * m[0] ** 2) / (1.0 - 2.0 * a1 ** 2))
+            a = [a1] + [-m[i] / fac for i in range(1, nn2)]
+    coef = np.zeros(n)                   # antisymmetric coefficient vector
+    for i, ai in enumerate(a):
+        coef[i] = -ai
+        coef[n - 1 - i] = ai
+    xs = x / (x[-1] - x[0])
+    asa = coef - coef.mean()
+    xsx = xs - xs.mean()
+    ssa = float(np.sum(asa * asa))
+    ssx = float(np.sum(xsx * xsx))
+    sax = float(np.sum(asa * xsx))
+    ssassx = math.sqrt(ssa * ssx)
+    w1 = (ssassx - sax) * (ssassx + sax) / (ssa * ssx)       # 1 - W without cancellation
+    w = 1.0 - w1
+    if n == 3:
+        pi6, stqr = 6.0 / math.pi, math.pi / 3.0
+        p = pi6 * (math.asin(math.sqrt(min(1.0, max(0.0, w)))) - stqr)
+        return float(w), float(min(1.0, max(0.0, p)))
+    y = math.log(w1) if w1 > 0.0 else -745.0
+    xx = math.log(n)
+    if n <= 11:
+        gamma = _swilk_poly((-2.273, 0.459), float(n))
+        if y >= gamma:
+            return float(w), 1e-19
+        y = -math.log(gamma - y)
+        mu = _swilk_poly((0.544, -0.39978, 0.025054, -6.714e-4), float(n))
+        sigma = math.exp(_swilk_poly((1.3822, -0.77857, 0.062767, -0.0020322), float(n)))
+    else:
+        mu = _swilk_poly((-1.5861, -0.31082, -0.083751, 0.0038915), xx)
+        sigma = math.exp(_swilk_poly((-0.4803, -0.082676, 0.0030302), xx))
+    return float(w), float(_normal_sf((y - mu) / sigma))
 
-    # Calculate skewness and kurtosis
-    mean = np.mean(data)
-    std = np.std(data, ddof=1)
-    if std == 0:
-        return 1.0, 1.0
 
-    skew = np.mean(((data - mean) / std) ** 3)
-    kurt = np.mean(((data - mean) / std) ** 4) - 3
+def _fisher_exact_2x2(table: Any) -> float:
+    """Two-sided Fisher exact p-value for a 2x2 table (probabilities <= the observed one are summed)."""
+    t = np.asarray(table, dtype=float)
+    a, b, c, d = int(round(t[0, 0])), int(round(t[0, 1])), int(round(t[1, 0])), int(round(t[1, 1]))
+    r1, r2, c1 = a + b, c + d, a + c
+    n = r1 + r2
+    if n == 0:
+        return 1.0
+    lo, hi = max(0, c1 - r2), min(c1, r1)
 
-    # D'Agostino-Pearson test approximation
-    # Combine skewness and kurtosis into a test statistic
-    # v1.0.0: Guard against division issues with small samples
-    skew_denom = 6 * max(n - 2, 1)
-    z_skew = skew * math.sqrt((n + 1) * (n + 3) / skew_denom)
-    kurt_denom = (n + 1)**2 * (n + 3) * (n + 5)
-    kurt_numer = 24 * n * max(n - 2, 1) * max(n - 3, 1)
-    z_kurt = kurt / math.sqrt(kurt_numer / max(kurt_denom, 1)) if kurt_denom > 0 else 0
+    def _log_pmf(k: int) -> float:
+        return (math.lgamma(r1 + 1) - math.lgamma(k + 1) - math.lgamma(r1 - k + 1)
+                + math.lgamma(r2 + 1) - math.lgamma(c1 - k + 1) - math.lgamma(r2 - c1 + k + 1)
+                - (math.lgamma(n + 1) - math.lgamma(c1 + 1) - math.lgamma(n - c1 + 1)))
 
-    k2 = z_skew**2 + z_kurt**2
-    p_value = 1 - _chi2_cdf(k2, 2)
+    probs = [math.exp(_log_pmf(k)) for k in range(lo, hi + 1)]
+    p_obs = probs[a - lo]
+    return float(min(1.0, sum(p for p in probs if p <= p_obs * (1.0 + 1e-7))))
 
-    # Return a pseudo W statistic and p-value
-    w_stat = 1 - min(abs(skew), 2) / 4  # Rough approximation
 
-    return float(w_stat), float(p_value)
+def _numpy_chi2_contingency(observed: Any, correction: bool = True) -> Tuple[float, float, int, np.ndarray]:
+    """Pearson chi-square test of independence matching scipy.stats.chi2_contingency.
+
+    Applies Yates' continuity correction on 2x2 tables (``correction=True``), exactly as scipy does.
+    Returns (chi2, p, dof, expected).
+    """
+    obs = np.asarray(observed, dtype=float)
+    row = obs.sum(axis=1, keepdims=True)
+    col = obs.sum(axis=0, keepdims=True)
+    total = float(obs.sum())
+    expected = row * col / total
+    dof = (obs.shape[0] - 1) * (obs.shape[1] - 1)
+    if dof == 0:
+        return 0.0, 1.0, 0, expected
+    adj = obs
+    if dof == 1 and correction:
+        diff = expected - obs
+        adj = obs + np.sign(diff) * np.minimum(0.5, np.abs(diff))
+    chi2 = float(np.sum((adj - expected) ** 2 / expected))
+    return chi2, float(_chi2_sf(chi2, dof)), int(dof), expected
+
+
+# ============================================================================
+# REPORT-LEVEL STATISTICS HELPERS (v1.2.9.1)
+#
+# One ordering, one set of labels and one number format for every table the
+# report prints, so the markdown and HTML versions can never disagree.
+# ============================================================================
+
+def _order_conditions(present: List[Any], preferred: Optional[List[Any]] = None) -> List[Any]:
+    """The ONE condition order used by every test, table and contrast in the report.
+
+    ``preferred`` (the metadata ``conditions`` list) wins; conditions it does not mention follow in
+    order of first appearance in the data.  Without ``preferred`` the order is first appearance.
+    Two-group quantities (t, Cohen's d, pairwise contrasts) are always "first minus second" in it.
+    """
+    seen: Dict[Any, None] = {}
+    for c in present:
+        if c is not None and c == c:
+            seen.setdefault(c, None)
+    if not preferred:
+        return list(seen)
+    ordered: List[Any] = []
+    for c in preferred:
+        if c in seen and c not in ordered:
+            ordered.append(c)
+    ordered.extend(c for c in seen if c not in ordered)
+    return ordered
+
+
+def _condition_display_labels(conditions: List[Any]) -> Dict[Any, str]:
+    """Display label for each condition: the cleaned name, but never one label for two conditions.
+
+    ``_clean_condition_name`` strips trailing "_1" / "(2)" artifacts, which would merge genuinely
+    different conditions such as Group_1 / Group_2 / Group_3 into one "Group".  Whenever cleaning
+    would make two labels identical, the affected conditions keep their original text.
+    """
+    raw = list(dict.fromkeys(c for c in conditions if c is not None and c == c))
+    cleaned = {c: (_clean_condition_name(str(c)) or str(c)) for c in raw}
+    counts: Dict[str, int] = {}
+    for lab in cleaned.values():
+        counts[lab] = counts.get(lab, 0) + 1
+    labels: Dict[Any, str] = {}
+    for c in raw:
+        lab = cleaned[c]
+        if counts[lab] > 1:
+            lab = re.sub(r"\s+", " ", str(c)).strip() or str(c)
+        labels[c] = lab
+    return labels
+
+
+def _fmt_p(p: Any) -> str:
+    """p-value text for a table cell ('< .001' for tiny values, never '0.0000'); delegates to ``_report_p_cell``."""
+    return _report_p_cell(p)
+
+
+def _p_eq(p: Any) -> str:
+    """Statement form ('p = 0.0123' / 'p < .001' / 'p n/a'); delegates to ``_report_p_text``."""
+    return _report_p_text(p)
+
+
+def _fmt_p_html(p: Any) -> str:
+    """HTML-safe table-cell p-value ('&lt; .001' for tiny values)."""
+    return _report_p_cell(p, html=True)
+
+
+def _p_eq_html(p: Any) -> str:
+    """HTML-safe statement form ('p &lt; .001')."""
+    return _report_p_text(p, html=True)
+
+
+def _fmt_stat(x: Any, digits: int = 3) -> str:
+    """Number with fixed decimals; 'undefined' for NaN / inf (e.g. a t statistic with zero variance)."""
+    return _fnum(x, f".{digits}f", na="undefined")
+
+
+def _cohens_d_label(d: Any) -> str:
+    """The ONE verbal label for a Cohen's d, used by every table and sentence in the report.
+
+    |d| < 0.1 negligible, < 0.2 very small, < 0.5 small, < 0.8 medium, < 1.2 large, otherwise very large.
+    """
+    try:
+        v = abs(float(d))
+    except (TypeError, ValueError):
+        return "undefined"
+    if v != v:
+        return "undefined"
+    if v < 0.1:
+        return "negligible"
+    if v < 0.2:
+        return "very small"
+    if v < 0.5:
+        return "small"
+    if v < 0.8:
+        return "medium"
+    if v < 1.2:
+        return "large"
+    return "very large"
+
+
+def _t_ci_halfwidth(sd: float, n: int, conf: float = 0.95) -> float:
+    """Half-width of a t-based confidence interval of a mean (0.0 when it cannot be computed)."""
+    if n is None or n < 2 or sd != sd or not sd >= 0.0:
+        return 0.0
+    return float(_t_crit(n - 1, conf) * sd / math.sqrt(n))
+
+
+def _holm_adjust(p_values: List[float]) -> List[float]:
+    """Holm step-down adjusted p-values (NaN entries are left out of the family and stay NaN)."""
+    idx = [i for i, p in enumerate(p_values) if p == p]
+    adjusted = [float("nan")] * len(p_values)
+    order = sorted(idx, key=lambda i: p_values[i])
+    m = len(order)
+    running = 0.0
+    for rank, i in enumerate(order):
+        running = max(running, min(1.0, (m - rank) * p_values[i]))
+        adjusted[i] = running
+    return adjusted
+
+
+def _name_tokens(name: Any) -> List[str]:
+    """Lower-case alphanumeric words of a column or control name ('Participant_Age' -> participant, age)."""
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", str(name))
+    return [t for t in re.split(r"[^A-Za-z0-9]+", spaced.lower()) if t]
+
+
+_CONTROL_STOPWORDS = {"and", "or", "the", "a", "an", "for", "as", "of", "with", "by", "on", "in", "to", "at",
+                      "control", "controls", "controlling", "covariate", "covariates", "variable", "variables"}
+
+
+def _looks_derived_from_a_dv(column: Any) -> bool:
+    """Survey item / composite columns (Trust_3, Trust_mean, _composite) are never covariates."""
+    name = str(column)
+    return name.startswith("_") or bool(re.search(r"_(\d+|mean|composite|sum|total)$", name, re.IGNORECASE))
+
+
+def _match_control_columns(df: pd.DataFrame, control_name: Any, exclude: Any = ()) -> List[str]:
+    """Numeric columns that ARE the named control, matched by whole words (never by substring).
+
+    'age' matches Age / Participant_Age but not Message_1, Engagement_2, Image_1 or Percentage;
+    columns derived from a DV (items, composites, anything in ``exclude``) never match.
+    """
+    wanted = [t for t in _name_tokens(control_name) if t not in _CONTROL_STOPWORDS]
+    if not wanted:
+        return []
+    banned = set(str(c) for c in exclude)
+    candidates = []
+    for col in df.columns:
+        if str(col) in banned or _looks_derived_from_a_dv(col):
+            continue
+        if not pd.api.types.is_numeric_dtype(df[col]) or pd.api.types.is_bool_dtype(df[col]):
+            continue
+        candidates.append(col)
+    exact = [c for c in candidates if _name_tokens(c) == wanted]
+    if exact:
+        return exact
+    return [c for c in candidates if set(wanted) <= set(_name_tokens(c))]
+
+
+def _find_demographic_column(df: pd.DataFrame, words: Tuple[str, ...], exclude: Any = (),
+                             numeric: bool = True) -> Optional[str]:
+    """The demographic column (Age, Gender, ...) named by whole word, preferring an exact name match."""
+    banned = set(str(c) for c in exclude)
+    exact: List[str] = []
+    partial: List[str] = []
+    for col in df.columns:
+        if str(col) in banned or _looks_derived_from_a_dv(col):
+            continue
+        is_num = pd.api.types.is_numeric_dtype(df[col]) and not pd.api.types.is_bool_dtype(df[col])
+        if numeric and not is_num:
+            continue
+        tokens = _name_tokens(col)
+        if len(tokens) == 1 and tokens[0] in words:
+            exact.append(col)
+        elif any(w in tokens for w in words):
+            partial.append(col)
+    for group in (exact, partial):
+        if group:
+            return group[0]
+    return None
+
+
+_CONDITION_NOISE_RE = re.compile(r"\s*[\(\[]\s*(?:new|copy|old|unused|duplicate)\s*[\)\]]|\s*-\s*copy\s*$", re.IGNORECASE)
+_LEVEL_FILLER_WORDS = {"x", "and", "with", "by", "vs"}
+
+
+def _parse_condition_levels(condition: Any, factors: List[Dict[str, Any]]) -> Optional[Tuple[str, ...]]:
+    """The exact level of every factor named inside a condition label, or None.
+
+    Matching is by whole token (a level is never found inside another word) and, within a factor,
+    the longest level wins, so 'No AI x Hedonic' gives ('No AI', 'Hedonic') whatever the order of
+    the factor's levels, 'Male' is not found in 'Female' and 'Receptive' not in 'Unreceptive'.
+    Every factor must be matched and nothing but separators may remain, otherwise None.
+    """
+    text = re.sub(r"\s+", " ", _CONDITION_NOISE_RE.sub("", str(condition))).strip().lower()
+    if not text:
+        return None
+    found: List[str] = []
+    for factor in factors:
+        levels = [str(lv) for lv in (factor.get("levels") or []) if str(lv).strip()]
+        matches: List[Tuple[int, int, str]] = []
+        for lv in levels:
+            norm = re.sub(r"\s+", " ", lv).strip().lower()
+            pattern = r"(?<![^\W_])" + re.escape(norm) + r"(?![^\W_])"
+            for m in re.finditer(pattern, text):
+                matches.append((m.start(), m.end(), lv))
+        maximal = [m for m in matches
+                   if not any(o[0] <= m[0] and m[1] <= o[1] and (o[1] - o[0]) > (m[1] - m[0]) for o in matches)]
+        if not maximal:
+            return None
+        start, end, level = sorted(maximal, key=lambda m: (m[0], -(m[1] - m[0])))[0]
+        found.append(level)
+        text = text[:start] + " " * (end - start) + text[end:]
+    leftovers = re.findall(r"[^\W_]+", text)
+    if any(tok not in _LEVEL_FILLER_WORDS for tok in leftovers):
+        return None
+    return tuple(found)
+
+
+def _resolve_factorial_design(conditions: List[Any], factors: List[Dict[str, Any]],
+                              max_factors: int = 3) -> Dict[str, Any]:
+    """Pick the factors a factorial ANOVA can analyse and map every condition to its levels.
+
+    Tries the first ``max_factors`` factors, then fewer, and keeps the largest prefix whose
+    condition cells form a COMPLETE crossing (every combination of the observed levels occurs).
+    Returns {"ok": True, "factors": [...], "level_map": {condition: (level, ...)}, "unparsed": [...]}
+    or {"ok": False, "reason": "..."} (the reason is printed in the report).
+    """
+    from itertools import product
+    usable = [f for f in factors if isinstance(f, dict) and len(f.get("levels") or []) >= 2]
+    if len(usable) < 2:
+        return {"ok": False, "reason": "fewer than two factors with at least two levels are defined"}
+    reason = ""
+    # names that spell out ALL usable factors can still be analysed on a prefix of them (the rest is pooled)
+    parsed_all = {cond: _parse_condition_levels(cond, usable) for cond in conditions}
+    for k in range(min(len(usable), max_factors), 1, -1):
+        facs = usable[:k]
+        level_map: Dict[Any, Tuple[str, ...]] = {}
+        unparsed: List[Any] = []
+        for cond in conditions:
+            parsed = _parse_condition_levels(cond, facs)
+            if parsed is None and parsed_all[cond] is not None:
+                parsed = parsed_all[cond][:k]
+            if parsed is None:
+                unparsed.append(cond)
+            else:
+                level_map[cond] = parsed
+        if not level_map:
+            reason = reason or "the condition names do not spell out the factor levels"
+            continue
+        used_levels = []
+        for i, fac in enumerate(facs):
+            declared = [str(lv) for lv in fac.get("levels")]
+            observed = {combo[i] for combo in level_map.values()}
+            used_levels.append([lv for lv in declared if lv in observed])
+        if any(len(lv) < 2 for lv in used_levels):
+            reason = reason or "a factor has fewer than two levels among the conditions found in the data"
+            continue
+        combos = set(level_map.values())
+        expected = len(list(product(*used_levels)))
+        if len(combos) != expected:
+            reason = (f"the conditions do not form a complete crossing of "
+                      f"{' x '.join(str(f.get('name', 'factor')) for f in facs)} "
+                      f"({len(combos)} of {expected} cells present)")
+            continue
+        return {"ok": True, "factors": facs, "levels": used_levels, "level_map": level_map,
+                "unparsed": unparsed, "skipped_factors": usable[k:]}
+    return {"ok": False, "reason": reason or "the factor structure could not be matched to the condition names"}
+
+
+def _factorial_type3(y: np.ndarray, level_index: List[np.ndarray], n_levels: List[int]) -> Dict[str, Any]:
+    """Type III sums of squares of a full-factorial between-subjects ANOVA (any number of factors).
+
+    Sum-to-zero (effect) coding; the SS of a term is the rise in residual SS when its columns are
+    removed from the saturated model.  Balanced or not, this is the SS that tests the term against
+    the unweighted marginal means (SAS / car::Anova type III).  Returns the term list and the error SS.
+    """
+    from itertools import combinations
+    n = len(y)
+    k = len(n_levels)
+
+    def _effect_columns(idx: np.ndarray, n_lv: int) -> np.ndarray:
+        cols = np.zeros((n, n_lv - 1))
+        for j in range(n_lv - 1):
+            cols[idx == j, j] = 1.0
+        cols[idx == n_lv - 1, :] = -1.0
+        return cols
+
+    main = [_effect_columns(level_index[f], n_levels[f]) for f in range(k)]
+    terms: List[Tuple[Tuple[int, ...], np.ndarray]] = []
+    for size in range(1, k + 1):
+        for subset in combinations(range(k), size):
+            cols = main[subset[0]]
+            for f in subset[1:]:
+                cols = (cols[:, :, None] * main[f][:, None, :]).reshape(n, -1)
+            terms.append((subset, cols))
+
+    def _rss(blocks: List[np.ndarray]) -> float:
+        design = np.hstack(blocks)
+        beta, *_ = np.linalg.lstsq(design, y, rcond=None)
+        resid = y - design @ beta
+        return float(np.sum(resid * resid))
+
+    ones = np.ones((n, 1))
+    full = [ones] + [cols for _, cols in terms]
+    ss_error = _rss(full)
+    n_cells = sum(c.shape[1] for c in full)
+    out_terms = []
+    for i, (subset, cols) in enumerate(terms):
+        reduced = [ones] + [c for j, (_, c) in enumerate(terms) if j != i]
+        ss = max(0.0, _rss(reduced) - ss_error)
+        out_terms.append({"factors": list(subset), "ss": ss, "df": int(cols.shape[1])})
+    return {"terms": out_terms, "ss_error": ss_error, "df_error": n - n_cells, "n_cells": n_cells}
+
+
+def _association_test(contingency: pd.DataFrame) -> Dict[str, Any]:
+    """Chi-square test of independence for a condition x category table, with validity checks.
+
+    * a single condition (or a single category) has no between-condition comparison: no test is run;
+    * 2x2 tables get Yates' continuity correction (scipy does the same by default);
+    * Cochran's rule: the test is unreliable when more than 20% of the expected counts are below 5
+      or any is below 1 -- the result is flagged ``valid=False`` and, for a 2x2 table, Fisher's exact p
+      is added.
+    """
+    observed = contingency.to_numpy(dtype=float)
+    out: Dict[str, Any] = {"n": int(observed.sum()), "n_conditions": int(observed.shape[0]),
+                           "n_categories": int(observed.shape[1])}
+    if observed.shape[0] < 2:
+        out["status"] = "single_condition"
+        return out
+    if observed.shape[1] < 2:
+        out["status"] = "single_category"
+        return out
+    if _use_scipy():
+        try:
+            chi2, p, dof, expected = scipy_stats.chi2_contingency(observed)
+        except Exception as exc:  # pragma: no cover - fall back to the numpy implementation
+            logger.warning("scipy chi2_contingency failed (%s); using the numpy implementation", exc)
+            chi2, p, dof, expected = _numpy_chi2_contingency(observed)
+    else:
+        chi2, p, dof, expected = _numpy_chi2_contingency(observed)
+    expected = np.asarray(expected, dtype=float)
+    share_low = float(np.mean(expected < 5.0))
+    min_expected = float(expected.min())
+    out.update({
+        "status": "ok", "chi2": float(chi2), "p_value": float(p), "dof": int(dof),
+        "yates": bool(dof == 1), "share_expected_below_5": share_low, "min_expected": min_expected,
+        "valid": bool(share_low <= 0.20 and min_expected >= 1.0),
+    })
+    if not out["valid"] and observed.shape == (2, 2):
+        try:
+            if _use_scipy():
+                out["fisher_p"] = float(scipy_stats.fisher_exact(observed)[1])
+            else:
+                out["fisher_p"] = _fisher_exact_2x2(observed)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Fisher exact test failed: %s", exc)
+    return out
+
 
 def _safe_to_markdown(df: pd.DataFrame, **kwargs) -> str:
     """
@@ -3523,46 +4290,53 @@ class ComprehensiveInstructorReport:
                     df_clean_copy = df_clean.copy()
                     df_clean_copy["_composite"] = composite
                     if len(conditions) >= 2:
-                        ctx.key_rows.append(self._key_test_row(str(scale_name), df_clean_copy))
+                        ctx.key_rows.append(self._key_test_row(
+                            str(scale_name), df_clean_copy, condition_order=list(conditions), condition_labels=ctx.cond_labels))
 
+                    _assigned_md: Dict[str, int] = {}
                     for cond in conditions:
                         cond_data = df_clean_copy[df_clean_copy["CONDITION"] == cond]["_composite"]
-                        # v1.2.5.1: Use total assigned N for display, valid N for stats
+                        # v1.2.5.1: SD, SE and CI use valid N only.
+                        # v1.2.9.1: the displayed N is that same analytic N (participants with a score),
+                        # not the number assigned to the condition; the difference is disclosed below the table.
                         n_total_c = len(cond_data)
                         cond_valid = cond_data.dropna()
                         n_valid_c = len(cond_valid)
                         if n_valid_c > 0:
                             mean = cond_valid.mean()
-                            n = n_total_c  # Display N
+                            n = n_valid_c  # Display analytic N
                             sd = cond_valid.std() if n_valid_c > 1 else 0.0
                             if np.isnan(sd):
                                 sd = 0.0
-                            se = sd / (n_valid_c ** 0.5) if n_valid_c > 1 else 0.0
-                            ci_low = mean - 1.96 * se
-                            ci_high = mean + 1.96 * se
+                            ci_half = _t_ci_halfwidth(sd, n_valid_c)  # t critical value (1.96 is too narrow for small n)
+                            ci_low = mean - ci_half
+                            ci_high = mean + ci_half
+                            if n_total_c != n_valid_c:
+                                _assigned_md[str(cond)] = n_total_c
                             if n == 1:
                                 lines.append(f"| {cond} | {n} | {mean:.3f} | — | N/A (single observation) |")
                             else:
                                 lines.append(f"| {cond} | {n} | {mean:.3f} | {sd:.3f} | [{ci_low:.3f}, {ci_high:.3f}] |")
                     lines.append("")
+                    if _assigned_md:
+                        lines.append("*N is the number of participants with a score (the N every statistic uses). "
+                                     "Assigned to the condition, including those without a score: "
+                                     + ", ".join(f"{k} {v}" for k, v in _assigned_md.items()) + ".*")
+                        lines.append("")
 
-                    # Effect size (Cohen's d for first two conditions)
+                    # Effect size (Cohen's d for first two conditions; first minus second, like every contrast in the report)
                     if len(conditions) >= 2:
-                        cond1_data = df_clean_copy[df_clean_copy["CONDITION"] == conditions[0]]["_composite"]
-                        cond2_data = df_clean_copy[df_clean_copy["CONDITION"] == conditions[1]]["_composite"]
+                        cond1_data = df_clean_copy[df_clean_copy["CONDITION"] == conditions[0]]["_composite"].dropna()
+                        cond2_data = df_clean_copy[df_clean_copy["CONDITION"] == conditions[1]]["_composite"].dropna()
                         if len(cond1_data) > 1 and len(cond2_data) > 1:
                             pooled_std = ((cond1_data.std()**2 + cond2_data.std()**2) / 2) ** 0.5
-                            if pooled_std > 0:
+                            if pooled_std > 0 and not (_is_constant(cond1_data.to_numpy()) and _is_constant(cond2_data.to_numpy())):
                                 cohens_d = (cond1_data.mean() - cond2_data.mean()) / pooled_std
-                                lines.append(f"**Effect size (Cohen's d, {conditions[0]} vs {conditions[1]}):** {cohens_d:.3f}")
-                                if abs(cohens_d) < 0.2:
-                                    lines.append("  → Negligible effect")
-                                elif abs(cohens_d) < 0.5:
-                                    lines.append("  → Small effect")
-                                elif abs(cohens_d) < 0.8:
-                                    lines.append("  → Medium effect")
-                                else:
-                                    lines.append("  → Large effect")
+                                lines.append(f"**Effect size (Cohen's d, {conditions[0]} - {conditions[1]}):** {cohens_d:.3f}")
+                                _d_label = _cohens_d_label(cohens_d)
+                                lines.append(f"  → {_d_label[:1].upper()}{_d_label[1:]} effect")
+                                lines.append(f"  (first minus second: positive means {conditions[0]} scores higher"
+                                             f"{'; first two conditions only' if len(conditions) > 2 else ''})")
                                 lines.append("")
 
             lines.append("")
@@ -3874,43 +4648,48 @@ class ComprehensiveInstructorReport:
         lines.append("END OF COMPREHENSIVE INSTRUCTOR REPORT")
         lines.append("-" * 80)
 
-    def _key_test_row(self, dv_name: str, df: pd.DataFrame, dv_column: str = "_composite") -> Dict[str, Any]:
+    def _key_test_row(
+        self,
+        dv_name: str,
+        df: pd.DataFrame,
+        dv_column: str = "_composite",
+        condition_order: Optional[List[Any]] = None,
+        condition_labels: Optional[Dict[Any, str]] = None,
+    ) -> Dict[str, Any]:
         """Headline test of one DV composite across conditions, for the key-results table.
 
-        Two conditions: the pooled-variance t-test and Cohen's d, with the contrast written as
-        "first - second" in the order the test used. Three or more: the one-way ANOVA and eta-squared.
-        Uses the same ``_run_statistical_tests`` results as the HTML report, so both files agree.
+        Two conditions: the pooled-variance t-test and Cohen's d; the contrast is written as
+        "first - second" exactly as ``_run_statistical_tests`` oriented it (the design's condition
+        order). Three or more: the one-way ANOVA with its degrees of freedom and eta-squared. The
+        same ``_run_statistical_tests`` call (same order and labels) as the HTML report makes, so
+        both documents print the same numbers.
         """
         row: Dict[str, Any] = {"dv": dv_name}
         try:
-            results = self._run_statistical_tests(df, dv_column, "CONDITION")
-            valid = [int(g.notna().sum()) for _, g in df.groupby("CONDITION")[dv_column]]
-            valid = [n for n in valid if n >= 2]  # the test drops groups with fewer than two observations
+            results = _finite_results_only(self._run_statistical_tests(
+                df, dv_column, "CONDITION", condition_order=condition_order, condition_labels=condition_labels))
             if "t_test" in results:
                 t_res = results["t_test"]
-                groups = [str(g) for g in (t_res.get("groups") or [])]
-                # Raw names (cleaning can merge "Group_1" and "Group_2"), when they are the groups the test used, in its order.
-                raw = [str(c) for c, g in df.groupby("CONDITION", sort=False)[dv_column] if int(g.notna().sum()) >= 2]
-                if len(raw) == 2 and [_clean_condition_name(c) for c in raw] == groups:
-                    groups = raw
                 effect = (results.get("cohens_d") or {}).get("value")
+                groups = t_res.get("groups") or []
                 row.update(
-                    contrast=" - ".join(groups) if len(groups) == 2 else "condition 1 - condition 2",
+                    contrast=str(t_res.get("contrast") or (" - ".join(str(g) for g in groups) if len(groups) == 2
+                                                           else "condition 1 - condition 2")),
                     test="pooled-variance t-test", statistic=f"t = {_fmt(t_res.get('statistic'), 2, signed=True)}",
-                    df=str(sum(valid) - 2) if len(valid) == 2 else "n/a", p=t_res.get("p_value"),
+                    df=_fmt(t_res.get("df"), 0), p=t_res.get("p_value"),
                     effect=f"d = {_fmt(effect, 2, signed=True)}",
-                    label=self._interpret_cohens_d(effect) if _finite(effect) is not None else "n/a")
+                    label=_cohens_d_label(effect) if _finite(effect) is not None else "n/a")
             elif "anova" in results:
                 a_res = results["anova"]
-                k, total = len(valid), sum(valid)
                 eta = (results.get("eta_squared") or {}).get("value")
                 row.update(
-                    contrast=f"omnibus, {a_res.get('num_groups', k)} conditions", test="one-way ANOVA",
-                    statistic=f"F = {_fmt(a_res.get('f_statistic'), 2)}", df=f"{k - 1}, {total - k}",
+                    contrast=f"omnibus, {a_res.get('num_groups', 'k')} conditions", test="one-way ANOVA",
+                    statistic=f"F = {_fmt(a_res.get('f_statistic'), 2)}",
+                    df=f"{_fmt(a_res.get('df_between'), 0)}, {_fmt(a_res.get('df_within'), 0)}",
                     p=a_res.get("p_value"), effect=f"η² = {_fmt(eta, 3)}",
                     label=self._interpret_eta_squared(eta) if _finite(eta) is not None else "n/a")
             else:
-                row["error"] = str(results.get("error", "not computed"))
+                row["error"] = str(results.get("error", "no test could be computed (no variation or too few scores)"))
         except Exception as exc:  # noqa: BLE001 - one DV must not take the whole analysis down
             logger.warning("Key test row for %s failed: %s", dv_name, exc)
             row["error"] = f"{type(exc).__name__}: {exc}"
@@ -3934,9 +4713,9 @@ class ComprehensiveInstructorReport:
                          f"{_report_p_cell(row['p'])} | {row['effect']} | {row['label']} |")
         lines += ["",
                   "Two-sided tests on each DV's composite score in the full sample (no exclusions applied); p-values are not "
-                  "corrected for the number of DVs. For two conditions the contrast is the first condition minus the second, "
-                  "and t and d carry that sign. For three or more conditions the omnibus ANOVA is shown; pairwise comparisons "
-                  "are in the HTML report.", ""]
+                  "corrected for the number of DVs. For two conditions the contrast is the first listed condition minus the "
+                  "second, and t and d carry that sign. For three or more conditions the omnibus ANOVA is shown; the "
+                  "Holm-adjusted pairwise comparisons are in the HTML report.", ""]
         return lines
 
     @staticmethod
@@ -4069,7 +4848,7 @@ class ComprehensiveInstructorReport:
                 parts.append(f"<tr><td>{_esc(row['scale'])}</td><td>{_esc(row['condition_1'])} "
                              f"&minus; {_esc(row['condition_2'])}</td>"
                              f"<td>{_esc(_source_label(row['source']))}</td><td>{intended}</td>"
-                             f"<td>{_fmt(row['d'], 3, signed=True)}</td><td>{_esc(self._interpret_cohens_d(row['d']).capitalize())}</td></tr>")
+                             f"<td>{_fmt(row['d'], 3, signed=True)}</td><td>{_esc(_cohens_d_label(row['d']).capitalize())}</td></tr>")
             parts.append("</table>")
             notes = []
             if len(shown) < len(contrasts):
@@ -4130,51 +4909,78 @@ class ComprehensiveInstructorReport:
         df: pd.DataFrame,
         dv_column: str,
         condition_column: str = "CONDITION",
+        condition_order: Optional[List[Any]] = None,
+        condition_labels: Optional[Dict[Any, str]] = None,
     ) -> Dict[str, Any]:
         """Run comprehensive statistical tests on the data.
 
-        Uses scipy if available, falls back to numpy implementations otherwise.
+        Uses scipy if available, falls back to the exact numpy implementations otherwise (both give
+        the same p-values to better than 1e-9).
+
+        v1.2.9.1 orientation: conditions are ordered ONCE -- ``condition_order`` (the metadata order)
+        when given, otherwise first appearance in the data -- and t, Cohen's d and every pairwise
+        contrast are "first minus second" in that order; the contrast text is stored under ``contrast``
+        so the report can print it next to the statistic.  Groups with fewer than 2 valid observations
+        cannot be tested; they are listed under ``groups_excluded`` instead of silently disappearing.
+        Zero-variance groups give NaN ("undefined"), never an infinite t, and the pairwise verdicts use
+        Holm-adjusted p-values (the raw p stays in ``p_value``).
         """
-        results = {}
+        results: Dict[str, Any] = {}
         results["scipy_used"] = SCIPY_AVAILABLE
 
-        # Get unique conditions
-        conditions = df[condition_column].unique().tolist()
+        # The ONE canonical condition order (metadata order when supplied, else first appearance)
+        conditions = _order_conditions(df[condition_column].dropna().unique().tolist(), condition_order)
 
         if len(conditions) < 2:
             return {"error": "Need at least 2 conditions for comparison"}
 
+        labels = {**_condition_display_labels(conditions), **(condition_labels or {})}
+
+        def _label(cond: Any) -> str:
+            return labels.get(cond) or _clean_condition_name(str(cond))
+
         # Get data by condition — dropna is needed for statistical computations
         # but we track both total N and valid N per condition.
-        groups = {cond: df[df[condition_column] == cond][dv_column].dropna().values for cond in conditions}
+        groups = {
+            cond: pd.to_numeric(df.loc[df[condition_column] == cond, dv_column], errors="coerce").dropna().to_numpy(dtype=float)
+            for cond in conditions
+        }
         # v1.2.5.0: Track total N per condition (including NaN rows) for accurate reporting
         total_n_per_cond = {cond: int((df[condition_column] == cond).sum()) for cond in conditions}
 
-        # Ensure all groups have data
+        # Groups with fewer than two valid observations cannot be tested -- say so instead of dropping silently
         valid_groups = {c: g for c, g in groups.items() if len(g) >= 2}
+        results["groups_excluded"] = [
+            {"condition": _label(c), "n": int(len(groups[c])), "n_assigned": total_n_per_cond.get(c, 0)}
+            for c in conditions if c not in valid_groups
+        ]
         if len(valid_groups) < 2:
-            return {"error": "Need at least 2 groups with 2+ observations each"}
+            return {"error": "Need at least 2 groups with 2+ observations each",
+                    "groups_excluded": results["groups_excluded"]}
 
         conditions = list(valid_groups.keys())
         groups = valid_groups
+        results["conditions"] = [_label(c) for c in conditions]
 
         # Basic descriptive stats
-        # v1.2.5.0: Report total_n (assigned to condition) alongside valid_n (non-NaN)
+        # v1.2.9.1: "n" is the ANALYTIC N (observations actually used); the assigned N stays available
         results["descriptives"] = {}
         for cond, data in groups.items():
-            clean_cond = _clean_condition_name(cond)
-            _total_n = total_n_per_cond.get(cond, len(data))
-            results["descriptives"][clean_cond] = {
-                "n": _total_n,  # Report TOTAL participants in this condition
-                "n_valid": len(data),  # Participants with valid DV data
+            n_valid = len(data)
+            sd = float(np.std(data, ddof=1))
+            results["descriptives"][_label(cond)] = {
+                "n": n_valid,
+                "n_assigned": total_n_per_cond.get(cond, n_valid),
+                "n_valid": n_valid,  # Participants with valid DV data
                 "mean": float(np.mean(data)),
-                "std": float(np.std(data, ddof=1)),
+                "std": sd,
                 "median": float(np.median(data)),
-                "se": float(np.std(data, ddof=1) / np.sqrt(len(data))) if len(data) > 0 else 0,
+                "se": sd / math.sqrt(n_valid),
+                "ci_halfwidth": _t_ci_halfwidth(sd, n_valid),
             }
 
         # Define test functions (scipy or numpy fallback)
-        if SCIPY_AVAILABLE and scipy_stats is not None:
+        if _use_scipy():
             ttest_func = lambda g1, g2, eq_var: scipy_stats.ttest_ind(g1, g2, equal_var=eq_var)
             anova_func = scipy_stats.f_oneway
             mannwhitney_func = lambda g1, g2: scipy_stats.mannwhitneyu(g1, g2, alternative='two-sided')
@@ -4187,72 +4993,114 @@ class ComprehensiveInstructorReport:
             mannwhitney_func = _numpy_mannwhitneyu
             levene_func = _numpy_levene
             shapiro_func = _numpy_shapiro
-            kruskal_func = lambda *args: _numpy_f_oneway(*args)  # Approximate
+            kruskal_func = _numpy_kruskal
+
+        nan = float("nan")
+
+        def _finite_pair(pair: Any) -> Tuple[float, float]:
+            stat, p_val = float(pair[0]), float(pair[1])
+            if not (math.isfinite(stat) and math.isfinite(p_val)):
+                return nan, nan  # e.g. zero variance: t would be +/-inf and p = 0 ("significant") -- undefined instead
+            return stat, p_val
+
+        def _t_test(a: np.ndarray, b: np.ndarray, equal_var: bool) -> Tuple[float, float]:
+            if _is_constant(a) and _is_constant(b):
+                return nan, nan
+            return _finite_pair(ttest_func(a, b, equal_var))
+
+        def _cohens_d(a: np.ndarray, b: np.ndarray) -> float:
+            mean_diff = float(np.mean(a) - np.mean(b))
+            pooled = float(np.sqrt((np.var(a, ddof=1) + np.var(b, ddof=1)) / 2))
+            if pooled > 0 and not (_is_constant(a) and _is_constant(b)):
+                return mean_diff / pooled
+            return 0.0 if mean_diff == 0 else nan
 
         try:
             # Two-group comparisons
             if len(conditions) == 2:
-                g1, g2 = groups[conditions[0]], groups[conditions[1]]
+                c1, c2 = conditions[0], conditions[1]
+                g1, g2 = groups[c1], groups[c2]
+                lab1, lab2 = _label(c1), _label(c2)
+                contrast = f"{lab1} - {lab2}"
+                mean_diff = float(np.mean(g1) - np.mean(g2))
 
-                # Independent samples t-test
-                t_stat, t_p = ttest_func(g1, g2, True)
+                # Independent samples t-test (pooled variance)
+                t_stat, t_p = _t_test(g1, g2, True)
                 results["t_test"] = {
-                    "statistic": float(t_stat),
-                    "p_value": float(t_p),
-                    **self._p_significance(float(t_p)),
-                    "groups": [_clean_condition_name(conditions[0]), _clean_condition_name(conditions[1])],
+                    "statistic": t_stat,
+                    "p_value": t_p,
+                    "df": len(g1) + len(g2) - 2,
+                    **self._p_significance(t_p),
+                    "groups": [lab1, lab2],
+                    "contrast": contrast,
+                    "mean_difference": mean_diff,
+                    "defined": bool(math.isfinite(t_stat)),
                 }
 
                 # Welch's t-test (unequal variances)
-                welch_t, welch_p = ttest_func(g1, g2, False)
+                welch_t, welch_p = _t_test(g1, g2, False)
+                s1, s2 = float(np.var(g1, ddof=1)) / len(g1), float(np.var(g2, ddof=1)) / len(g2)
+                welch_den = s1 ** 2 / (len(g1) - 1) + s2 ** 2 / (len(g2) - 1)
                 results["welch_t_test"] = {
-                    "statistic": float(welch_t),
-                    "p_value": float(welch_p),
-                    **self._p_significance(float(welch_p)),
+                    "statistic": welch_t,
+                    "p_value": welch_p,
+                    "df": float((s1 + s2) ** 2 / welch_den) if welch_den > 0 else nan,
+                    **self._p_significance(welch_p),
+                    "contrast": contrast,
                 }
 
                 # Mann-Whitney U test (non-parametric)
-                u_stat, u_p = mannwhitney_func(g1, g2)
-                results["mann_whitney"] = {
-                    "statistic": float(u_stat),
-                    "p_value": float(u_p),
-                    **self._p_significance(float(u_p)),
-                }
+                try:
+                    u_stat, u_p = mannwhitney_func(g1, g2)
+                    results["mann_whitney"] = {
+                        "statistic": float(u_stat),
+                        "p_value": float(u_p),
+                        **self._p_significance(float(u_p)),
+                        "contrast": contrast,
+                    }
+                except Exception as mw_err:
+                    logger.warning("Mann-Whitney test could not be computed: %s", mw_err)
 
-                # Cohen's d effect size
-                pooled_std = np.sqrt((np.var(g1, ddof=1) + np.var(g2, ddof=1)) / 2)
-                cohens_d = (np.mean(g1) - np.mean(g2)) / pooled_std if pooled_std > 0 else 0
+                # Cohen's d effect size (first minus second, same orientation as the t statistic)
+                cohens_d = _cohens_d(g1, g2)
                 results["cohens_d"] = {
                     "value": float(cohens_d),
-                    "interpretation": self._interpret_cohens_d(cohens_d),
+                    "interpretation": _cohens_d_label(cohens_d),
+                    "contrast": contrast,
                 }
 
             # Multi-group comparisons (2+ conditions)
             group_list = [groups[c] for c in conditions]
+            n_valid_total = sum(len(g) for g in group_list)
 
             # One-way ANOVA
-            f_stat, anova_p = anova_func(*group_list)
+            if all(_is_constant(g) for g in group_list):
+                f_stat, anova_p = nan, nan
+            else:
+                f_stat, anova_p = _finite_pair(anova_func(*group_list))
             results["anova"] = {
-                "f_statistic": float(f_stat),
-                "p_value": float(anova_p),
-                **self._p_significance(float(anova_p)),
+                "f_statistic": f_stat,
+                "p_value": anova_p,
+                **self._p_significance(anova_p),
                 "num_groups": len(conditions),
+                "df_between": len(conditions) - 1,
+                "df_within": n_valid_total - len(conditions),
             }
 
-            # Kruskal-Wallis (non-parametric) - only with scipy
-            if SCIPY_AVAILABLE and scipy_stats is not None:
+            # Kruskal-Wallis (non-parametric); exact numpy implementation when scipy is absent
+            all_data = np.concatenate(group_list)
+            if not _is_constant(all_data):
                 try:
-                    h_stat, kw_p = scipy_stats.kruskal(*group_list)
+                    h_stat, kw_p = _finite_pair(kruskal_func(*group_list))
                     results["kruskal_wallis"] = {
-                        "h_statistic": float(h_stat),
-                        "p_value": float(kw_p),
-                        **self._p_significance(float(kw_p)),
+                        "h_statistic": h_stat,
+                        "p_value": kw_p,
+                        **self._p_significance(kw_p),
                     }
-                except Exception:
-                    pass
+                except Exception as kw_err:
+                    logger.warning("Kruskal-Wallis test could not be computed: %s", kw_err)
 
             # Eta-squared effect size for ANOVA
-            all_data = np.concatenate(group_list)
             grand_mean = np.mean(all_data)
             ss_between = sum(len(g) * (np.mean(g) - grand_mean)**2 for g in group_list)
             ss_total = np.sum((all_data - grand_mean)**2)
@@ -4262,44 +5110,57 @@ class ComprehensiveInstructorReport:
                 "interpretation": self._interpret_eta_squared(eta_squared),
             }
 
-            # Levene's test for homogeneity of variances
-            levene_stat, levene_p = levene_func(*group_list)
+            # Levene's test for homogeneity of variances (undefined when every group is constant:
+            # all variances are then zero, i.e. trivially equal)
+            if all(_is_constant(g) for g in group_list):
+                levene_stat, levene_p = nan, nan
+                homogeneous = True
+            else:
+                levene_stat, levene_p = _finite_pair(levene_func(*group_list))
+                homogeneous = bool(levene_p > 0.05) if math.isfinite(levene_p) else True
             results["levene_test"] = {
-                "statistic": float(levene_stat),
-                "p_value": float(levene_p),
-                "homogeneous": levene_p > 0.05,
+                "statistic": levene_stat,
+                "p_value": levene_p,
+                "homogeneous": homogeneous,
             }
 
-            # Normality test (on pooled data, limited to 5000)
-            if len(all_data) <= 5000:
+            # Normality test (on pooled data, limited to 5000).  Shapiro-Wilk in BOTH modes: the numpy
+            # fallback is Royston's algorithm (the one scipy uses), not a skewness/kurtosis rule.
+            if 3 <= len(all_data) <= 5000 and not _is_constant(all_data):
                 shapiro_stat, shapiro_p = shapiro_func(all_data)
                 results["normality_test"] = {
                     "statistic": float(shapiro_stat),
                     "p_value": float(shapiro_p),
-                    "normal": shapiro_p > 0.05,
-                    "test_name": "Shapiro-Wilk" if SCIPY_AVAILABLE else "D'Agostino-Pearson (approx)",
+                    "normal": bool(shapiro_p > 0.05),
+                    "test_name": "Shapiro-Wilk",
                 }
 
-            # Pairwise comparisons for 3+ groups
+            # Pairwise comparisons for 3+ groups (first minus second in the canonical order)
             if len(conditions) >= 3:
                 pairwise = []
                 for i in range(len(conditions)):
                     for j in range(i + 1, len(conditions)):
                         c1, c2 = conditions[i], conditions[j]
                         g1, g2 = groups[c1], groups[c2]
-                        t_stat, t_p = ttest_func(g1, g2, True)
-                        pooled_std = np.sqrt((np.var(g1, ddof=1) + np.var(g2, ddof=1)) / 2)
-                        d = (np.mean(g1) - np.mean(g2)) / pooled_std if pooled_std > 0 else 0
+                        t_stat, t_p = _t_test(g1, g2, True)
                         pairwise.append({
-                            "comparison": f"{_clean_condition_name(c1)} vs {_clean_condition_name(c2)}",
-                            "t_stat": float(t_stat),
-                            "p_value": float(t_p),
-                            "cohens_d": float(d),
-                            **self._p_significance(float(t_p)),
+                            "comparison": f"{_label(c1)} vs {_label(c2)}",
+                            "contrast": f"{_label(c1)} - {_label(c2)}",
+                            "t_stat": t_stat,
+                            "p_value": t_p,
+                            "cohens_d": float(_cohens_d(g1, g2)),
+                            "mean_difference": float(np.mean(g1) - np.mean(g2)),
                         })
+                # Holm step-down adjustment over this DV's family of comparisons; verdicts use it
+                adjusted = _holm_adjust([comp["p_value"] for comp in pairwise])
+                for comp, p_adj in zip(pairwise, adjusted):
+                    comp["p_adjusted"] = float(p_adj)
+                    comp.update(self._p_significance(float(p_adj)))
                 results["pairwise_comparisons"] = pairwise
+                results["pairwise_adjustment"] = "Holm"
 
         except Exception as e:
+            logger.warning("Statistical test error: %s", e)
             results["error"] = f"Statistical test error: {str(e)}"
 
         return results
@@ -4419,11 +5280,12 @@ class ComprehensiveInstructorReport:
             matches = re.findall(pattern, prereg_lower)
             result["control_variables"].extend([m.strip() for m in matches])
 
-        # Check for specific control variables
-        if 'age' in prereg_lower:
+        # Check for specific control variables -- whole words only ("age" is not in "message",
+        # "engagement", "percentage" or "average"; "sex" is not in "Essex")
+        if re.search(r'\bage\b', prereg_lower):
             if 'age' not in result["control_variables"]:
                 result["control_variables"].append('age')
-        if 'gender' in prereg_lower or 'sex' in prereg_lower:
+        if re.search(r'\b(?:gender|sex)\b', prereg_lower):
             if 'gender' not in result["control_variables"]:
                 result["control_variables"].append('gender')
 
@@ -4453,6 +5315,9 @@ class ComprehensiveInstructorReport:
         condition_column: str = "CONDITION",
         include_controls: bool = True,
         prereg_controls: Optional[List[str]] = None,
+        condition_order: Optional[List[Any]] = None,
+        exclude_columns: Optional[List[str]] = None,
+        condition_labels: Optional[Dict[Any, str]] = None,
     ) -> Dict[str, Any]:
         """Run regression analysis with condition as predictor and optional control variables.
 
@@ -4462,83 +5327,98 @@ class ComprehensiveInstructorReport:
             condition_column: Name of condition column
             include_controls: Whether to include Age/Gender controls if available
             prereg_controls: Additional control variables from pre-registration
+            condition_order: Conditions in the report's one canonical order; the first one is the
+                reference level of the dummy coding (default: first appearance in the data)
+            exclude_columns: Columns derived from a DV (scale items, composites) -- never covariates
+            condition_labels: Display label per raw condition value
 
-        Works with or without scipy using numpy-based p-value approximations.
+        v1.2.9.1: the reference level is reported (``reference_category`` / ``reference_levels``) instead
+        of being the alphabetical first level that get_dummies dropped silently; covariates are matched
+        by WHOLE WORD on column names (a pre-registered "age" control can no longer pull Message_1..5 or
+        Engagement_1..5 into the model, which gave R2 = 1.000 and every p = 1.0) and a column derived
+        from a DV is never a covariate; adjusted R2 uses n - k with k INCLUDING the intercept.
+
+        Works with or without scipy (exact numpy p-values).
         """
-        results = {}
+        results: Dict[str, Any] = {}
         results["scipy_used"] = SCIPY_AVAILABLE
         results["controls_included"] = []
 
         try:
-            # Create dummy variables for conditions
-            conditions = df[condition_column].unique().tolist()
+            conditions = _order_conditions(df[condition_column].dropna().unique().tolist(), condition_order)
             if len(conditions) < 2:
                 return {"error": "Need at least 2 conditions"}
+            labels = {**_condition_display_labels(conditions), **(condition_labels or {})}
 
-            # Reference category is first condition
-            reference = _clean_condition_name(conditions[0])
+            def _label(cond: Any) -> str:
+                return labels.get(cond) or _clean_condition_name(str(cond))
 
-            # Start with condition dummies
-            X = pd.get_dummies(df[condition_column], drop_first=True)
+            # Reference category = first condition in the canonical order; every other condition is a dummy
+            reference = _label(conditions[0])
+            X = pd.DataFrame(index=df.index)
+            for cond in conditions[1:]:
+                X[_label(cond)] = (df[condition_column] == cond).astype(float)
+            results["reference_levels"] = {"Condition": reference}
 
-            # Add control variables if requested and available
-            control_cols = []
+            banned = {str(c) for c in (exclude_columns or [])} | {str(dv_column), str(condition_column)}
+            used_sources: set = set()
+
+            def _unique_name(name: str) -> str:
+                while name in X.columns:
+                    name = f"{name} (control)"
+                return name
 
             if include_controls:
-                # Age control
-                age_cols = [c for c in df.columns if 'age' in c.lower() and df[c].dtype in ['int64', 'float64']]
-                if age_cols:
-                    age_col = age_cols[0]
-                    # Standardize age for regression
-                    age_data = df[age_col].fillna(df[age_col].mean())
-                    X['Age'] = (age_data - age_data.mean()) / (age_data.std() + 1e-10)
-                    control_cols.append('Age')
+                # Age control: the demographic Age column (whole-word match), standardized
+                age_col = _find_demographic_column(df, ("age",), banned, numeric=True)
+                if age_col is not None:
+                    age_raw = pd.to_numeric(df[age_col], errors="coerce")
+                    age_data = age_raw.fillna(age_raw.mean())
+                    X[_unique_name('Age')] = (age_data - age_data.mean()) / (age_data.std() + 1e-10)
                     results["controls_included"].append('Age')
+                    used_sources.add(str(age_col))
 
-                # Gender control (dummy coded)
-                gender_cols = [c for c in df.columns if 'gender' in c.lower() or 'sex' in c.lower()]
-                if gender_cols:
-                    gender_col = gender_cols[0]
-                    gender_dummies = pd.get_dummies(df[gender_col], prefix='Gender', drop_first=True)
-                    for col in gender_dummies.columns:
-                        X[col] = gender_dummies[col]
-                        control_cols.append(col)
-                    results["controls_included"].append('Gender')
+                # Gender control (dummy coded; the alphabetical first level is the reference)
+                gender_col = _find_demographic_column(df, ("gender", "sex"), banned, numeric=False)
+                if gender_col is not None:
+                    gender_series = df[gender_col]
+                    gender_levels = sorted(gender_series.dropna().astype(str).unique().tolist())
+                    if len(gender_levels) >= 2:
+                        for level in gender_levels[1:]:
+                            X[_unique_name(f"Gender_{level}")] = (gender_series.astype(str) == level).astype(float)
+                        results["controls_included"].append('Gender')
+                        results["reference_levels"]["Gender"] = gender_levels[0]
+                    used_sources.add(str(gender_col))
 
-            # Add pre-registered control variables if specified
+            # Add pre-registered control variables if specified (whole-word column match, never DV-derived)
             if prereg_controls:
                 for ctrl_name in prereg_controls:
-                    ctrl_cols = [c for c in df.columns if ctrl_name.lower() in c.lower()]
-                    for ctrl_col in ctrl_cols:
-                        if ctrl_col not in X.columns and df[ctrl_col].dtype in ['int64', 'float64']:
-                            ctrl_data = df[ctrl_col].fillna(df[ctrl_col].mean())
-                            X[ctrl_col] = (ctrl_data - ctrl_data.mean()) / (ctrl_data.std() + 1e-10)
-                            control_cols.append(ctrl_col)
-                            results["controls_included"].append(ctrl_col)
+                    for ctrl_col in _match_control_columns(df, ctrl_name, banned):
+                        if str(ctrl_col) in used_sources:
+                            continue
+                        ctrl_raw = pd.to_numeric(df[ctrl_col], errors="coerce")
+                        ctrl_data = ctrl_raw.fillna(ctrl_raw.mean())
+                        X[_unique_name(str(ctrl_col))] = (ctrl_data - ctrl_data.mean()) / (ctrl_data.std() + 1e-10)
+                        used_sources.add(str(ctrl_col))
+                        results["controls_included"].append(str(ctrl_col))
 
-            y = df[dv_column].dropna().values
-            X = X.loc[df[dv_column].notna()]
+            y_series = pd.to_numeric(df[dv_column], errors="coerce")
+            valid_rows = y_series.notna()
+            y = y_series[valid_rows].to_numpy(dtype=np.float64)
+            X = X.loc[valid_rows].fillna(0.0)
 
             if len(y) < 3:
                 return {"error": "Insufficient data for regression"}
 
-            # CRITICAL: Convert X to numeric array to avoid dtype('O') error
-            try:
-                X_values = X.values.astype(np.float64)
-            except (ValueError, TypeError):
-                # If direct conversion fails, convert column by column
-                X_values = np.zeros((len(X), len(X.columns)), dtype=np.float64)
-                for i, col in enumerate(X.columns):
-                    try:
-                        X_values[:, i] = pd.to_numeric(X[col], errors='coerce').fillna(0).values
-                    except Exception:
-                        X_values[:, i] = 0
-
-            # Ensure y is also numeric
-            y = np.asarray(y, dtype=np.float64)
+            X_values = X.to_numpy(dtype=np.float64)
 
             # Add constant
             X_with_const = np.column_stack([np.ones(len(X_values)), X_values])
+            n = len(y)
+            k = X_with_const.shape[1]  # number of columns INCLUDING the intercept
+            df_resid = n - k
+            if df_resid <= 0:
+                return {"error": "Insufficient residual degrees of freedom for regression"}
 
             # OLS regression: beta = (X'X)^-1 X'y
             XtX_inv = np.linalg.pinv(X_with_const.T @ X_with_const)
@@ -4554,21 +5434,15 @@ class ComprehensiveInstructorReport:
             r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
 
             # Standard errors
-            n = len(y)
-            k = X_with_const.shape[1]
-            df_resid = n - k
-            mse = ss_res / df_resid if df_resid > 0 else 1
-            se = np.sqrt(np.maximum(np.diag(XtX_inv) * mse, 1e-10))
+            mse = ss_res / df_resid
+            se = np.sqrt(np.maximum(np.diag(XtX_inv) * mse, 0.0))
 
-            # t-statistics and p-values
-            t_stats = beta / se
-
-            # Calculate p-values (scipy or fallback)
-            if SCIPY_AVAILABLE and scipy_stats is not None:
-                p_values = 2 * (1 - scipy_stats.t.cdf(np.abs(t_stats), df_resid))
-            else:
-                # Use numpy fallback
-                p_values = np.array([2 * _t_sf(abs(t), df_resid) for t in t_stats])
+            # t-statistics and p-values (NaN when the standard error is zero: perfect fit / no variation)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                t_stats = np.where(se > 0, beta / se, np.nan)
+            p_values = np.array([
+                _p_t_two_sided(float(t), df_resid) if np.isfinite(t) else float("nan") for t in t_stats
+            ])
 
             results["coefficients"] = {
                 "intercept": {
@@ -4579,12 +5453,11 @@ class ComprehensiveInstructorReport:
                 }
             }
 
-            # Condition coefficients (clean names)
+            # Predictor coefficients (labels are already display names; they are not cleaned again)
             predictor_names = X.columns.tolist()
             results["reference_category"] = reference
             for i, name in enumerate(predictor_names):
-                clean_name = _clean_condition_name(name)
-                results["coefficients"][clean_name] = {
+                results["coefficients"][str(name)] = {
                     "estimate": float(beta[i + 1]),
                     "std_error": float(se[i + 1]),
                     "t_stat": float(t_stats[i + 1]),
@@ -4594,20 +5467,17 @@ class ComprehensiveInstructorReport:
 
             results["model_fit"] = {
                 "r_squared": float(r_squared),
-                "adj_r_squared": float(1 - (1 - r_squared) * (n - 1) / (n - k - 1)) if n > k + 1 else 0,
+                # adjusted R2 = 1 - (1 - R2)(n - 1)/(n - p - 1) with p = k - 1 predictors, i.e. n - k
+                "adj_r_squared": float(1 - (1 - r_squared) * (n - 1) / (n - k)),
                 "n": n,
                 "df_residual": df_resid,
+                "n_predictors": k - 1,
             }
 
             # F-test for overall model
-            if k > 1 and df_resid > 0:
+            if k > 1:
                 f_stat = (r_squared / (k - 1)) / ((1 - r_squared) / df_resid) if r_squared < 1 else float('inf')
-
-                # F-test p-value (scipy or fallback)
-                if SCIPY_AVAILABLE and scipy_stats is not None:
-                    f_p = 1 - scipy_stats.f.cdf(f_stat, k - 1, df_resid)
-                else:
-                    f_p = _f_sf(f_stat, k - 1, df_resid)
+                f_p = _p_f_sf(f_stat, k - 1, df_resid)
 
                 results["f_test"] = {
                     "f_statistic": float(f_stat),
@@ -4616,6 +5486,7 @@ class ComprehensiveInstructorReport:
                 }
 
         except Exception as e:
+            logger.warning("Regression analysis failed: %s", e)
             results["error"] = f"Regression error: {str(e)}"
 
         return results
@@ -4627,15 +5498,23 @@ class ComprehensiveInstructorReport:
         factors: List[Dict[str, Any]],
         condition_column: str = "CONDITION",
     ) -> Dict[str, Any]:
-        """Run factorial ANOVA for 2x2+ designs with interaction effects.
+        """Run a between-subjects factorial ANOVA (2 or 3 factors, all main effects and interactions).
 
-        Parses factorial structure from condition names and computes main effects
-        and interactions using Type III SS (approximated with numpy when scipy unavailable).
+        Parses the factorial structure from the condition names and computes Type III sums of squares
+        (sum-to-zero coding; identical to the classical SS in balanced designs and still valid when
+        cells differ in size).  Works with or without scipy (exact numpy p-values).
 
-        v1.2.5.0: Fixed silent row-dropping that reported wrong N. Factor parsing
-        now uses proper level matching instead of positional splitting.
+        v1.2.9.1:
+        - Factor levels are read from the condition names by exact whole-token matching, longest level
+          first -- never by substring ('AI' inside 'No AI', 'Male' inside 'Female').
+        - The residual row is stored under ``residual``; ``error`` is reserved for failures, so the
+          report's render guard no longer hides every successful analysis.
+        - Up to three factors are analysed; ``design_note`` says which factors were analysed, which were
+          not, and which rows were left out.  Conditions that do not form a complete crossing of the
+          factors return ``error`` (with ``not_crossed``) and a reason the report prints.
+        - Total df is the analytic N - 1.
         """
-        results = {}
+        results: Dict[str, Any] = {}
         results["scipy_used"] = SCIPY_AVAILABLE
 
         try:
@@ -4643,80 +5522,75 @@ class ComprehensiveInstructorReport:
             if len(factors) < 2:
                 return {"error": "Need at least 2 factors for factorial ANOVA", "single_factor": True}
 
-            # Extract factor levels from condition names
             conditions = df[condition_column].dropna().unique().tolist()
             if len(conditions) < 4:
                 return {"error": "Need at least 4 conditions for 2x2 factorial", "conditions": len(conditions)}
 
-            # Try to parse factor structure from conditions
-            factor1_name = factors[0].get("name", "Factor1") if len(factors) > 0 else "Factor1"
-            factor2_name = factors[1].get("name", "Factor2") if len(factors) > 1 else "Factor2"
-            factor1_levels = factors[0].get("levels", []) if len(factors) > 0 else []
-            factor2_levels = factors[1].get("levels", []) if len(factors) > 1 else []
-
-            # Create factor columns by parsing condition names
-            df_analysis = df.copy()
             # v1.2.5.0: Track actual sample size BEFORE any filtering
             n_actual = len(df)
 
-            def extract_factor_level(condition: str, factor_levels: List[str], factor_idx: int) -> Optional[str]:
-                """Extract factor level from condition name.
+            design = _resolve_factorial_design(conditions, factors)
+            if not design.get("ok"):
+                return {"error": f"Factorial ANOVA not run: {design.get('reason')}", "not_crossed": True,
+                        "n_actual": n_actual}
 
-                v1.2.5.0: Only uses keyword matching against known factor levels.
-                Removed the broken positional fallback that split "No AI x Utilitarian"
-                into garbage tokens.
-                """
-                condition_lower = str(condition).lower().strip()
-                for level in factor_levels:
-                    if level.lower() in condition_lower:
-                        return level
-                # If no known level matched, return None (row will be handled below)
-                return None
+            facs = design["factors"]
+            level_map: Dict[Any, Tuple[str, ...]] = design["level_map"]
+            names = [str(f.get("name", f"Factor{i + 1}")) for i, f in enumerate(facs)]
 
-            # Extract factor levels for each row
-            factor1_col = f"_factor1_{factor1_name}"
-            factor2_col = f"_factor2_{factor2_name}"
+            cell_per_row = [level_map.get(c) for c in df[condition_column]]
+            y_all = pd.to_numeric(df[dv_column], errors="coerce").to_numpy(dtype=float)
+            parsed = np.array([c is not None for c in cell_per_row], dtype=bool)
+            has_dv = np.isfinite(y_all)
+            valid = parsed & has_dv
+            n_analysis = int(valid.sum())
+            n_outside = int((df[condition_column].notna().to_numpy() & ~parsed).sum())
+            n_missing_dv = int((parsed & ~has_dv).sum())
 
-            df_analysis[factor1_col] = df_analysis[condition_column].apply(
-                lambda x: extract_factor_level(x, factor1_levels, 0)
-            )
-            df_analysis[factor2_col] = df_analysis[condition_column].apply(
-                lambda x: extract_factor_level(x, factor2_levels, 1)
-            )
-
-            # v1.2.5.0: Check how many rows successfully parsed BEFORE dropping
-            _n_parsed_f1 = df_analysis[factor1_col].notna().sum()
-            _n_parsed_f2 = df_analysis[factor2_col].notna().sum()
-            _n_dv_valid = df_analysis[dv_column].notna().sum() if dv_column in df_analysis.columns else 0
-
-            # Drop rows with missing factor assignments or DV
-            df_analysis = df_analysis.dropna(subset=[factor1_col, factor2_col, dv_column])
-
-            if len(df_analysis) < 10:
+            if n_analysis < 10:
                 return {
                     "error": "Insufficient data after factor parsing",
                     "n_actual": n_actual,
-                    "n_parsed_factor1": int(_n_parsed_f1),
-                    "n_parsed_factor2": int(_n_parsed_f2),
-                    "n_dv_valid": int(_n_dv_valid),
+                    "n_parsed": int(parsed.sum()),
+                    "n_dv_valid": int(has_dv.sum()),
                 }
 
-            # Get unique levels
-            f1_levels = df_analysis[factor1_col].unique().tolist()
-            f2_levels = df_analysis[factor2_col].unique().tolist()
+            y = y_all[valid]
+            cells = [cell_per_row[i] for i in np.flatnonzero(valid)]
 
-            if len(f1_levels) < 2 or len(f2_levels) < 2:
-                return {"error": f"Need at least 2 levels per factor. Found {len(f1_levels)} and {len(f2_levels)}"}
+            # Levels actually present among the analysed rows (declared order), and a complete-crossing check
+            from itertools import product
+            level_lists = []
+            for i, fac in enumerate(facs):
+                present = {c[i] for c in cells}
+                level_lists.append([str(lv) for lv in fac.get("levels") if str(lv) in present])
+            if any(len(lv) < 2 for lv in level_lists):
+                return {"error": "Need at least 2 levels per factor. Found "
+                                 + " and ".join(str(len(lv)) for lv in level_lists)}
+            expected_cells = list(product(*level_lists))
+            observed_cells = set(cells)
+            if len(observed_cells) != len(expected_cells):
+                return {"error": f"Factorial ANOVA not run: the conditions with data do not form a complete "
+                                 f"crossing of {' x '.join(names)} ({len(observed_cells)} of {len(expected_cells)} "
+                                 f"cells have scores)", "not_crossed": True, "n_actual": n_actual}
 
-            results["factor1"] = {"name": factor1_name, "levels": f1_levels}
-            results["factor2"] = {"name": factor2_name, "levels": f2_levels}
+            n_levels = [len(lv) for lv in level_lists]
+            level_index = []
+            for i in range(len(facs)):
+                position = {lv: j for j, lv in enumerate(level_lists[i])}
+                level_index.append(np.array([position[c[i]] for c in cells], dtype=int))
 
-            # Calculate cell means and grand mean
-            grand_mean = df_analysis[dv_column].mean()
-            # v1.2.5.0: Report ACTUAL N (full sample), not the post-filter N
-            n_total = n_actual
-            n_analysis = len(df_analysis)
-            results["n_total"] = n_total
+            n_cells = len(expected_cells)
+            df_within = n_analysis - n_cells
+            if df_within <= 0:
+                return {"error": "Insufficient degrees of freedom for error term"}
+
+            results["factors_analysed"] = [{"name": names[i], "levels": level_lists[i]} for i in range(len(facs))]
+            results["factors_not_analysed"] = [str(f.get("name", "factor")) for f in design.get("skipped_factors", [])]
+            results["factor1"] = {"name": names[0], "levels": level_lists[0]}
+            results["factor2"] = {"name": names[1], "levels": level_lists[1]}
+            results["level_map"] = level_map
+            results["n_total"] = n_actual
             results["n_analysis"] = n_analysis
             if n_analysis < n_actual:
                 results["n_dropped"] = n_actual - n_analysis
@@ -4725,164 +5599,104 @@ class ComprehensiveInstructorReport:
                     f"(missing DV or unparseable condition)"
                 )
 
-            # Cell means
-            cell_stats = {}
-            for f1 in f1_levels:
-                for f2 in f2_levels:
-                    cell_data = df_analysis[(df_analysis[factor1_col] == f1) &
-                                           (df_analysis[factor2_col] == f2)][dv_column]
-                    if len(cell_data) > 0:
-                        cell_key = f"{f1} × {f2}"
-                        cell_stats[cell_key] = {
-                            "n": len(cell_data),
-                            "mean": float(cell_data.mean()),
-                            "std": float(cell_data.std()) if len(cell_data) > 1 else 0,
-                        }
-
+            # Cell statistics (cell sizes may differ)
+            cell_stats: Dict[str, Any] = {}
+            cell_sizes = []
+            for combo in expected_cells:
+                mask = np.ones(n_analysis, dtype=bool)
+                for i, lv in enumerate(combo):
+                    mask &= level_index[i] == level_lists[i].index(lv)
+                vals = y[mask]
+                cell_sizes.append(len(vals))
+                cell_stats[" × ".join(combo)] = {
+                    "n": int(len(vals)),
+                    "mean": float(vals.mean()),
+                    "std": float(vals.std(ddof=1)) if len(vals) > 1 else 0,
+                }
             results["cell_statistics"] = cell_stats
+            balanced = len(set(cell_sizes)) == 1
 
-            # Calculate marginal means
-            f1_means = {lvl: df_analysis[df_analysis[factor1_col] == lvl][dv_column].mean() for lvl in f1_levels}
-            f2_means = {lvl: df_analysis[df_analysis[factor2_col] == lvl][dv_column].mean() for lvl in f2_levels}
-
+            # Marginal means (observed, unweighted by design)
             results["marginal_means"] = {
-                factor1_name: {_clean_condition_name(k): float(v) for k, v in f1_means.items()},
-                factor2_name: {_clean_condition_name(k): float(v) for k, v in f2_means.items()},
+                names[i]: {lv: float(y[level_index[i] == j].mean()) for j, lv in enumerate(level_lists[i])}
+                for i in range(len(facs))
             }
 
-            # Calculate Sum of Squares
-            # SS Total
-            ss_total = np.sum((df_analysis[dv_column] - grand_mean) ** 2)
+            # Type III sums of squares for every term
+            fit = _factorial_type3(y, level_index, n_levels)
+            ss_within = fit["ss_error"]
+            ms_within = ss_within / df_within
+            ss_total = float(np.sum((y - y.mean()) ** 2))
+            nan = float("nan")
 
-            # SS Factor 1 (main effect)
-            ss_f1 = sum(
-                len(df_analysis[df_analysis[factor1_col] == lvl]) * (f1_means[lvl] - grand_mean) ** 2
-                for lvl in f1_levels
-            )
+            terms = []
+            by_index: Dict[Tuple[int, ...], Dict[str, Any]] = {}
+            for t in fit["terms"]:
+                idx = t["factors"]
+                ss_t, df_t = t["ss"], t["df"]
+                ms_t = ss_t / df_t if df_t > 0 else 0.0
+                f_t = ms_t / ms_within if ms_within > 0 else nan
+                p_t = _p_f_sf(f_t, df_t, df_within) if math.isfinite(f_t) else nan
+                eta_t = ss_t / (ss_t + ss_within) if (ss_t + ss_within) > 0 else 0.0
+                entry = {
+                    "term": " × ".join(names[i] for i in idx),
+                    "factors": [names[i] for i in idx],
+                    "order": len(idx),
+                    "ss": float(ss_t),
+                    "df": int(df_t),
+                    "ms": float(ms_t),
+                    "f_statistic": float(f_t),
+                    "p_value": float(p_t),
+                    "partial_eta_squared": float(eta_t),
+                    **self._p_significance(float(p_t)),
+                    "interpretation": self._interpret_eta_squared(eta_t),
+                }
+                terms.append(entry)
+                by_index[tuple(idx)] = entry
+            results["terms"] = terms
 
-            # SS Factor 2 (main effect)
-            ss_f2 = sum(
-                len(df_analysis[df_analysis[factor2_col] == lvl]) * (f2_means[lvl] - grand_mean) ** 2
-                for lvl in f2_levels
-            )
+            # Legacy keys (first two factors) kept for existing consumers
+            _plain = ("term", "factors", "order")
+            results["main_effect_1"] = {"factor": names[0], **{k: v for k, v in by_index[(0,)].items() if k not in _plain}}
+            results["main_effect_2"] = {"factor": names[1], **{k: v for k, v in by_index[(1,)].items() if k not in _plain}}
+            results["interaction"] = {"factors": f"{names[0]} × {names[1]}",
+                                      **{k: v for k, v in by_index[(0, 1)].items() if k not in _plain}}
 
-            # SS Within (Error)
-            ss_within = 0
-            for f1 in f1_levels:
-                for f2 in f2_levels:
-                    cell_data = df_analysis[(df_analysis[factor1_col] == f1) &
-                                           (df_analysis[factor2_col] == f2)][dv_column]
-                    if len(cell_data) > 0:
-                        cell_mean = cell_data.mean()
-                        ss_within += np.sum((cell_data - cell_mean) ** 2)
-
-            # SS Interaction (by subtraction)
-            ss_interaction = ss_total - ss_f1 - ss_f2 - ss_within
-
-            # Degrees of freedom
-            df_f1 = len(f1_levels) - 1
-            df_f2 = len(f2_levels) - 1
-            df_interaction = df_f1 * df_f2
-            # v1.2.5.1: Use n_analysis (post-filter) not n_total (pre-filter)
-            df_within = n_analysis - len(f1_levels) * len(f2_levels)
-
-            if df_within <= 0:
-                return {"error": "Insufficient degrees of freedom for error term"}
-
-            # Mean squares
-            ms_f1 = ss_f1 / df_f1 if df_f1 > 0 else 0
-            ms_f2 = ss_f2 / df_f2 if df_f2 > 0 else 0
-            ms_interaction = ss_interaction / df_interaction if df_interaction > 0 else 0
-            ms_within = ss_within / df_within if df_within > 0 else 1
-
-            # F statistics
-            f_f1 = ms_f1 / ms_within if ms_within > 0 else 0
-            f_f2 = ms_f2 / ms_within if ms_within > 0 else 0
-            f_interaction = ms_interaction / ms_within if ms_within > 0 else 0
-
-            # P-values
-            if SCIPY_AVAILABLE and scipy_stats is not None:
-                p_f1 = 1 - scipy_stats.f.cdf(f_f1, df_f1, df_within)
-                p_f2 = 1 - scipy_stats.f.cdf(f_f2, df_f2, df_within)
-                p_interaction = 1 - scipy_stats.f.cdf(f_interaction, df_interaction, df_within)
-            else:
-                p_f1 = _f_sf(f_f1, df_f1, df_within)
-                p_f2 = _f_sf(f_f2, df_f2, df_within)
-                p_interaction = _f_sf(f_interaction, df_interaction, df_within)
-
-            # Effect sizes (partial eta-squared)
-            eta2_f1 = ss_f1 / (ss_f1 + ss_within) if (ss_f1 + ss_within) > 0 else 0
-            eta2_f2 = ss_f2 / (ss_f2 + ss_within) if (ss_f2 + ss_within) > 0 else 0
-            eta2_interaction = ss_interaction / (ss_interaction + ss_within) if (ss_interaction + ss_within) > 0 else 0
-
-            # Store results
-            results["main_effect_1"] = {
-                "factor": factor1_name,
-                "ss": float(ss_f1),
-                "df": df_f1,
-                "ms": float(ms_f1),
-                "f_statistic": float(f_f1),
-                "p_value": float(p_f1),
-                "partial_eta_squared": float(eta2_f1),
-                **self._p_significance(float(p_f1)),
-                "interpretation": self._interpret_eta_squared(eta2_f1),
-            }
-
-            results["main_effect_2"] = {
-                "factor": factor2_name,
-                "ss": float(ss_f2),
-                "df": df_f2,
-                "ms": float(ms_f2),
-                "f_statistic": float(f_f2),
-                "p_value": float(p_f2),
-                "partial_eta_squared": float(eta2_f2),
-                **self._p_significance(float(p_f2)),
-                "interpretation": self._interpret_eta_squared(eta2_f2),
-            }
-
-            results["interaction"] = {
-                "factors": f"{factor1_name} × {factor2_name}",
-                "ss": float(ss_interaction),
-                "df": df_interaction,
-                "ms": float(ms_interaction),
-                "f_statistic": float(f_interaction),
-                "p_value": float(p_interaction),
-                "partial_eta_squared": float(eta2_interaction),
-                **self._p_significance(float(p_interaction)),
-                "interpretation": self._interpret_eta_squared(eta2_interaction),
-            }
-
-            results["error"] = {
+            results["residual"] = {
                 "ss": float(ss_within),
-                "df": df_within,
+                "df": int(df_within),
                 "ms": float(ms_within),
             }
-
             results["total"] = {
-                "ss": float(ss_total),
-                "df": n_total - 1,
+                "ss": ss_total,
+                "df": n_analysis - 1,
             }
 
+            # One-line disclosure of exactly what was analysed
+            note = (f"Factors analysed: {' × '.join(f'{names[i]} ({n_levels[i]} levels)' for i in range(len(facs)))}"
+                    f" on N = {n_analysis}")
+            if results["factors_not_analysed"]:
+                note += (f"; not analysed (their levels are pooled): {', '.join(results['factors_not_analysed'])}")
+            if n_outside:
+                outside = sorted({_clean_condition_name(str(c)) for c in design.get("unparsed", [])})
+                note += (f"; {n_outside} participants in conditions outside the factorial crossing "
+                         f"({', '.join(outside[:5])}{', ...' if len(outside) > 5 else ''}) are excluded")
+            if n_missing_dv:
+                note += f"; {n_missing_dv} with a missing score are excluded"
+            if not balanced:
+                note += (f"; cell sizes differ (n = {min(cell_sizes)}-{max(cell_sizes)}), "
+                         f"so Type III sums of squares are used")
+            results["design_note"] = note + "."
+
         except Exception as e:
-            results["error"] = f"Factorial ANOVA error: {str(e)}"
+            logger.warning("Factorial ANOVA failed: %s", e)
+            results = {"scipy_used": SCIPY_AVAILABLE, "error": f"Factorial ANOVA error: {str(e)}"}
 
         return results
 
     def _interpret_cohens_d(self, d: float) -> str:
-        """Interpret Cohen's d effect size with detailed thresholds."""
-        abs_d = abs(d)
-        if abs_d < 0.1:
-            return "negligible"
-        elif abs_d < 0.2:
-            return "very small"
-        elif abs_d < 0.5:
-            return "small"
-        elif abs_d < 0.8:
-            return "medium"
-        elif abs_d < 1.2:
-            return "large"
-        else:
-            return "very large"
+        """Interpret Cohen's d (the one label helper shared by every table and sentence)."""
+        return _cohens_d_label(d)
 
     def _interpret_eta_squared(self, eta2: float) -> str:
         """Interpret eta-squared effect size with detailed thresholds."""
@@ -4981,6 +5795,12 @@ class ComprehensiveInstructorReport:
         if not chart_data:
             return ""
 
+        # v1.2.9.1: describe only the conditions the tests actually compared (groups with fewer than
+        # 2 scores are left out of the tests, so they must not be "highest" / "lowest" or counted)
+        _compared = stats_results.get("conditions") if isinstance(stats_results, dict) else None
+        if _compared:
+            chart_data = {c: v for c, v in chart_data.items() if c in set(_compared)} or chart_data
+
         conditions = list(chart_data.keys())
         means = {c: chart_data[c][0] for c in conditions}
         n_conditions = len(conditions)
@@ -5023,7 +5843,7 @@ class ComprehensiveInstructorReport:
                 interpretation_parts.append(
                     f"<strong>{highest[0]}</strong> scored significantly higher (M = {highest[1]:.2f}) than "
                     f"<strong>{lowest[0]}</strong> (M = {lowest[1]:.2f}), with a difference of {mean_diff:.2f} points "
-                    f"(p = {p_value:.4f})."
+                    f"({_p_eq_html(p_value)})."
                 )
                 if effect_interpretation:
                     interpretation_parts.append(
@@ -5034,7 +5854,7 @@ class ComprehensiveInstructorReport:
                 interpretation_parts.append(
                     f"A marginally significant difference was found between <strong>{highest[0]}</strong> "
                     f"(M = {highest[1]:.2f}) and <strong>{lowest[0]}</strong> (M = {lowest[1]:.2f}), "
-                    f"with a difference of {mean_diff:.2f} points (p = {p_value:.4f})."
+                    f"with a difference of {mean_diff:.2f} points ({_p_eq_html(p_value)})."
                 )
                 if effect_interpretation and effect_size:
                     interpretation_parts.append(
@@ -5044,7 +5864,7 @@ class ComprehensiveInstructorReport:
                 interpretation_parts.append(
                     f"No statistically significant difference was found between <strong>{highest[0]}</strong> "
                     f"(M = {highest[1]:.2f}) and <strong>{lowest[0]}</strong> (M = {lowest[1]:.2f})"
-                    f"{f' (p = {p_value:.4f})' if p_value else ''}."
+                    f"{f' ({_p_eq_html(p_value)})' if p_value is not None else ''}."
                 )
                 if effect_interpretation and effect_size:
                     interpretation_parts.append(
@@ -5054,7 +5874,7 @@ class ComprehensiveInstructorReport:
             # Multi-group comparison
             if is_significant and p_value is not None:
                 interpretation_parts.append(
-                    f"Significant differences were found across conditions (p = {p_value:.4f}). "
+                    f"Significant differences were found across conditions ({_p_eq_html(p_value)}). "
                     f"<strong>{highest[0]}</strong> showed the highest mean (M = {highest[1]:.2f}), "
                     f"while <strong>{lowest[0]}</strong> showed the lowest (M = {lowest[1]:.2f})."
                 )
@@ -5066,7 +5886,7 @@ class ComprehensiveInstructorReport:
             elif is_marginal and p_value is not None:
                 interpretation_parts.append(
                     f"Marginally significant differences were found across the {n_conditions} conditions "
-                    f"(p = {p_value:.4f}). "
+                    f"({_p_eq_html(p_value)}). "
                     f"<strong>{highest[0]}</strong> showed the highest mean (M = {highest[1]:.2f}), "
                     f"while <strong>{lowest[0]}</strong> showed the lowest (M = {lowest[1]:.2f})."
                 )
@@ -5078,7 +5898,7 @@ class ComprehensiveInstructorReport:
             else:
                 interpretation_parts.append(
                     f"No significant differences were found across the {n_conditions} conditions"
-                    f"{f' (p = {p_value:.4f})' if p_value else ''}. "
+                    f"{f' ({_p_eq_html(p_value)})' if p_value is not None else ''}. "
                     f"Means ranged from {lowest[1]:.2f} to {highest[1]:.2f}."
                 )
 
@@ -5226,17 +6046,16 @@ class ComprehensiveInstructorReport:
             )
 
             for i, finding in enumerate(sig_findings):
-                effect_desc = "large" if (finding["effect_type"] == "d" and finding["effect_size"] >= 0.8) or \
-                                        (finding["effect_type"] == "η²" and finding["effect_size"] >= 0.14) else \
-                             "medium" if (finding["effect_type"] == "d" and finding["effect_size"] >= 0.5) or \
-                                        (finding["effect_type"] == "η²" and finding["effect_size"] >= 0.06) else "small"
+                # v1.2.9.1: the same verbal label as every other table (d: _cohens_d_label, eta-squared: its own scale)
+                effect_desc = (_cohens_d_label(finding["effect_size"]) if finding["effect_type"] == "d"
+                               else self._interpret_eta_squared(finding["effect_size"]))
 
                 html.append(f"&nbsp;&nbsp;• <strong>{finding['scale_html']}</strong>: ")
                 if finding['highest_cond'] and finding['lowest_cond']:
                     html.append(
                         f"{finding['highest_html']} (M = {finding['highest_mean']:.2f}) > {finding['lowest_html']} (M = {finding['lowest_mean']:.2f}), "
                     )
-                _effect_txt = f", {effect_desc} effect ({finding['effect_type']} = {finding['effect_size']:.2f})" if finding['effect_type'] else ""
+                _effect_txt = f", {effect_desc} effect ({finding['effect_type']} = {_fmt_stat(finding['effect_size'], 2)})" if finding['effect_type'] else ""
                 html.append(f"{_report_p_text(finding['p_value'], html=True)}{_effect_txt}<br>")
 
             if largest_effect:
@@ -5264,8 +6083,8 @@ class ComprehensiveInstructorReport:
             )
             # Show the closest to significance
             if all_effects:
-                closest = min(all_effects, key=lambda x: x['p_value'] if x['p_value'] else 1)
-                if closest['p_value']:
+                closest = min(all_effects, key=lambda x: x['p_value'] if (x['p_value'] is not None and x['p_value'] == x['p_value']) else 1.0)
+                if closest['p_value'] is not None and closest['p_value'] == closest['p_value']:
                     html.append(f"The closest to significance was <strong>{closest['scale_html']}</strong> ({_report_p_text(closest['p_value'], html=True)}).")
         elif n_sig == 0:
             # Had marginal but no sig findings
@@ -5338,6 +6157,12 @@ class ComprehensiveInstructorReport:
         ``chart_data`` keys and ``scale_name`` are interpolated as they are, so the caller passes
         them HTML-escaped.
         """
+        # v1.2.9.1: describe only the conditions the tests actually compared (groups with fewer than
+        # 2 scores are left out of the tests and must not be counted or named as highest / lowest)
+        _compared = stats_results.get("conditions") if isinstance(stats_results, dict) else None
+        if _compared:
+            _compared_html = {_esc(c) for c in _compared}  # the keys are already HTML-escaped
+            chart_data = {c: v for c, v in chart_data.items() if c in _compared_html} or chart_data
         conditions = list(chart_data.keys())
         means = {c: chart_data[c][0] for c in conditions}
         sorted_conds = sorted(means.items(), key=lambda x: x[1], reverse=True)
@@ -5346,34 +6171,41 @@ class ComprehensiveInstructorReport:
 
         if test_type == "t_test" and "t_test" in stats_results:
             t = stats_results["t_test"]
+            if not t.get("defined", True):
+                return "The t-test cannot be computed because the scores do not vary within the conditions (zero variance), so no significance claim is made."
             if t["significant"]:
                 return f"The t-test indicates a statistically significant difference between conditions. Participants in the <strong>{highest[0]}</strong> condition scored higher (M = {highest[1]:.2f}) than those in <strong>{lowest[0]}</strong> (M = {lowest[1]:.2f})."
             elif t.get("marginally_significant"):
-                return f"The t-test found a marginally significant difference (p < .10) between conditions. <strong>{highest[0]}</strong> scored higher (M = {highest[1]:.2f}) than <strong>{lowest[0]}</strong> (M = {lowest[1]:.2f}), though this did not reach conventional significance (p < .05)."
+                return f"The t-test found a marginally significant difference (p &lt; .10) between conditions. <strong>{highest[0]}</strong> scored higher (M = {highest[1]:.2f}) than <strong>{lowest[0]}</strong> (M = {lowest[1]:.2f}), though this did not reach conventional significance (p &lt; .05)."
             else:
                 return f"The t-test did not find a statistically significant difference between the two conditions, suggesting that {scale_name} scores were similar regardless of experimental condition."
 
         elif test_type == "anova" and "anova" in stats_results:
             a = stats_results["anova"]
+            if not math.isfinite(a.get("f_statistic", float("nan"))):
+                return "The ANOVA cannot be computed because the scores do not vary within the conditions (zero variance), so no significance claim is made."
             if a["significant"]:
                 return f"The ANOVA reveals significant variation in {scale_name} across conditions. <strong>{highest[0]}</strong> showed the highest scores while <strong>{lowest[0]}</strong> showed the lowest. Post-hoc comparisons (below) identify which specific pairs differ."
             elif a.get("marginally_significant"):
-                return f"The ANOVA found marginally significant variation (p < .10) in {scale_name} across the {len(conditions)} conditions. <strong>{highest[0]}</strong> showed the highest scores while <strong>{lowest[0]}</strong> showed the lowest. This trend may warrant further investigation with a larger sample."
+                return f"The ANOVA found marginally significant variation (p &lt; .10) in {scale_name} across the {len(conditions)} conditions compared. <strong>{highest[0]}</strong> showed the highest scores while <strong>{lowest[0]}</strong> showed the lowest. This trend may warrant further investigation with a larger sample."
             else:
-                return f"The ANOVA did not detect significant differences in {scale_name} across the {len(conditions)} conditions, suggesting the experimental manipulation may not have affected this outcome."
+                return f"The ANOVA did not detect significant differences in {scale_name} across the {len(conditions)} conditions compared, suggesting the experimental manipulation may not have affected this outcome."
 
         elif test_type == "effect_size":
             if "cohens_d" in stats_results:
                 d = stats_results["cohens_d"]
-                interpretation = d["interpretation"]
-                if abs(d["value"]) >= 0.8:
-                    return f"The effect size is <strong>large</strong> (d = {d['value']:.2f}), indicating a substantial and practically meaningful difference between conditions."
-                elif abs(d["value"]) >= 0.5:
-                    return f"The effect size is <strong>medium</strong> (d = {d['value']:.2f}), suggesting a moderate and potentially meaningful difference."
-                elif abs(d["value"]) >= 0.2:
-                    return f"The effect size is <strong>small</strong> (d = {d['value']:.2f}), indicating a modest difference that may have limited practical significance."
-                else:
-                    return f"The effect size is <strong>negligible</strong> (d = {d['value']:.2f}), suggesting minimal practical difference between conditions."
+                label = _cohens_d_label(d["value"])
+                value = _fmt_stat(d["value"], 2)
+                sentences = {
+                    "undefined": "The effect size is undefined because the scores do not vary within the conditions.",
+                    "negligible": f"The effect size is <strong>negligible</strong> (d = {value}), suggesting minimal practical difference between conditions.",
+                    "very small": f"The effect size is <strong>very small</strong> (d = {value}), a difference too small to matter in most practical settings.",
+                    "small": f"The effect size is <strong>small</strong> (d = {value}), indicating a modest difference that may have limited practical significance.",
+                    "medium": f"The effect size is <strong>medium</strong> (d = {value}), suggesting a moderate and potentially meaningful difference.",
+                    "large": f"The effect size is <strong>large</strong> (d = {value}), indicating a substantial and practically meaningful difference between conditions.",
+                    "very large": f"The effect size is <strong>very large</strong> (d = {value}), indicating a very substantial difference between conditions.",
+                }
+                return sentences.get(label, "")
             elif "eta_squared" in stats_results:
                 e = stats_results["eta_squared"]
                 return f"The effect size (η² = {e['value']:.3f}) indicates that {e['value']*100:.1f}% of variance in {scale_name} is explained by condition assignment ({e['interpretation']} effect)."
@@ -5446,7 +6278,8 @@ class ComprehensiveInstructorReport:
             varies = not _composite_has_no_variation(frame["_item"], frame["CONDITION"])
             test: Dict[str, Any] = {}
             if varies and len(cells) >= 2:
-                test = _finite_results_only(self._run_statistical_tests(frame, "_item", "CONDITION"))
+                test = _finite_results_only(self._run_statistical_tests(
+                    frame, "_item", "CONDITION", condition_order=list(conditions)))  # same orientation as the composite
             rows.append({"item": str(col), "cells": cells, "varies": varies, "test": test})
         return rows
 
@@ -5584,7 +6417,7 @@ class ComprehensiveInstructorReport:
             annotation_text = []
             if p_value is not None:
                 sig_symbol = self._p_significance(p_value)["sig_label"]
-                annotation_text.append(f"p = {p_value:.4f} {sig_symbol}")
+                annotation_text.append(f"{_p_eq(p_value)} {sig_symbol}")
             if effect_size is not None:
                 annotation_text.append(f"d = {effect_size:.2f}")
 
@@ -5653,7 +6486,7 @@ class ComprehensiveInstructorReport:
 
             # Clean condition names for display
             df_plot = df.copy()
-            df_plot['_clean_condition'] = df_plot[condition_column].apply(_clean_condition_name)
+            df_plot['_clean_condition'] = df_plot[condition_column].map(_condition_display_labels(df_plot[condition_column].dropna().unique().tolist()))
             conditions = df_plot['_clean_condition'].unique().tolist()
 
             # Modern color palette
@@ -5745,7 +6578,7 @@ class ComprehensiveInstructorReport:
                 plt.close('all')
                 fig, ax = plt.subplots(figsize=(8, 5))
                 df_plot = df.copy()
-                df_plot['_clean_condition'] = df_plot[condition_column].apply(_clean_condition_name)
+                df_plot['_clean_condition'] = df_plot[condition_column].map(_condition_display_labels(df_plot[condition_column].dropna().unique().tolist()))
                 conditions = df_plot['_clean_condition'].unique().tolist()
                 box_data = [df_plot[df_plot['_clean_condition'] == c][column].dropna().values for c in conditions]
 
@@ -5797,7 +6630,7 @@ class ComprehensiveInstructorReport:
                     cell_data = df[(df[factor1_col] == f1) & (df[factor2_col] == f2)][column].dropna()
                     if len(cell_data) > 0:
                         means.append(cell_data.mean())
-                        errors.append(1.96 * cell_data.std() / np.sqrt(len(cell_data)) if len(cell_data) > 1 else 0)
+                        errors.append(_t_ci_halfwidth(float(cell_data.std()), len(cell_data)))
                     else:
                         means.append(np.nan)
                         errors.append(0)
@@ -5959,7 +6792,7 @@ class ComprehensiveInstructorReport:
 
             # Clean condition names for display
             df_plot = df.copy()
-            df_plot['_clean_condition'] = df_plot[condition_column].apply(_clean_condition_name)
+            df_plot['_clean_condition'] = df_plot[condition_column].map(_condition_display_labels(df_plot[condition_column].dropna().unique().tolist()))
             conditions = df_plot['_clean_condition'].unique().tolist()
 
             # Modern color palette with transparency
@@ -6444,6 +7277,7 @@ class ComprehensiveInstructorReport:
         """Section 1: sample size, exclusions and condition distribution."""
         html_parts, df, n_total, n_clean, exclusion_rate, conditions = (
             ctx.out, ctx.df, ctx.n_total, ctx.n_clean, ctx.exclusion_rate, ctx.conditions)
+        _cond_label = ctx.cond_label  # v1.2.9.1: one collision-free label per condition
 
         html_parts.append("<a id='sample-overview'></a>")
         html_parts.append("<h2>1. Sample Overview</h2>")
@@ -6461,7 +7295,7 @@ class ComprehensiveInstructorReport:
             cond_counts = df["CONDITION"].value_counts()
             for cond, count in cond_counts.items():
                 pct = count / n_total * 100
-                clean_cond = _clean_condition_name(cond)
+                clean_cond = _cond_label(cond)
                 html_parts.append(f"<tr><td>{_esc(clean_cond)}</td><td>{count}</td><td>{pct:.1f}%</td></tr>")
             html_parts.append("</table>")
 
@@ -6497,6 +7331,19 @@ class ComprehensiveInstructorReport:
         """Section 3: the block of one dependent variable (``ctx.dv_batch`` holds just that scale)."""
         html_parts, df_clean, metadata, conditions, prereg_text = ctx.out, ctx.df_clean, ctx.metadata, ctx.conditions, ctx.prereg_text
         all_scale_results, _html_col_registry, scales = ctx.all_scale_results, ctx.col_registry, ctx.dv_batch
+        _cond_labels, _cond_label = ctx.cond_labels, ctx.cond_label  # v1.2.9.1: one label per condition
+
+        # v1.2.9.1: every column that belongs to ANY DV (its items and composites) -- never a covariate
+        _dv_item_columns: set = set()
+        for _reg_cols in _html_col_registry.values():
+            _dv_item_columns.update(str(c) for c in _reg_cols)
+        for _sc in (ctx.scales or scales):
+            if not isinstance(_sc, dict):
+                continue  # a malformed scale entry is handled (and reported) by its own DV block
+            try:
+                _dv_item_columns.update(str(c) for c in _find_scale_columns(df_clean, _sc, _html_col_registry))
+            except (AttributeError, TypeError, ValueError):
+                logger.warning("DV columns of %r could not be listed for the covariate exclusion", _sc, exc_info=True)
 
         for scale in scales:
             scale_name = scale.get("name", "Scale")
@@ -6530,30 +7377,49 @@ class ComprehensiveInstructorReport:
                 html_parts.append("<table><tr><th>Condition</th><th>N</th><th>Mean</th><th>SD</th><th>95% CI</th></tr>")
 
                 chart_data = {}
+                _assigned_note: Dict[str, int] = {}
+                _no_score_conds: List[str] = []
                 for cond in conditions:
                     cond_data = df_analysis[df_analysis["CONDITION"] == cond]["_composite"].dropna()
-                    # v1.2.5.1: N for display = total assigned to condition.
-                    # N for statistics (SD, SE, CI) = valid observations only.
+                    # v1.2.5.1: SD, SE and CI use valid observations only.
+                    # v1.2.9.1: the displayed N is that same analytic N (observations with a score),
+                    # not the number assigned to the condition; the difference is disclosed below the table.
                     n_total_cond = int((df_analysis["CONDITION"] == cond).sum())
                     n_valid = len(cond_data)
                     if n_valid > 0:
                         mean = cond_data.mean()
-                        n = n_total_cond  # Display total N
+                        n = n_valid  # Display analytic N
                         # v1.2.5.1: SD and SE MUST use valid N, not total N
                         sd = cond_data.std() if n_valid > 1 else 0.0
                         if np.isnan(sd):
                             sd = 0.0
                         se = sd / np.sqrt(n_valid) if n_valid > 1 else 0.0
-                        ci_low = mean - 1.96 * se
-                        ci_high = mean + 1.96 * se
-                        clean_cond = _clean_condition_name(cond)
+                        ci_half = _t_ci_halfwidth(sd, n_valid)  # t critical value (1.96 is too narrow for small n)
+                        ci_low = mean - ci_half
+                        ci_high = mean + ci_half
+                        clean_cond = _cond_label(cond)
+                        if n_total_cond != n_valid:
+                            _assigned_note[clean_cond] = n_total_cond
                         if n == 1:
                             html_parts.append(f"<tr><td>{_esc(clean_cond)}</td><td>{n}</td><td>{mean:.3f}</td><td>—</td><td>N/A (single observation)</td></tr>")
                         else:
                             html_parts.append(f"<tr><td>{_esc(clean_cond)}</td><td>{n}</td><td>{mean:.3f}</td><td>{sd:.3f}</td><td>[{ci_low:.3f}, {ci_high:.3f}]</td></tr>")
-                        chart_data[clean_cond] = (mean, 1.96 * se)
+                        chart_data[clean_cond] = (mean, ci_half)
+                    else:
+                        _no_score_conds.append(_cond_label(cond))
 
                 html_parts.append("</table>")
+                if _assigned_note or _no_score_conds:
+                    _note_bits = []
+                    if _assigned_note:
+                        _note_bits.append(
+                            "N is the number of participants with a score (the N every statistic uses). "
+                            "Assigned to the condition, including those without a score: "
+                            + ", ".join(f"{_html_lib.escape(str(k))} {v}" for k, v in _assigned_note.items()) + "."
+                        )
+                    if _no_score_conds:
+                        _note_bits.append("No valid scores in: " + ", ".join(_html_lib.escape(str(c)) for c in _no_score_conds) + ".")
+                    html_parts.append("<p style='font-size:0.85em;color:#64748b;'>" + " ".join(_note_bits) + "</p>")
                 # The interpretation helpers return HTML built from these names: hand them escaped copies.
                 chart_data_html = {_esc(k): v for k, v in chart_data.items()}
 
@@ -6576,7 +7442,10 @@ class ComprehensiveInstructorReport:
                 # Run statistical tests first to get effect size and p-value for chart
                 stats_results = {}
                 if len(conditions) >= 2 and "CONDITION" in df_analysis.columns:
-                    stats_results = self._run_statistical_tests(df_analysis, "_composite", "CONDITION")
+                    stats_results = self._run_statistical_tests(
+                        df_analysis, "_composite", "CONDITION",
+                        condition_order=list(conditions), condition_labels=_cond_labels,
+                    )
                     stats_results = _finite_results_only(stats_results)  # v1.2.9.1: no nan/inf test ever reaches the page
 
                 # Extract effect size and p-value for bar chart annotation
@@ -6597,13 +7466,11 @@ class ComprehensiveInstructorReport:
                 svg_dist_data = {}
                 if "CONDITION" in df_analysis.columns:
                     for cond in conditions:
-                        mask = df_analysis["CONDITION"].apply(
-                            lambda x, _c=cond: _clean_condition_name(str(x)) == _clean_condition_name(str(_c))
-                        )
-                        svg_dist_data[_clean_condition_name(str(cond))] = df_analysis.loc[mask, "_composite"].dropna().tolist()
+                        mask = df_analysis["CONDITION"] == cond  # exact match: Group_1 / Group_2 stay separate
+                        svg_dist_data[_cond_label(cond)] = df_analysis.loc[mask, "_composite"].dropna().tolist()
 
-                # Clean chart_data keys for consistency
-                clean_chart_data = {_clean_condition_name(str(k)): v for k, v in chart_data.items()}
+                # chart_data keys are already the collision-free display labels
+                clean_chart_data = dict(chart_data)
 
                 # === TRY MATPLOTLIB CHARTS FIRST ===
                 if MATPLOTLIB_AVAILABLE:
@@ -6779,6 +7646,16 @@ class ComprehensiveInstructorReport:
 
                     html_parts.append("<h4>Statistical Tests</h4>")
 
+                    # v1.2.9.1: groups with fewer than 2 scores cannot be tested -- say so, and say how many were compared
+                    _excl_groups = stats_results.get("groups_excluded") or []
+                    if _excl_groups:
+                        _n_compared = len(stats_results.get("conditions") or [])
+                        html_parts.append(
+                            "<p style='font-size:0.9em;color:#b45309;'>Not included in the tests below (fewer than 2 scores): "
+                            + ", ".join(f"{_html_lib.escape(str(g.get('condition', '')))} (n = {g.get('n', 0)})" for g in _excl_groups)
+                            + f". The tests compare the remaining {_n_compared} condition{'s' if _n_compared != 1 else ''}.</p>"
+                        )
+
                     # Two-group tests (t-test)
                     if "t_test" in stats_results:
                         t = stats_results["t_test"]
@@ -6786,7 +7663,8 @@ class ComprehensiveInstructorReport:
                         prereg_badge = " <span style='background:#27ae60;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>PRE-REGISTERED</span>" if prereg_analyses.get("t_test") else " <span style='background:#95a5a6;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>ADDITIONAL</span>"
                         html_parts.append("<div class='stat-box'>")
                         html_parts.append(f"<strong>Independent Samples t-test:</strong>{prereg_badge}<br>")
-                        html_parts.append(f"t = {t['statistic']:.3f}, <span class='{sig_class}'>p = {t['p_value']:.4f}</span>")
+                        html_parts.append(f"t = {_fmt_stat(t['statistic'])}, <span class='{sig_class}'>{_p_eq_html(t['p_value'])}</span>")
+                        html_parts.append(f" <span style='color:#64748b;font-size:0.9em;'>(df = {t.get('df', '')}; difference = {_html_lib.escape(str(t.get('contrast', '')))})</span>")
                         # Add interpretation
                         interp = self._generate_stat_test_interpretation("t_test", stats_results, chart_data_html, scale_name_html)
                         if interp:
@@ -6797,7 +7675,7 @@ class ComprehensiveInstructorReport:
                     if "cohens_d" in stats_results:
                         d = stats_results["cohens_d"]
                         html_parts.append("<div class='stat-box'>")
-                        html_parts.append(f"<strong>Effect Size (Cohen's d):</strong> {d['value']:.3f}")
+                        html_parts.append(f"<strong>Effect Size (Cohen's d):</strong> {_fmt_stat(d['value'])} <span style='color:#64748b;font-size:0.9em;'>({_html_lib.escape(str(d.get('contrast', '')))}; positive = the first-named condition scores higher)</span>")
                         # Add interpretation
                         interp = self._generate_stat_test_interpretation("effect_size", stats_results, chart_data_html, scale_name_html)
                         if interp:
@@ -6811,7 +7689,8 @@ class ComprehensiveInstructorReport:
                         prereg_badge = " <span style='background:#27ae60;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>PRE-REGISTERED</span>" if prereg_analyses.get("anova") else " <span style='background:#95a5a6;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>ADDITIONAL</span>"
                         html_parts.append("<div class='stat-box'>")
                         html_parts.append(f"<strong>One-way ANOVA:</strong>{prereg_badge}<br>")
-                        html_parts.append(f"F = {a['f_statistic']:.3f}, <span class='{sig_class}'>p = {a['p_value']:.4f}</span>")
+                        html_parts.append(f"F = {_fmt_stat(a['f_statistic'])}, <span class='{sig_class}'>{_p_eq_html(a['p_value'])}</span>")
+                        html_parts.append(f" <span style='color:#64748b;font-size:0.9em;'>(df = {a.get('df_between', '')}, {a.get('df_within', '')}; {a.get('num_groups', '')} conditions compared)</span>")
                         # Add interpretation
                         interp = self._generate_stat_test_interpretation("anova", stats_results, chart_data_html, scale_name_html)
                         if interp:
@@ -6834,20 +7713,20 @@ class ComprehensiveInstructorReport:
                     if "levene_test" in stats_results:
                         lev = stats_results["levene_test"]
                         if lev["homogeneous"]:
-                            assumption_notes.append(f"Variance homogeneity: ✓ Met (Levene's p = {lev['p_value']:.3f})")
+                            assumption_notes.append(f"Variance homogeneity: ✓ Met (Levene's {_p_eq_html(lev['p_value'])})")
                         else:
                             # No correction is applied: the t-test / ANOVA shown above assume equal variances.
                             _pooled_test = "pooled-variance t-test" if "t_test" in stats_results else "one-way ANOVA"
-                            assumption_notes.append(f"Variance homogeneity: not met (Levene's p = {lev['p_value']:.3f}); "
+                            assumption_notes.append(f"Variance homogeneity: not met (Levene's {_p_eq_html(lev['p_value'])}); "
                                                     f"the {_pooled_test} shown above assumes equal variances, so read its p-value with caution")
 
                     if "normality_test" in stats_results:
                         sw = stats_results["normality_test"]
-                        _normality_name = _esc(sw.get("test_name", "Normality test"))
+                        _sw_name = _html_lib.escape(str(sw.get("test_name", "Shapiro-Wilk")))
                         if sw["normal"]:
-                            assumption_notes.append(f"Normality (pooled across conditions): ✓ Met ({_normality_name} p = {sw['p_value']:.3f})")
+                            assumption_notes.append(f"Normality: ✓ Met ({_p_eq_html(sw['p_value'])}, {_sw_name} on the pooled scores)")
                         else:
-                            assumption_notes.append(f"Normality (pooled across conditions): not met ({_normality_name} p = {sw['p_value']:.3f}); "
+                            assumption_notes.append(f"Normality: not met ({_p_eq_html(sw['p_value'])}, {_sw_name} on the pooled scores); "
                                                     "no rank-based test is shown in this report")
 
                     if assumption_notes:
@@ -6858,7 +7737,7 @@ class ComprehensiveInstructorReport:
                     # Pairwise comparisons for 3+ groups
                     if "pairwise_comparisons" in stats_results and len(stats_results["pairwise_comparisons"]) > 0:
                         html_parts.append("<h4>Pairwise Comparisons</h4>")
-                        html_parts.append("<table><tr><th>Comparison</th><th>t</th><th>p</th><th>Cohen's d</th><th>Significant</th></tr>")
+                        html_parts.append("<table><tr><th>Comparison (first - second)</th><th>t</th><th>p (raw)</th><th>p (Holm)</th><th>Cohen's d</th><th>Significant (Holm)</th></tr>")
 
                         sig_pairs = []
                         marginal_pairs = []
@@ -6869,7 +7748,7 @@ class ComprehensiveInstructorReport:
                             _is_marginal = comp.get("marginally_significant", False)
                             sig_class = "sig" if comp["significant"] else ("marginal" if _is_marginal else "nonsig")
                             sig_text = "Yes" if comp["significant"] else ("Marginal" if _is_marginal else "No")
-                            html_parts.append(f"<tr><td>{_esc(comp['comparison'])}</td><td>{comp['t_stat']:.3f}</td><td class='{sig_class}'>{comp['p_value']:.4f}</td><td>{comp['cohens_d']:.3f}</td><td class='{sig_class}'>{sig_text}</td></tr>")
+                            html_parts.append(f"<tr><td>{_esc(comp['comparison'])}</td><td>{_fmt_stat(comp['t_stat'])}</td><td>{_fmt_p_html(comp['p_value'])}</td><td class='{sig_class}'>{_fmt_p_html(comp.get('p_adjusted', comp['p_value']))}</td><td>{_fmt_stat(comp['cohens_d'])}</td><td class='{sig_class}'>{sig_text}</td></tr>")
 
                             if comp["significant"]:
                                 sig_pairs.append(comp['comparison'])
@@ -6880,18 +7759,23 @@ class ComprehensiveInstructorReport:
                                 largest_effect_pair = comp
 
                         html_parts.append("</table>")
+                        html_parts.append(
+                            f"<p style='font-size:0.85em;color:#64748b;'>t and d are first minus second condition in the order of the descriptive table "
+                            f"(positive = the first-named condition scores higher). p (raw) is uncorrected; p (Holm) is adjusted for the "
+                            f"{len(stats_results['pairwise_comparisons'])} comparisons made for this DV and decides the Significant column.</p>"
+                        )
 
                         # Interpretation instead of warning
                         html_parts.append("<div class='interpretation-box' style='background:#f8f9fa;padding:15px;border-radius:6px;margin:15px 0;border-left:3px solid #3498db;'>")
                         html_parts.append("<strong>Key Finding:</strong> ")
                         if sig_pairs:
-                            html_parts.append(f"{len(sig_pairs)} of {len(stats_results['pairwise_comparisons'])} pairwise comparisons reached statistical significance. ")
+                            html_parts.append(f"{len(sig_pairs)} of {len(stats_results['pairwise_comparisons'])} pairwise comparisons reached statistical significance after Holm adjustment. ")
                             if largest_effect_pair:
-                                html_parts.append(f"The largest effect was between {_esc(largest_effect_pair['comparison'])} (d = {largest_effect_pair['cohens_d']:.2f}).")
+                                html_parts.append(f"The largest effect was between {_esc(largest_effect_pair['comparison'])} (d = {_fmt_stat(largest_effect_pair['cohens_d'], 2)}).")
                         elif marginal_pairs:
-                            html_parts.append(f"No pairwise comparisons reached conventional significance (p < .05), but {len(marginal_pairs)} showed marginally significant differences (p < .10): {_esc(', '.join(marginal_pairs))}.")
+                            html_parts.append(f"No pairwise comparisons reached conventional significance (Holm-adjusted p &lt; .05), but {len(marginal_pairs)} showed marginally significant differences (Holm-adjusted p &lt; .10): {_esc(', '.join(marginal_pairs))}.")
                         else:
-                            html_parts.append("No pairwise comparisons reached statistical significance, suggesting the overall ANOVA effect may be driven by subtle differences across multiple groups rather than any single pair.")
+                            html_parts.append("No pairwise comparisons reached statistical significance after Holm adjustment, suggesting the overall ANOVA effect may be driven by subtle differences across multiple groups rather than any single pair.")
                         html_parts.append("</div>")
 
                         # Forest plot for effect sizes
@@ -6911,7 +7795,10 @@ class ComprehensiveInstructorReport:
                     reg_results = self._run_regression_analysis(
                         df_analysis, "_composite", "CONDITION",
                         include_controls=True,
-                        prereg_controls=prereg_controls
+                        prereg_controls=prereg_controls,
+                        condition_order=list(conditions),
+                        exclude_columns=sorted(_dv_item_columns),
+                        condition_labels=_cond_labels,
                     )
                     reg_results = _finite_results_only(reg_results)
 
@@ -6923,15 +7810,24 @@ class ComprehensiveInstructorReport:
                         controls_used = reg_results.get("controls_included", [])
                         if controls_used:
                             html_parts.append(f"<div class='stat-box'><strong>Control variables included:</strong> {_esc(', '.join(controls_used))}</div>")
+                        # v1.2.9.1: say which level every dummy-coded factor is measured against
+                        _ref_levels = reg_results.get("reference_levels") or {}
+                        if _ref_levels:
+                            html_parts.append(
+                                "<div class='stat-box'><strong>Reference levels:</strong> "
+                                + "; ".join(f"{_html_lib.escape(str(k))} = {_html_lib.escape(str(v))}" for k, v in _ref_levels.items())
+                                + ". Each condition coefficient is that condition's difference from the reference condition, "
+                                  "holding the controls constant.</div>"
+                            )
 
                         html_parts.append("<div class='stat-box'>")
                         fit = reg_results["model_fit"]
-                        html_parts.append(f"<strong>Model Fit:</strong> R² = {fit['r_squared']:.4f}, Adj. R² = {fit['adj_r_squared']:.4f}<br>")
+                        html_parts.append(f"<strong>Model Fit:</strong> R² = {fit['r_squared']:.4f}, Adj. R² = {fit['adj_r_squared']:.4f} (N = {fit['n']})<br>")
 
                         if "f_test" in reg_results:
                             f = reg_results["f_test"]
                             sig_class = "sig" if f["significant"] else ("marginal" if f.get("marginally_significant") else "nonsig")
-                            html_parts.append(f"<strong>F-test:</strong> F = {f['f_statistic']:.3f}, <span class='{sig_class}'>p = {f['p_value']:.4f}</span><br>")
+                            html_parts.append(f"<strong>F-test:</strong> F = {_fmt_stat(f['f_statistic'])}, <span class='{sig_class}'>{_p_eq_html(f['p_value'])}</span> (df = {fit.get('n_predictors', '')}, {fit['df_residual']})<br>")
 
                         # Coefficients table
                         if "coefficients" in reg_results:
@@ -6939,7 +7835,7 @@ class ComprehensiveInstructorReport:
                             html_parts.append("<table><tr><th>Predictor</th><th>B</th><th>SE</th><th>t</th><th>p</th></tr>")
                             for pred, coef in reg_results["coefficients"].items():
                                 sig_class = "sig" if coef.get("significant") else ("marginal" if coef.get("marginally_significant") else "nonsig")
-                                html_parts.append(f"<tr><td>{_esc(pred)}</td><td>{coef['estimate']:.3f}</td><td>{coef['std_error']:.3f}</td><td>{coef['t_stat']:.3f}</td><td class='{sig_class}'>{coef['p_value']:.4f}</td></tr>")
+                                html_parts.append(f"<tr><td>{_esc(pred)}</td><td>{coef['estimate']:.3f}</td><td>{coef['std_error']:.3f}</td><td>{_fmt_stat(coef['t_stat'])}</td><td class='{sig_class}'>{_fmt_p_html(coef['p_value'])}</td></tr>")
                             html_parts.append("</table>")
 
                         # Regression interpretation
@@ -6950,40 +7846,29 @@ class ComprehensiveInstructorReport:
                         html_parts.append("</em>")
                         html_parts.append("</div>")
 
-                    # Factorial ANOVA for 2x2+ designs (only show if successful)
+                    # Factorial ANOVA for 2x2+ designs
                     factors = metadata.get("factors", [])
                     if len(factors) >= 2 and len(conditions) >= 4:
                         factorial_results = self._run_factorial_anova(df_analysis, "_composite", factors, "CONDITION")
                         factorial_results = _finite_results_only(factorial_results)
 
-                        # Only show factorial ANOVA if it worked (no warnings for failures)
-                        if ("error" not in factorial_results or factorial_results.get("single_factor")) and \
-                           "main_effect_1" in factorial_results and "main_effect_2" in factorial_results:
+                        # v1.2.9.1: render whenever the analysis produced its terms ("error" is reserved for
+                        # failures, the residual row lives under "residual"); when it cannot run, say why
+                        if "error" not in factorial_results and factorial_results.get("terms"):
                             prereg_badge = " <span style='background:#27ae60;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>PRE-REGISTERED</span>" if prereg_analyses.get("factorial") else " <span style='background:#95a5a6;color:white;padding:2px 6px;border-radius:3px;font-size:10px;'>ADDITIONAL</span>"
                             html_parts.append(f"<h4>Factorial ANOVA (Main Effects & Interaction){prereg_badge}</h4>")
-                            # ANOVA summary table
+                            if factorial_results.get("design_note"):
+                                html_parts.append(f"<p style='font-size:0.9em;color:#64748b;'>{_html_lib.escape(str(factorial_results['design_note']))}</p>")
+                            # ANOVA summary table (one row per term: main effects first, then interactions)
                             html_parts.append("<table><tr><th>Source</th><th>SS</th><th>df</th><th>MS</th><th>F</th><th>p</th><th>η²<sub>p</sub></th></tr>")
+                            for term in factorial_results["terms"]:
+                                sig_class = "sig" if term["significant"] else ("marginal" if term.get("marginally_significant") else "nonsig")
+                                html_parts.append(f"<tr><td><strong>{_html_lib.escape(str(term['term']))}</strong></td><td>{term['ss']:.2f}</td><td>{term['df']}</td><td>{term['ms']:.2f}</td><td>{_fmt_stat(term['f_statistic'])}</td><td class='{sig_class}'>{_fmt_p_html(term['p_value'])}</td><td>{term['partial_eta_squared']:.4f}</td></tr>")
 
-                            # Main effect 1
-                            me1 = factorial_results["main_effect_1"]
-                            sig_class = "sig" if me1["significant"] else ("marginal" if me1.get("marginally_significant") else "nonsig")
-                            html_parts.append(f"<tr><td><strong>{_esc(me1['factor'])}</strong></td><td>{me1['ss']:.2f}</td><td>{me1['df']}</td><td>{me1['ms']:.2f}</td><td>{me1['f_statistic']:.3f}</td><td class='{sig_class}'>{me1['p_value']:.4f}</td><td>{me1['partial_eta_squared']:.4f}</td></tr>")
-
-                            # Main effect 2
-                            me2 = factorial_results["main_effect_2"]
-                            sig_class = "sig" if me2["significant"] else ("marginal" if me2.get("marginally_significant") else "nonsig")
-                            html_parts.append(f"<tr><td><strong>{_esc(me2['factor'])}</strong></td><td>{me2['ss']:.2f}</td><td>{me2['df']}</td><td>{me2['ms']:.2f}</td><td>{me2['f_statistic']:.3f}</td><td class='{sig_class}'>{me2['p_value']:.4f}</td><td>{me2['partial_eta_squared']:.4f}</td></tr>")
-
-                            # Interaction
-                            if "interaction" in factorial_results:
-                                inter = factorial_results["interaction"]
-                                sig_class = "sig" if inter["significant"] else ("marginal" if inter.get("marginally_significant") else "nonsig")
-                                html_parts.append(f"<tr><td><strong>{_esc(inter['factors'])}</strong></td><td>{inter['ss']:.2f}</td><td>{inter['df']}</td><td>{inter['ms']:.2f}</td><td>{inter['f_statistic']:.3f}</td><td class='{sig_class}'>{inter['p_value']:.4f}</td><td>{inter['partial_eta_squared']:.4f}</td></tr>")
-
-                            # Error
-                            if "error" in factorial_results and isinstance(factorial_results["error"], dict):
-                                err = factorial_results["error"]
-                                html_parts.append(f"<tr><td>Residual</td><td>{err['ss']:.2f}</td><td>{err['df']}</td><td>{err['ms']:.2f}</td><td>-</td><td>-</td><td>-</td></tr>")
+                            # Residual (error) row
+                            resid = factorial_results.get("residual")
+                            if isinstance(resid, dict):
+                                html_parts.append(f"<tr><td>Residual</td><td>{resid['ss']:.2f}</td><td>{resid['df']}</td><td>{resid['ms']:.2f}</td><td>-</td><td>-</td><td>-</td></tr>")
 
                             html_parts.append("</table>")
 
@@ -6991,23 +7876,24 @@ class ComprehensiveInstructorReport:
                             html_parts.append("<div class='interpretation-box' style='background:#f8f9fa;padding:15px;border-radius:6px;margin:15px 0;border-left:3px solid #3498db;'>")
                             html_parts.append("<strong>Key Finding:</strong> ")
                             findings = []
-                            if me1["significant"]:
-                                findings.append(f"significant main effect of <strong>{_esc(me1['factor'])}</strong> ({me1['interpretation']} effect)")
-                            elif me1.get("marginally_significant"):
-                                findings.append(f"marginally significant main effect of <strong>{_esc(me1['factor'])}</strong> (p < .10)")
-                            if me2["significant"]:
-                                findings.append(f"significant main effect of <strong>{_esc(me2['factor'])}</strong> ({me2['interpretation']} effect)")
-                            elif me2.get("marginally_significant"):
-                                findings.append(f"marginally significant main effect of <strong>{_esc(me2['factor'])}</strong> (p < .10)")
-                            if "interaction" in factorial_results and factorial_results["interaction"]["significant"]:
-                                findings.append(f"<strong>significant interaction</strong> between factors ({factorial_results['interaction']['interpretation']} effect)")
-                            elif "interaction" in factorial_results and factorial_results["interaction"].get("marginally_significant"):
-                                findings.append(f"<strong>marginally significant interaction</strong> between factors (p < .10)")
+                            for term in factorial_results["terms"]:
+                                if term["order"] == 1:
+                                    _what = f"main effect of <strong>{_html_lib.escape(str(term['term']))}</strong>"
+                                    if term["significant"]:
+                                        findings.append(f"significant {_what} ({term['interpretation']} effect)")
+                                    elif term.get("marginally_significant"):
+                                        findings.append(f"marginally significant {_what} (p &lt; .10)")
+                                else:
+                                    _names = " and ".join(_html_lib.escape(str(n)) for n in term["factors"])
+                                    if term["significant"]:
+                                        findings.append(f"<strong>significant interaction</strong> between {_names} ({term['interpretation']} effect)")
+                                    elif term.get("marginally_significant"):
+                                        findings.append(f"<strong>marginally significant interaction</strong> between {_names} (p &lt; .10)")
 
                             if findings:
                                 html_parts.append("The factorial analysis revealed " + ", ".join(findings) + ".")
                             else:
-                                html_parts.append("No significant main effects or interaction were detected in this factorial design.")
+                                html_parts.append("No significant main effects or interactions were detected in this factorial design.")
                             html_parts.append("</div>")
 
                             # Cell means table
@@ -7015,24 +7901,21 @@ class ComprehensiveInstructorReport:
                                 html_parts.append("<strong>Cell Means:</strong>")
                                 html_parts.append("<table><tr><th>Cell</th><th>N</th><th>Mean</th><th>SD</th></tr>")
                                 for cell, stats in factorial_results["cell_statistics"].items():
-                                    html_parts.append(f"<tr><td>{_esc(cell)}</td><td>{stats['n']}</td><td>{stats['mean']:.3f}</td><td>{stats['std']:.3f}</td></tr>")
+                                    html_parts.append(f"<tr><td>{_html_lib.escape(str(cell))}</td><td>{stats['n']}</td><td>{stats['mean']:.3f}</td><td>{stats['std']:.3f}</td></tr>")
                                 html_parts.append("</table>")
 
-                            # Interaction plot for factorial design
-                            if "factor1" in factorial_results and "factor2" in factorial_results:
-                                f1_name = factorial_results["factor1"]["name"]
-                                f2_name = factorial_results["factor2"]["name"]
-                                f1_levels = factorial_results["factor1"]["levels"]
-                                f2_levels = factorial_results["factor2"]["levels"]
+                            # Interaction plot (two analysed factors only; levels come from the exact parse)
+                            _analysed = factorial_results.get("factors_analysed") or []
+                            if len(_analysed) == 2 and factorial_results.get("level_map"):
+                                f1_name = _analysed[0]["name"]
+                                f2_name = _analysed[1]["name"]
+                                _lvl_map = factorial_results["level_map"]
 
                                 # Create factor columns for plotting
                                 df_plot = df_analysis.copy()
-                                df_plot["_f1"] = df_plot["CONDITION"].apply(
-                                    lambda x, _lv=f1_levels: next((l for l in _lv if str(l).lower() in str(x).lower()), None)
-                                )
-                                df_plot["_f2"] = df_plot["CONDITION"].apply(
-                                    lambda x, _lv=f2_levels: next((l for l in _lv if str(l).lower() in str(x).lower()), None)
-                                )
+                                df_plot["_f1"] = df_plot["CONDITION"].map(lambda x, _m=_lvl_map: (_m.get(x) or (None, None))[0])
+                                df_plot["_f2"] = df_plot["CONDITION"].map(lambda x, _m=_lvl_map: (_m.get(x) or (None, None))[1])
+                                df_plot = df_plot.dropna(subset=["_f1", "_f2"])
 
                                 interaction_img = self._create_interaction_plot(
                                     df_plot, "_composite", "_f1", "_f2",
@@ -7043,6 +7926,11 @@ class ComprehensiveInstructorReport:
                                     html_parts.append("<div class='chart-container'>")
                                     html_parts.append(f"<img src='data:image/png;base64,{interaction_img}' alt='Interaction plot'>")
                                     html_parts.append("</div>")
+                        elif factorial_results.get("error") and not factorial_results.get("single_factor"):
+                            html_parts.append(
+                                f"<p style='font-size:0.9em;color:#64748b;'><em>Factorial ANOVA ({_html_lib.escape(' x '.join(str(f.get('name', 'factor')) for f in factors[:3]))}) "
+                                f"could not be computed: {_html_lib.escape(str(factorial_results['error']).replace('Factorial ANOVA not run: ', ''))}.</em></p>"
+                            )
 
                 # Track this scale's results for executive summary
                 all_scale_results.append({
@@ -7054,6 +7942,7 @@ class ComprehensiveInstructorReport:
     def _html_persona(self, ctx: Any) -> None:
         """Sections 4-5: persona distribution and response styles, then the categorical analysis."""
         html_parts, df_clean, metadata, conditions, n_total = ctx.out, ctx.df_clean, ctx.metadata, ctx.conditions, ctx.n_total
+        _cond_label = ctx.cond_label  # v1.2.9.1: one collision-free label per condition
 
         # Chi-squared test for categorical associations
         if "CONDITION" in df_clean.columns and "Gender" in df_clean.columns:
@@ -7135,7 +8024,7 @@ class ComprehensiveInstructorReport:
                     html_parts.append("<table>")
                     html_parts.append("<tr><th>Persona</th>")
                     for cond in conditions:
-                        clean_c = _clean_condition_name(cond)
+                        clean_c = _cond_label(cond)
                         html_parts.append(f"<th>{_esc(clean_c)}</th>")
                     html_parts.append("</tr>")
 
@@ -7184,7 +8073,7 @@ class ComprehensiveInstructorReport:
                         html_parts.append("<table>")
                         html_parts.append("<tr><th>Trait</th>")
                         for cond in recorded_conds:
-                            html_parts.append(f"<th>{_esc(_clean_condition_name(cond))}</th>")
+                            html_parts.append(f"<th>{_esc(_cond_label(cond))}</th>")
                         html_parts.append("</tr>")
                         for trait in common_traits:
                             trait_display = str(trait).replace("_", " ").title()
@@ -7215,30 +8104,42 @@ class ComprehensiveInstructorReport:
             html_parts.append("<h3>Condition × Gender</h3>")
 
             try:
-                contingency = pd.crosstab(df_clean["CONDITION"].apply(_clean_condition_name), df_clean["Gender"])
+                # Rows follow the report's one condition order and the collision-free labels
+                _row_conds = _order_conditions(df_clean["CONDITION"].dropna().unique().tolist(), list(conditions))
+                _row_labels = [_cond_label(c) for c in _row_conds]
+                _label_of = dict(zip(_row_conds, _row_labels))
+                contingency = pd.crosstab(df_clean["CONDITION"].map(_label_of), df_clean["Gender"])
+                contingency = contingency.reindex([lab for lab in _row_labels if lab in contingency.index])
 
-                # Chi-squared test (scipy or numpy fallback)
-                if SCIPY_AVAILABLE and scipy_stats is not None:
-                    chi2, p, dof, expected = scipy_stats.chi2_contingency(contingency)
+                # Chi-squared test (scipy or exact numpy implementation; Yates-corrected for 2x2) with validity checks
+                assoc = _association_test(contingency)
+
+                if assoc.get("status") == "single_condition":
+                    html_parts.append("<div class='stat-box'>")
+                    html_parts.append("<strong>Chi-squared test:</strong> not run &mdash; single condition: no between-condition comparison.")
+                    html_parts.append("</div>")
+                elif assoc.get("status") == "single_category":
+                    html_parts.append("<div class='stat-box'>")
+                    html_parts.append("<strong>Chi-squared test:</strong> not run &mdash; only one gender category is present in the data.")
+                    html_parts.append("</div>")
                 else:
-                    # Numpy-based chi-squared calculation
-                    observed = contingency.values
-                    row_sums = observed.sum(axis=1, keepdims=True)
-                    col_sums = observed.sum(axis=0, keepdims=True)
-                    total = observed.sum()
-                    expected = row_sums * col_sums / total
-                    chi2 = np.sum((observed - expected) ** 2 / np.where(expected > 0, expected, 1))
-                    dof = (observed.shape[0] - 1) * (observed.shape[1] - 1)
-                    p = 1 - _chi2_cdf(chi2, dof) if dof > 0 else 1.0
-
-                _chi2_sig = self._p_significance(float(p))
-                sig_class = "sig" if _chi2_sig["significant"] else ("marginal" if _chi2_sig["marginally_significant"] else "nonsig")
-                html_parts.append("<div class='stat-box'>")
-                html_parts.append(f"<strong>Chi-squared test:</strong> χ² = {chi2:.3f}, df = {dof}, ")
-                html_parts.append(f"<span class='{sig_class}'>p = {p:.4f}</span>")
-                if p >= 0.05:
-                    html_parts.append("<br><em>No significant association between condition and gender (randomization appears successful)</em>")
-                html_parts.append("</div>")
+                    chi2, p, dof = assoc["chi2"], assoc["p_value"], assoc["dof"]
+                    _chi2_sig = self._p_significance(float(p))
+                    sig_class = "sig" if _chi2_sig["significant"] else ("marginal" if _chi2_sig["marginally_significant"] else "nonsig")
+                    html_parts.append("<div class='stat-box'>")
+                    html_parts.append(f"<strong>Chi-squared test:</strong> χ² = {chi2:.3f}, df = {dof}, ")
+                    html_parts.append(f"<span class='{sig_class}'>{_p_eq_html(p)}</span>")
+                    html_parts.append(f" <span style='color:#64748b;font-size:0.9em;'>(N = {assoc['n']}{'; Yates continuity correction for the 2x2 table' if assoc.get('yates') else ''})</span>")
+                    if not assoc.get("valid", True):
+                        html_parts.append(
+                            f"<br><em>Too few expected counts for the chi-square test: {assoc['share_expected_below_5']:.0%} of the cells have an expected count below 5 "
+                            f"(the usual rule is at most 20% and none below 1), so this p-value is unreliable and says nothing about whether randomization worked."
+                            + (f" Fisher's exact test for this 2x2 table: {_p_eq_html(assoc['fisher_p'])}." if assoc.get("fisher_p") is not None else "")
+                            + "</em>"
+                        )
+                    elif p >= 0.05:
+                        html_parts.append("<br><em>No significant association between condition and gender (randomization appears successful)</em>")
+                    html_parts.append("</div>")
 
                 # Contingency table
                 html_parts.append("<table><tr><th>Condition</th>")
@@ -7251,8 +8152,8 @@ class ComprehensiveInstructorReport:
                         html_parts.append(f"<td>{val}</td>")
                     html_parts.append("</tr>")
                 html_parts.append("</table>")
-            except Exception:
-                pass
+            except Exception as chi_err:
+                logger.warning("Condition x Gender association test skipped: %s", chi_err)
 
         html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
 
@@ -7260,6 +8161,7 @@ class ComprehensiveInstructorReport:
         """Section 2: build the executive summary and put it into its reserved place."""
         html_parts, all_scale_results, prereg_text = ctx.out, ctx.all_scale_results, ctx.prereg_text
         n_total, conditions, exec_summary_index = ctx.n_total, ctx.conditions, ctx.exec_summary_index
+        _cond_label = ctx.cond_label  # v1.2.9.1: one collision-free label per condition
 
         # v1.3.4: Insert executive summary into its placeholder position (before statistical analysis)
         if all_scale_results:
@@ -7267,7 +8169,7 @@ class ComprehensiveInstructorReport:
                 all_scale_results,
                 prereg_text,
                 n_total,
-                [_clean_condition_name(c) for c in conditions]
+                [_cond_label(c) for c in conditions]
             )
             html_parts[exec_summary_index] = exec_summary
         else:
