@@ -38,24 +38,25 @@ Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider sta
 
 ---
 
-## ABSOLUTE RULE: Version Synchronization — ALL 10 Locations, EVERY Commit
+## ABSOLUTE RULE: Version Synchronization — ALL 11 Locations, EVERY Commit
 
 **A version mismatch causes a VISIBLE ERROR BANNER for all users.** The app checks `REQUIRED_UTILS_VERSION == utils.__version__` at startup. If they differ by even one digit, users see a yellow warning bar. **It MUST NEVER happen again.**
 
-### The 10 version locations — ALL must contain the EXACT SAME version string:
+### The 11 version locations — ALL must contain the EXACT SAME version string:
 
 | # | File | Location |
 |---|------|----------|
 | 1 | `simulation_app/app.py` | `REQUIRED_UTILS_VERSION = "X.X.X.X"` (line ~57) |
 | 2 | `simulation_app/app.py` | `APP_VERSION = "X.X.X.X"` (line ~149) |
-| 3 | `simulation_app/app.py` | `BUILD_ID = "YYYYMMDD-vXXXXX-description"` (line ~58) |
+| 3 | `simulation_app/app.py` | `BUILD_ID = "YYYYMMDD-vXXXXX-description"` (line ~58) — **not** machine-checked; the only one you must verify by eye |
 | 4 | `simulation_app/utils/__init__.py` | `__version__ = "X.X.X.X"` (line ~68) |
 | 5 | `simulation_app/utils/__init__.py` | `Version: X.X.X.X` in docstring (line ~5) |
 | 6 | `simulation_app/utils/qsf_preview.py` | `__version__ = "X.X.X.X"` (line ~36) |
 | 7 | `simulation_app/utils/response_library.py` | `__version__ = "X.X.X.X"` (line ~66) |
-| 8 | `simulation_app/README.md` | `**Version X.X.X.X**` in header (line ~3) |
-| 9 | `simulation_app/README.md` | `## The behavioral engine (vX.X.X.X)` section header |
-| 10 | `simulation_app/README.md` | `(Version X.X.X.X)` in the citation block at the bottom |
+| 8 | `simulation_app/utils/instructor_report.py` | `__version__ = "X.X.X.X"` (line ~9) — report-facing stamp |
+| 9 | `simulation_app/README.md` | `**Version X.X.X.X**` in header (line ~3) |
+| 10 | `simulation_app/README.md` | `## The behavioral engine (vX.X.X.X)` section header |
+| 11 | `simulation_app/README.md` | `(Version X.X.X.X)` in the citation block at the bottom |
 
 ### MANDATORY WORKFLOW — Do this BEFORE every commit:
 
@@ -64,14 +65,21 @@ Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider sta
 - Examples: `1.0.7.3` → `1.0.7.4`, `1.0.7.9` → `1.0.8.0`, `1.0.9.9` → `1.1.0.0`
 - **NEVER use two-digit segments** like `.10`, `.11`. Each segment is a single digit 0-9.
 
-**Step 2: Update ALL 10 locations with the SAME version string.** Never touch one file without the other. The #1 failure mode is updating `utils/__init__.py` without updating `REQUIRED_UTILS_VERSION` in `app.py` (or vice versa). Treat them as a single atomic operation.
+**Step 2: Update ALL 11 locations with the SAME version string.** Never touch one file without the other. The #1 failure mode is updating `utils/__init__.py` without updating `REQUIRED_UTILS_VERSION` in `app.py` (or vice versa). Treat them as a single atomic operation.
 
 **Step 3: Update BUILD_ID** to force Streamlit cache invalidation. Format: `"YYYYMMDD-vXXXXX-short-description"`
 
-**Step 4: Verify** — grep for the old version; it should appear NOWHERE:
+**Step 4: Verify** — run the checker, then grep for the old version; it should
+appear NOWHERE:
 ```bash
+python3 scripts/check_version_sync.py   # enforces 10 of the 11 in CI
 grep -r "OLD_VERSION" simulation_app/ --include="*.py" --include="*.md"
 ```
+`scripts/check_version_sync.py` covers every location above except `BUILD_ID`,
+and CI runs it on every push (`.github/workflows/ci.yml`). If you add a version
+location, add it to that script in the same commit — an unchecked location is
+how the README citation block drifted to "Version 2.2" while the other ten
+moved together.
 
 ### Stale Module Cache Recovery (v1.0.7.7)
 The app uses `importlib.reload(utils)` as a safe self-healing mechanism when a mismatch is detected. Warning only appears if reload fails — meaning it's a genuine code-level inconsistency.
@@ -149,7 +157,7 @@ Never leave changes uncommitted. Never forget the PR link.
 
 ### Before Every Commit:
 1. Run `python3 -m py_compile <file>` on ALL modified Python files
-2. Verify version numbers are synchronized (all 10 locations)
+2. Verify version numbers are synchronized (all 11 locations)
 3. Run tests: `python3 -m pytest tests/test_e2e.py -v --tb=short`
 4. Test the app loads without version mismatch warning
 5. Ensure no syntax errors or import failures
@@ -173,7 +181,7 @@ Runs in this order:
 1. **STEP 0 — Relational/Matching Condition Parsing** (fires FIRST): Detects WHO is matched with WHOM. Political identity detection, ingroup (+0.30) vs outgroup (-0.35 to -0.40). Sets `_handled_by_relational = True` to skip Step 1. Economic game DVs amplify by 1.3×.
 2. **STEP 1 — Simple valence keywords** (ONLY if STEP 0 didn't handle): "positive", "negative", "reward", "punishment". Note: 'lover' and 'hater' are EXCLUDED (identity markers, not valence).
 3. **STEP 2 — Domain-specific semantic effects** (43 domains): Each domain has keyword→effect mappings grounded in literature.
-4. **STEP 3 — Stable-hash jitter**: an MD5-derived nudge of ±0.04 so same-meaning condition labels still differ slightly (never positional). Condition trait modifiers — political identity → extremity/consistency, outgroup → negative acquiescence — are a *separate* method, `_get_condition_trait_modifier()` (`enhanced_simulation_engine.py:6415`), applied as STEP 1 of `_generate_scale_response()`.
+4. **STEP 3 — Stable-hash jitter**: an MD5-derived nudge of ±0.04 so same-meaning condition labels still differ slightly (never positional). Condition trait modifiers — political identity → extremity/consistency, outgroup → negative acquiescence — are a *separate* method, `_get_condition_trait_modifier()` (`enhanced_simulation_engine.py:6856`), applied as STEP 1 of `_generate_scale_response()`.
 5. **STEP 4 — Domain-aware effect magnitude scaling**: Political + economic game: 1.6×. Political only: 1.3×. Economic game only: 1.2×.
 
 ### Economic Game DV Calibration
@@ -267,7 +275,7 @@ Every simulated participant is ONE person. Their numeric responses and open-text
 Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests one provider. If it fails, the user sees 3 choices IMMEDIATELY (retry / own API key / template). The user is NEVER left waiting for a dead API.
 
 ### Progress Callback Architecture
-- `_report_progress("generating", i, n)` fires EVERY participant **during OE generation** (`enhanced_simulation_engine.py:12367`). The scale-generation loop still fires on an interval — `max(1, min(20, n // 20))`, i.e. every ~5% capped at every 20 (`:11808`)
+- `_report_progress("generating", i, n)` fires EVERY participant **during OE generation** (`enhanced_simulation_engine.py:12959`). The scale-generation loop still fires on an interval — `max(1, min(20, n // 20))`, i.e. every ~5% capped at every 20 (`:12359`)
 - `_report_progress("open_ended_question", idx, total)` fires per-OE-question
 - UI shows: elapsed time, participant count, live LLM stats (AI count vs template count)
 - Post-generation: data source breakdown shown when template fallback was used
@@ -276,7 +284,7 @@ Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests 
 
 | Bug | What Happened | Where | Fix |
 |-----|---------------|-------|-----|
-| Auto-recovery cycle | `is_llm_available` re-enabled dead providers every 20s | `llm_response_generator.py` — `is_llm_available` (~:2557) | `_force_disabled` checked first |
+| Auto-recovery cycle | `is_llm_available` re-enabled dead providers every 20s | `llm_response_generator.py` — `is_llm_available` (:2543) | `_force_disabled` checked first |
 | Quality filter too strict | Topic keyword matching rejected valid LLM responses silently | `_is_low_quality_response()` | 3-char prefix matching + accept-on-full-rejection |
 | Rate limiter timestamp | `wait_if_needed()` returned without appending timestamp when sleep > 15s | `_RateLimiter.wait_if_needed()` | Returns bool; caller checks |
 | Prefill budget too short | 30s filled only 2/15 pool buckets → 500+ on-demand calls | `enhanced_simulation_engine.py` | Increased to 90s |
@@ -343,11 +351,11 @@ Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests 
 
 - Page-based rendering keeps state in `st.session_state` directly. The
   `_save_step_state()` / `_restore_step_state()` snapshot pair was **removed in
-  v1.4.14** (see the note at `app.py:6531`) — do not reintroduce calls to them.
+  v1.4.14** (see the note at `app.py:6522`) — do not reintroduce calls to them.
 - `_navigate_to()` mirrors `_widget_persist_keys` to `_p_<key>` so the values of
   widgets that are no longer rendered survive a page switch. That list currently
   holds four keys: `study_title`, `study_description`, `team_name`,
-  `team_members_raw` (`app.py:6575`).
+  `team_members_raw` (`app.py:6566`).
 - Must persist: conditions, factors, confirmed scales/DVs, factorial config, sample/effect size
 
 ---
@@ -398,7 +406,7 @@ research-simulations/
 
 ### Code & Architecture
 1. Big-bang rewrites → break into iterations
-2. Forgetting version sync → always use the 10-location checklist
+2. Forgetting version sync → always use the 11-location checklist
 3. Assuming state persists → explicitly save and restore
 4. Skipping validation → users find edge cases you missed
 5. Suppressing exceptions silently (`except Exception: pass`) → always log at minimum
@@ -493,10 +501,10 @@ https://claude.ai/code/[session-id]
 3. Authority/NFC persona-level interaction in STEP 3
 
 (Narrative transportation's STEP 2 domain shipped in v1.0.4.9, and matrix
-detection already exists. Note its `narrative_transportation` template set is
-unreachable: template lookup goes through `domain.value`
-(`response_library.py:8622`) and that key is not a `StudyDomain` value — one of
-ten such orphaned keys.)
+detection already exists. Its `narrative_transportation` template set used to be
+unreachable; as of v1.2.8.9 it resolves through `_DOMAIN_TEMPLATE_ALIASES`
+(`response_library.py:4662`, consulted at `:8639`), and all 116
+`DOMAIN_TEMPLATES` keys are now selectable.)
 
 ### Business Roadmap
 Phase 1 (Foundation): User accounts + persistent workspaces + billing infrastructure
