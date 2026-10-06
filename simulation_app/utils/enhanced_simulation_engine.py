@@ -3484,7 +3484,10 @@ def _calibrate_latent_correlation(corr: Any) -> Any:
 # see tests/test_effect_size_recovery.py::test_cross_scale_correlation_*).
 _SHARED_TENDENCY_WEIGHT = 0.10   # weight of the persona-wide response tendency in each scale's base
 _INDEP_TENDENCY_SD = 0.06        # SD of the per-scale independent tendency draw
-_LATENT_WEIGHT_MULT = 1.6        # multiplier on the correlated-latent weight
+_LATENT_WEIGHT_MULT = 1.6        # multiplier on the correlated-latent weight. It triples the SD of a scale composite, so
+#                                  a user effect on a scale that carries it is built into the finished item responses
+#                                  (_apply_user_effect_to_scale), not into the tendency: the shift calibrated for a lone
+#                                  scale (_explicit_effect_scale) reaches only ~0.4 of the requested d next to it.
 _G_FACTOR_MULT = 0.5             # multiplier on the common-method g-factor strength
 _COHERENCE_MULT = 0.3            # multiplier on the running-mean cross-DV coherence pull
 _INERTIA_MULT = 0.2              # multiplier on the recent-item anchoring pull (Schwarz & Strack)
@@ -3687,6 +3690,12 @@ class EnhancedSimulationEngine:
         self.attention_rate = float(attention_rate)
         self.random_responder_rate = float(random_responder_rate)
         self.effect_sizes = effect_sizes or []
+        # v1.2.9.1: user effects built into finished scales (see _apply_user_effect_to_scale)
+        self._latent_dv_names: Set[str] = set()
+        self._deferred_effect_vars: Set[str] = set()
+        self._deferred_effect_log: List[Dict[str, Any]] = []
+        self._effect_build_errors: List[str] = []
+        self._reversal_ok_arr: Optional[Tuple[str, np.ndarray]] = None
         self.exclusion_criteria = exclusion_criteria or ExclusionCriteria()
         self.open_ended_questions = _normalize_open_ended(open_ended_questions)
         # v1.2.9.1: a text box that is also a detected numeric DV already has its numbers in the
@@ -4650,6 +4659,10 @@ class EnhancedSimulationEngine:
         recovered composite d on target. Very wide numeric scales (>= 50 points,
         e.g. 0-100 sliders) recover ~10% low, so they get a 1.10 boost.
         Returns 1.0 when the scale geometry is unknown (e.g. direct callers).
+
+        This calibration describes a LONE scale. With several scales in the design the cross-scale
+        latent term enlarges the composite's SD about threefold, and the effect is then applied to the
+        finished responses instead (_apply_user_effect_to_scale), so it does not use this factor.
         """
         meta = getattr(self, "_scale_effect_meta", {}).get(str(variable))
         if not meta:
@@ -9042,6 +9055,11 @@ class EnhancedSimulationEngine:
         # Richard et al. (2003): Average d in social psychology ≈ 0.43
         # =====================================================================
         condition_effect = self._get_effect_for_condition(condition, variable_name)
+        # v1.2.9.1: a user effect on a scale that is generated next to other scales is built into the
+        # finished item responses (_apply_user_effect_to_scale); the generator sees no condition shift.
+        # The lookup above still runs so the metadata records the intended effect.
+        if condition_effect != 0.0 and variable_name in getattr(self, "_deferred_effect_vars", ()):
+            condition_effect = 0.0
 
         # =====================================================================
         # STEP 4a: Personality x Condition Interaction Effects
@@ -9532,6 +9550,11 @@ class EnhancedSimulationEngine:
                 # This creates the acquiescence-driven inconsistency pattern
                 # that reliability analysts see in real data
                 _correctly_reversed = False
+
+            # v1.2.9.1: a deferred user effect must follow the same direction (see _apply_user_effect_to_scale)
+            _rok = getattr(self, "_reversal_ok_arr", None)
+            if _rok is not None and _rok[0] == variable_name and _p_idx is not None:
+                _rok[1][_p_idx, int(getattr(self, "_current_item_position", 1)) - 1] = _correctly_reversed
 
             # v1.0.4.9: Update reverse-item tracking for this participant
             if _p_idx is not None and hasattr(self, '_participant_reverse_tracking'):
@@ -12752,6 +12775,11 @@ class EnhancedSimulationEngine:
             except Exception:
                 _corr_matrix = None
 
+        self._latent_dv_names = set()
+        self._deferred_effect_vars = set()
+        self._deferred_effect_log = []
+        self._effect_build_errors = []
+        self._reversal_ok_arr = None
         if _corr_matrix is not None and len(_scale_names) > 1:
             try:
                 _latent_scores = generate_latent_scores(n, _calibrate_latent_correlation(_corr_matrix), self.seed)
@@ -12761,6 +12789,8 @@ class EnhancedSimulationEngine:
                         _scale_names[j]: float(_latent_scores[i, j])
                         for j in range(min(len(_scale_names), _latent_scores.shape[1]))
                     }
+                # the scales whose responses carry the cross-scale latent term (matched by name)
+                self._latent_dv_names = set(_scale_names[:_latent_scores.shape[1]])
                 self._log(f"Generated cross-DV latent scores for {len(_scale_names)} scales")
             except Exception as e:
                 self._log(f"WARNING: Failed to generate correlated latent scores: {e}")
@@ -12926,6 +12956,16 @@ class EnhancedSimulationEngine:
                 self._scale_effect_meta = {}
             self._scale_effect_meta[str(scale_name)] = (num_items, scale_min, scale_max)
 
+            # v1.2.9.1: next to other scales every response carries a person-level latent term that
+            # triples the composite's SD, so a shift calibrated for a lone scale reaches only ~0.4 of
+            # the requested d. A user effect on such a scale is therefore built into the finished item
+            # responses, in units of the realised within-condition SD (_apply_user_effect_to_scale).
+            if self._defer_user_effect_for_scale(scale_name, scale_min, scale_max, bool(reverse_items)):
+                self._deferred_effect_vars.add(scale_name)
+                self._reversal_ok_arr = (scale_name, np.ones((n, num_items), dtype=bool))
+            else:
+                self._reversal_ok_arr = None
+
             for item_num in range(1, num_items + 1):
                 col_name = f"{scale_name}_{item_num}"
                 is_reverse = item_num in reverse_items
@@ -13058,6 +13098,20 @@ class EnhancedSimulationEngine:
                         self._log(f"Attenuated inter-item correlation for '{scale_name_raw}' (alpha={_alpha_now:.2f} -> ~{target_alpha:.2f})")
                 except Exception as _corr_err:
                     self._log(f"WARNING: Could not inject correlation for '{scale_name_raw}': {_corr_err}")
+
+            # v1.2.9.1: build a deferred user effect into the finished items of this scale
+            if scale_name in self._deferred_effect_vars:
+                try:
+                    _ue_log = self._apply_user_effect_to_scale(
+                        data, scale_name, [f"{scale_name}_{j + 1}" for j in range(num_items)],
+                        reverse_items, scale_min, scale_max, conditions)
+                    if _ue_log:
+                        self._deferred_effect_log.append(_ue_log)
+                except Exception as _ue_err:  # the requested effect would be missing: say so loudly
+                    logger.warning("User effect on '%s' could not be built into the data: %s", scale_name, _ue_err)
+                    self._log(f"WARNING: user effect on '{scale_name}' could not be built in: {_ue_err}")
+                    self._effect_build_errors.append(f"The expected effect on '{scale_name}' could not be built into the data ({_ue_err}).")
+            self._reversal_ok_arr = None
 
         # v1.0.5.8: Anti-detection — detect and break alternating/zigzag patterns.
         # Mechanical alternation (e.g., 2,4,2,4,2,4 or 1,7,1,7,1,7) across items
@@ -14576,6 +14630,7 @@ class EnhancedSimulationEngine:
         warnings: List[str] = []
         # v1.2.9.1: an expected effect that reached no variable or condition must not go missing silently
         warnings.extend(self._effect_spec_diagnostics()["warnings"])
+        warnings.extend(getattr(self, "_effect_build_errors", []) or [])
         if "CONDITION" in df.columns and len(self.conditions) >= 2:
             cell_counts = df["CONDITION"].value_counts()
             min_cell = int(cell_counts.min()) if len(cell_counts) > 0 else 0
@@ -14845,6 +14900,145 @@ class EnhancedSimulationEngine:
             self._log(f"Reconciled {fixed} composite value(s) with their final item values")
         return fixed
 
+    def _defer_user_effect_for_scale(self, scale_name: str, scale_min: int, scale_max: int, has_reverse: bool) -> bool:
+        """Whether this scale's user-specified effect is built into the finished item responses.
+
+        True for a scale that carries the cross-scale latent term (several scales in the design) and
+        has a user effect. Not for knowledge-base economic-game outcomes: their generator shifts a latent
+        quantile of the published outcome distribution (keeping its spikes at zero and at an even
+        split) and never receives the latent term, so the ordinary route is exact for them.
+        """
+        if scale_name not in getattr(self, "_latent_dv_names", ()) or scale_max <= scale_min:
+            return False
+        if not self._variable_has_user_spec(scale_name):
+            return False
+        if not has_reverse and (scale_max - scale_min) >= 10:
+            geometry = self._detect_scale_geometry(scale_min, scale_max, scale_name)
+            calibration = self._get_domain_response_calibration(scale_name, "")
+            if (calibration.get("_kb_dist") and not geometry["is_bipolar"]
+                    and calibration.get("_game_variant") not in ("dictator_taking", "dictator_third_party")):
+                return False
+        return True
+
+    def _apply_user_effect_to_scale(
+        self,
+        data: Dict[str, list],
+        scale_name: str,
+        item_cols: List[str],
+        reverse_items: Set[int],
+        scale_min: int,
+        scale_max: int,
+        conditions: "pd.Series",
+    ) -> Optional[Dict[str, Any]]:
+        """Build a user-specified effect into a finished scale, in units of its own within-condition SD.
+
+        Why: next to other scales every response carries the cross-scale latent term, which makes the
+        composite's SD about 3x as large as for a lone scale and lets floor and ceiling swallow part of a
+        tendency shift, so a shift calibrated for a lone scale produced only ~0.4 of the requested d (no
+        matter how many scales, or how related). The requested d is a statement about the composite's
+        SD, so the shift is applied to the generated responses and sized from that SD.
+
+        How: the scale was generated without any condition shift. The pooled within-condition SD of its
+        scored composite is measured; each condition's participants are then moved by their target
+        (+/- d/2 SDs for the two arms of a spec, 0 for a reference condition) with randomised rounding,
+        so answers stay integers and a fractional shift moves the mean by exactly that fraction.
+        Floor and ceiling swallow part of the move, so each condition's multiplier is re-aimed until
+        the composite MEAN moved by its target. Only that applied move is controlled, never the realised
+        gap between arms: the arm differences already present by chance in the generated data remain, so
+        the observed d keeps its ordinary sampling variability around the request.
+        Reverse-keyed items move against the item direction, except for respondents who failed to
+        reverse them (recorded while generating), who move with it: the attenuation that careless reverse
+        responding causes in real data is kept, exactly as for a lone scale.
+
+        Returns a small log row (also written to ``effect_sizes_applied``) or None when nothing was to
+        be done.
+        """
+        applied = getattr(self, "_applied_effects", None) or {}
+        targets: Dict[str, float] = {}
+        for (cond, var), info in applied.items():
+            if var != scale_name or info.get("source") != "user":
+                continue
+            unit = float(info.get("unit") or 0.0)
+            if unit > 0:
+                targets[str(cond)] = float(info.get("offset", 0.0)) / (2.0 * unit)
+        targets = {c: t for c, t in targets.items() if abs(t) > 1e-9}
+        if not targets:
+            return None                                      # nothing was requested for this scale
+
+        def skipped(reason: str) -> None:
+            """The requested effect cannot be built in: say so instead of returning clean data."""
+            self._effect_build_errors.append(f"The expected effect on '{scale_name}' was not applied: {reason}.")
+            return None
+
+        cols = [c for c in item_cols if c in data]
+        n = len(conditions)
+        if not cols or scale_max <= scale_min or any(len(data[c]) != n for c in cols):
+            return skipped("the item columns are missing or inconsistent")
+        if n < 2:
+            return skipped("fewer than two participants")
+        k = len(cols)
+        lo, hi = float(scale_min), float(scale_max)
+        flip = lo + hi
+        X = np.array([data[c] for c in cols], dtype=float).T
+        rev = np.array([(j + 1) in reverse_items for j in range(k)], dtype=bool)
+        sign = np.where(rev, -1.0, 1.0)                      # direction of an item in the scored composite
+        ok = np.ones((n, k), dtype=bool)
+        rec = getattr(self, "_reversal_ok_arr", None)
+        if rec is not None and rec[0] == scale_name and rec[1].shape == (n, k):
+            ok = rec[1]
+        move = np.ones((n, k))                                # raw-answer direction of a construct-direction shift
+        if rev.any():
+            move[:, rev] = np.where(ok[:, rev], -1.0, 1.0)
+
+        def composite(M: np.ndarray) -> np.ndarray:
+            return (M * sign + flip * rev).mean(axis=1)
+
+        cond_arr = np.asarray(conditions.to_numpy() if hasattr(conditions, "to_numpy") else conditions, dtype=object)
+        groups = {c: cond_arr == c for c in dict.fromkeys(cond_arr.tolist())}
+        arms = {c: groups[c] for c in targets if c in groups and groups[c].any()}
+        if not arms:
+            return skipped("no participant was assigned to a condition named in the effect")
+
+        def pooled_sd(comp: np.ndarray) -> float:
+            num = den = 0.0
+            for m in groups.values():
+                if m.sum() > 1:
+                    num += float(comp[m].var(ddof=1)) * (int(m.sum()) - 1)
+                    den += int(m.sum()) - 1
+            return float(np.sqrt(num / den)) if den > 0 and num > 0 else 0.0
+
+        comp0 = composite(X)
+        sd = pooled_sd(comp0)
+        if sd <= 0:
+            return skipped("the scale shows no variation within conditions")
+        shrink = {c: float((sign * move)[m].mean()) for c, m in arms.items()}   # reverse-item failures
+        u = np.random.RandomState((int(self.seed) + _stable_int_hash(f"{scale_name}|user_effect")) % (2**31)).random_sample((n, k))
+        mult = {c: 1.0 for c in arms}
+        result, moved, iterations = X, {}, 0
+        for iterations in range(1, 15):
+            result = X.copy()
+            for c, m in arms.items():
+                result[m] = np.clip(np.floor(X[m] + move[m] * (mult[c] * targets[c] * sd) + u[m]), lo, hi)
+            comp = composite(result)
+            sd = pooled_sd(comp) or sd
+            moved = {c: float(comp[m].mean() - comp0[m].mean()) for c, m in arms.items()}
+            wanted = {c: targets[c] * sd * shrink[c] for c in arms}
+            if all(abs(moved[c] - wanted[c]) <= 0.004 * sd for c in arms):
+                break
+            for c in arms:
+                if moved[c] * wanted[c] > 1e-12:
+                    mult[c] = float(np.clip(mult[c] * wanted[c] / moved[c], 0.2, 8.0))
+                elif abs(wanted[c]) > 1e-12:
+                    mult[c] = float(np.clip(mult[c] * 2.0, 0.2, 8.0))
+        for j, col in enumerate(cols):
+            data[col] = result[:, j].astype(int).tolist()
+        return {
+            "variable": scale_name, "method": "applied to the finished item responses",
+            "targets_sd": {c: round(t, 4) for c, t in targets.items()},
+            "within_condition_sd": round(float(sd), 4), "iterations": int(iterations),
+            "multiplier": {c: round(v, 3) for c, v in mult.items()},
+        }
+
     def _reapply_user_effects_after_game_model(self, df: pd.DataFrame, socsim_meta: Dict[str, Any]) -> None:
         """Restore the effect the user specified on a DV that the game model overwrote.
 
@@ -14987,6 +15181,8 @@ class EnhancedSimulationEngine:
             "contrasts": rows,
             # v1.2.9.1: one entry per effect you specified: did it reach a variable and a condition?
             "specs": self._effect_spec_diagnostics()["specs"],
+            # scales whose effect was built into the finished item responses (several scales in the design)
+            "applied_after_generation": list(getattr(self, "_deferred_effect_log", []) or []),
             "note": ("Each contrast is condition_1 minus condition_2, in the order of the conditions. "
                      "intended_d is given only for effects you specified. Inferred effects are a "
                      "heuristic read of the condition names and are not calibrated to a target d."),

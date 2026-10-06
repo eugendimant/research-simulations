@@ -303,3 +303,110 @@ def test_json_writer_never_emits_nan_or_infinity():
     text = _safe_json({"a": float("nan"), "b": [1.0, float("inf")], "c": np.float64("nan"), "d": {"e": -float("inf")}})
     assert json.loads(text, parse_constant=lambda c: pytest.fail(f"bare {c} written")) == {
         "a": None, "b": [1.0, None], "c": None, "d": {"e": None}}
+
+
+# ----------------------------------------------------------------------------------------------
+# P1-3: the requested d next to other scales (it came out at ~0.4 of the request)
+# ----------------------------------------------------------------------------------------------
+def _multi_scales(n_scales, rev_first=None, k_first=4):
+    names = ["Trust", "Satisfaction", "Loyalty", "Intention"]
+    return [_scale(names[j], items=(k_first if j == 0 else 4), reverse=(rev_first if j == 0 else None)) for j in range(n_scales)]
+
+
+def _multi_d(n_scales, seeds, n=400, d=0.5, rev_first=None, n_conds=2, corr=None):
+    conds = ["Group 1", "Group 2", "Group 3", "Group 4"][:n_conds]
+    ds, d2s, rs = [], [], []
+    for seed in seeds:
+        kw = {}
+        if corr is not None:
+            cm = np.full((n_scales, n_scales), corr)
+            np.fill_diagonal(cm, 1.0)
+            kw["correlation_matrix"] = cm
+        e = _engine(conds, _multi_scales(n_scales, rev_first), [_spec("Trust", conds[0], conds[1], d)], n=n, seed=seed, **kw)
+        df, meta = e.generate()
+        ds.append(_d(df, conds[0], conds[1], "Trust_mean"))
+        if n_scales > 1:
+            d2s.append(_d(df, conds[0], conds[1], "Satisfaction_mean"))
+            within = df.assign(t=df["Trust_mean"].astype(float), s=df["Satisfaction_mean"].astype(float))
+            within[["t", "s"]] = within[["t", "s"]] - within.groupby("CONDITION")[["t", "s"]].transform("mean")
+            rs.append(float(np.corrcoef(within.t, within.s)[0, 1]))
+    return ds, d2s, rs
+
+
+def test_requested_d_is_recovered_next_to_another_scale():
+    """Two scales, requested d = 0.5 on the first: the mean over seeds must be near 0.5 (it was ~0.2),
+    the second scale must stay null, the cross-scale correlation must survive, and the observed d must
+    still vary from seed to seed (the realised d is not forced onto the request)."""
+    ds, d2s, rs = _multi_d(2, seeds=(6101, 6102, 6103, 6104, 6105, 6106))
+    assert 0.35 <= float(np.mean(ds)) <= 0.65, f"mean d = {np.mean(ds):.3f} over {np.round(ds, 2)}"
+    assert 0.03 < float(np.std(ds, ddof=1)) < 0.25, f"observed d must keep its sampling variability: {np.round(ds, 3)}"
+    assert abs(float(np.mean(d2s))) < 0.25, f"the unspecified scale picked up an effect: {np.round(d2s, 2)}"
+    assert float(np.mean(rs)) > 0.3, f"cross-scale correlation lost: {np.round(rs, 2)}"
+
+
+def test_requested_d_is_recovered_with_four_scales_and_three_conditions():
+    ds, d2s, _ = _multi_d(4, seeds=(6201, 6202, 6203, 6204), n=450, n_conds=3)
+    assert 0.33 <= float(np.mean(ds)) <= 0.7, f"mean d = {np.mean(ds):.3f} over {np.round(ds, 2)}"
+    assert abs(float(np.mean(d2s))) < 0.3
+
+
+def test_uncorrelated_scales_need_the_same_correction():
+    ds, _, rs = _multi_d(2, seeds=(6301, 6302, 6303, 6304), corr=0.0)
+    assert 0.33 <= float(np.mean(ds)) <= 0.7, f"mean d = {np.mean(ds):.3f} over {np.round(ds, 2)}"
+    assert abs(float(np.mean(rs))) < 0.2
+
+
+def test_reverse_keyed_scale_next_to_another_scale_keeps_its_documented_attenuation():
+    """All four items reverse-keyed: careless reversal failures attenuate the scored mean by ~25 %, exactly as
+    for a lone scale (docs: 'Scales with reverse-keyed items'), but the latent term must add nothing on top."""
+    ds, _, _ = _multi_d(2, seeds=(6401, 6402, 6403, 6404), rev_first=[1, 2, 3, 4])
+    assert 0.22 <= float(np.mean(ds)) <= 0.55, f"mean d = {np.mean(ds):.3f} over {np.round(ds, 2)}"
+
+
+def test_reference_condition_is_not_shifted_by_a_two_arm_effect():
+    conds = ["Group 1", "Group 2", "Group 3"]
+    mids = []
+    for seed in (6501, 6502, 6503):
+        e = _engine(conds, _multi_scales(2), [_spec("Trust", conds[0], conds[1], 0.8)], n=600, seed=seed)
+        df, _ = e.generate()
+        m = df["Trust_mean"].astype(float)
+        sd = math.sqrt(sum(m[df.CONDITION == c].var() for c in conds[:2]) / 2)
+        mids.append((m[df.CONDITION == conds[2]].mean() - (m[df.CONDITION == conds[0]].mean() + m[df.CONDITION == conds[1]].mean()) / 2) / sd)
+    assert abs(float(np.mean(mids))) < 0.3, f"the unnamed third condition moved by {np.round(mids, 2)} SD"
+
+
+def test_deferred_effect_is_recorded_deterministic_and_valid():
+    conds = ["Group 1", "Group 2"]
+    frames = []
+    for _ in range(2):
+        e = _engine(conds, _multi_scales(2, rev_first=[2]), [_spec("Trust", *conds, 0.5)], n=150, seed=77)
+        df, meta = e.generate()
+        frames.append(df)
+    assert frames[0].equals(frames[1]), "same seed must give identical data"
+    rows = meta["effect_sizes_applied"]["applied_after_generation"]
+    assert [r["variable"] for r in rows] == ["Trust"] and rows[0]["iterations"] >= 1
+    items = df[[f"Trust_{j}" for j in range(1, 5)]].astype(float)
+    assert ((items >= 1) & (items <= 7)).all().all() and (items == items.round()).all().all()
+    scored = (items["Trust_1"] + (8 - items["Trust_2"]) + items["Trust_3"] + items["Trust_4"]) / 4
+    assert np.allclose(df["Trust_mean"].astype(float), scored.round(2), atol=0.011)
+    json.dumps(meta["effect_sizes_applied"], allow_nan=False)
+
+
+def test_a_lone_scale_keeps_the_calibrated_in_generator_route():
+    """The single-scale calibration (docs/guide/how-effects-work.md) is untouched: nothing is deferred."""
+    e = _engine(["Group 1", "Group 2"], [_scale("Trust")], [_spec("Trust", "Group 1", "Group 2", 0.5)], n=100, seed=3)
+    _, meta = e.generate()
+    assert meta["effect_sizes_applied"]["applied_after_generation"] == [] and not e._deferred_effect_vars
+
+
+def test_factorial_marginal_d_with_two_scales():
+    ds_a, ds_b = [], []
+    for seed in (6601, 6602, 6603):
+        specs = [_spec("Trust", "A1", "A2", 0.5, factor="A"), _spec("Trust", "B1", "B2", 0.5, factor="B")]
+        e = _engine(CELLS, _multi_scales(2), specs, n=900, seed=seed, factors=[{"name": "A", "levels": ["A1", "A2"]}, {"name": "B", "levels": ["B1", "B2"]}])
+        df, _ = e.generate()
+        m = df["Trust_mean"].astype(float)
+        for mask, out in ((df.CONDITION.str.startswith("A1"), ds_a), (df.CONDITION.str.endswith("B1"), ds_b)):
+            x, y = m[mask], m[~mask]
+            out.append((x.mean() - y.mean()) / math.sqrt(((len(x) - 1) * x.var() + (len(y) - 1) * y.var()) / (len(x) + len(y) - 2)))
+    assert 0.33 <= float(np.mean(ds_a)) <= 0.68 and 0.33 <= float(np.mean(ds_b)) <= 0.68, (np.round(ds_a, 2), np.round(ds_b, 2))
