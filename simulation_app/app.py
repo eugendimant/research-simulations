@@ -6916,6 +6916,72 @@ def _reset_generation_state() -> None:
     # v1.2.2.8: Clear free LLM OE cap acceptance flag
     st.session_state.pop("_free_llm_oe_cap_accepted", None)
     # v1.2.5.0: Clear legacy method flags
+    st.session_state.pop("_generated_design_signature", None)
+
+
+def _canonical_for_signature(value: Any) -> Any:
+    """Reduce `value` to plain JSON types in a deterministic form.
+
+    Integral floats become ints (1.0 -> 1), sets are sorted, dataclasses become dicts and unknown
+    objects fall back to their type name, so a memory address never leaks into a fingerprint.
+    """
+    if value is None or isinstance(value, (bool, str)):
+        return value
+    if isinstance(value, float):
+        return int(value) if value == value and value not in (float("inf"), float("-inf")) and value.is_integer() else value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _canonical_for_signature(v) for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))}
+    if isinstance(value, (list, tuple)):
+        return [_canonical_for_signature(v) for v in value]
+    if isinstance(value, (set, frozenset)):
+        return sorted(str(v) for v in value)
+    if hasattr(value, "__dataclass_fields__"):
+        return _canonical_for_signature(asdict(value))
+    if hasattr(value, "item"):  # numpy scalar
+        try:
+            return _canonical_for_signature(value.item())
+        except (TypeError, ValueError):
+            return type(value).__name__
+    return type(value).__name__
+
+
+def _design_signature(effect_sizes: Optional[Any] = None) -> str:
+    """Fingerprint of the design inputs that shape a generated dataset.
+
+    Stored when a dataset is generated and compared again on the Generate page, so a download
+    that no longer matches the sample size, conditions, DVs, effects or method on screen is
+    flagged instead of silently passing for the current design. Returns "" when it cannot be
+    computed (nothing is then flagged).
+    """
+    try:
+        ss = st.session_state
+        inferred = ss.get("inferred_design") or {}
+        if not isinstance(inferred, dict):
+            inferred = {}
+        try:
+            sample_size = int(ss.get("sample_size") or 0)
+        except (TypeError, ValueError):
+            sample_size = 0
+        parts = {
+            "sample_size": sample_size,
+            "title": str(ss.get("study_title") or ss.get("_p_study_title") or "").strip(),
+            "description": str(ss.get("study_description") or ss.get("_p_study_description") or "").strip(),
+            "conditions": inferred.get("conditions") or [],
+            "factors": inferred.get("factors") or [],
+            "crossed": ss.get("factorial_crossed_conditions") if ss.get("use_crossed_conditions") else None,
+            "scales": ss.get("confirmed_scales") or inferred.get("scales") or [],
+            "open_ended": ss.get("confirmed_open_ended") or inferred.get("open_ended_questions") or [],
+            "effects": list(effect_sizes or []),
+            "auto_effects": bool(ss.get("_auto_effects", True)) if ss.get("advanced_mode", False) else True,
+            "method": str(ss.get("generation_method") or ""),
+        }
+        blob = json.dumps(_canonical_for_signature(parts), sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+    except Exception as exc:  # a fingerprint problem must never break the page
+        _log(f"Design signature unavailable: {exc}", level="warning")
+        return ""
 
 
 def _navigate_to(page_index: int) -> None:
@@ -15794,6 +15860,8 @@ if active_page == 3:
 
             progress_bar.progress(100, text="")
             status_placeholder.success("Simulation complete.")
+            # Remember which design produced this dataset (see the notice in the download section).
+            st.session_state["_generated_design_signature"] = _design_signature(effect_sizes)
             st.session_state["has_generated"] = True
             st.session_state["is_generating"] = False
             st.session_state["_generation_phase"] = 0  # v1.1.1.3: Clean phase state
@@ -16091,6 +16159,16 @@ if active_page == 3:
             '<div class="section-done-banner">Simulation complete — download your dataset below</div>',
             unsafe_allow_html=True,
         )
+
+        # The design on screen may have changed since this dataset was generated (sample size,
+        # conditions, DVs, effects, method). The download stays available; only warn.
+        _generated_sig = st.session_state.get("_generated_design_signature", "")
+        if _generated_sig and _generated_sig != _design_signature(effect_sizes):
+            st.warning(
+                "**The design changed after this dataset was generated.** The download below still holds "
+                "the earlier dataset (its sample size, conditions, DVs and effects). Click "
+                "**Reset & Generate New** above to generate again with the current design."
+            )
 
         # v1.0.7.1: Prominent LLM status note — shown before download, not hidden in expander
         # v1.1.1.7: Only display for AI methods — template/experimental intentionally use templates.

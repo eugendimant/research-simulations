@@ -140,3 +140,146 @@ def test_engine_still_accepts_a_negative_direction_from_api_users():
     df.to_csv(buffer, index=False)
     assert _scale_mean_d(buffer.getvalue().encode(), "Alpha", "Bravo") < -0.3  # the API semantics are unchanged
     assert metadata["effect_sizes_configured"][0]["direction"] == "negative"
+
+
+# ---- 2. stale results after the design changed ---------------------------------------------------
+_STALE_TEXT = "design changed after this dataset was generated"
+_COFFEE_QSF = _APP_DIR / "example_files" / "Coffee_Shop_Loyalty_Programs.qsf"
+
+
+def _qsf_generate_page(n: int = 40):
+    """An AppTest on the Generate page for the bundled Coffee QSF (the QSF path, not the builder path)."""
+    from streamlit.testing.v1 import AppTest
+
+    import app as appmod
+    from utils.qsf_preview import QSFPreviewParser
+
+    raw = _COFFEE_QSF.read_bytes()
+    preview = QSFPreviewParser().parse(raw)
+    inputs = appmod._preview_to_engine_inputs(preview)
+    conds = [c.replace("\xa0", " ").strip() for c in inputs["conditions"]]
+    at = AppTest.from_file(str(_APP_DIR / "app.py"), default_timeout=300)
+    state = {
+        "active_page": 3, "study_title": "Stale check", "study_description": "A pilot study of coffee shop loyalty programs.",
+        "sample_size": n, "study_input_mode": "upload_qsf", "qsf_preview": preview, "qsf_raw_content": raw,
+        "qsf_file_name": _COFFEE_QSF.name, "confirmed_scales": inputs["scales"], "confirmed_conditions": conds,
+        "selected_conditions": list(conds), "team_name": "t", "team_members_raw": "a", "advanced_mode": False,
+        "generation_method": "abe_v2", "allow_template_fallback_once": True, "_use_abe_v2": True,
+        "_use_socsim_experimental": True, "scales_confirmed": True, "open_ended_confirmed": True,
+        "confirmed_open_ended": [],  # the user dropped the detected text questions: numeric data only
+        "inferred_design": {"conditions": conds, "factors": inputs["factors"], "scales": inputs["scales"],
+                            "open_ended_questions": [], "attention_checks": [], "manipulation_checks": [],
+                            "randomization_level": "Participant-level", "condition_visibility_map": {}},
+    }
+    for key, value in state.items():
+        at.session_state[key] = value
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    # The first visit to the Design page completes the design state (descriptions, visibility map);
+    # a real user always passes it before generating.
+    at.session_state["active_page"] = 2
+    at.run()
+    at.session_state["active_page"] = 3
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    return at
+
+
+def _stale_warnings(at) -> list:
+    return [w.value for w in at.warning if _STALE_TEXT in w.value]
+
+
+def _goto(at, page: int) -> None:
+    at.session_state["active_page"] = page
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+
+
+def test_changing_n_after_generation_flags_the_old_download_as_stale_and_keeps_it(apptest_env):
+    at = _qsf_generate_page(n=40)
+    _click_generate(at)
+    zip_before = at.session_state["last_zip"]
+    assert not _stale_warnings(at)
+    _goto(at, 2)  # the Design page: the user changes the sample size
+    next(w for w in at.number_input if w.key == "sample_size_step3").set_value(200)
+    at.run()
+    assert at.session_state["sample_size"] == 200
+    _goto(at, 3)
+    assert len(_stale_warnings(at)) == 1, [w.value[:60] for w in at.warning]
+    assert any("Simulation complete" in m.value for m in at.markdown), "the old results stay on screen"
+    assert len(at.get("download_button")) >= 1 and at.session_state["last_zip"] == zip_before
+    assert at.session_state["has_generated"], "nothing is cleared automatically"
+    # Generating again replaces the dataset and the notice goes away
+    next(b for b in at.button if b.key == "reset_after_gen_btn").click()
+    at.run()
+    assert not at.exception and not _stale_warnings(at)
+    _click_generate(at)
+    assert not _stale_warnings(at)
+    assert json.loads(_zip_members(at)["Metadata.json"])["sample_size"] == 200
+
+
+def test_visiting_the_design_page_without_changing_anything_does_not_flag_the_dataset(apptest_env):
+    at = _qsf_generate_page(n=40)
+    _click_generate(at)
+    for page in (2, 3, 1, 2, 3):
+        _goto(at, page)
+    assert at.session_state["has_generated"] and not _stale_warnings(at)
+
+
+@pytest.mark.parametrize("change", ["conditions", "dv", "effect", "method"])
+def test_every_kind_of_design_change_is_detected(apptest_env, change):
+    at = _generate_page(["Alpha", "Bravo", "Charlie"], n=90, advanced=False)
+    _click_generate(at)
+    assert not _stale_warnings(at)
+    if change == "conditions":
+        design = dict(at.session_state["inferred_design"])
+        design["conditions"] = ["Alpha", "Bravo"]
+        at.session_state["inferred_design"] = design
+    elif change == "dv":
+        at.session_state["confirmed_scales"] = [_scale("Satisfaction", items=5)]
+    elif change == "effect":
+        at.session_state["builder_effect_sizes"] = [{"variable": "Satisfaction", "factor": "condition", "level_high": "Alpha",
+                                                     "level_low": "Bravo", "cohens_d": 0.5, "direction": "positive"}]
+    else:
+        at.session_state["generation_method"] = "template"
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert len(_stale_warnings(at)) == 1
+
+
+def test_design_signature_ignores_ordering_and_numeric_types_but_sees_real_changes(monkeypatch, tmp_path):
+    import importlib.util
+
+    import streamlit as st
+
+    monkeypatch.chdir(tmp_path)
+    sys.path.insert(0, str(_APP_DIR))
+    spec = importlib.util.spec_from_file_location("_app_hygiene_sig", str(_APP_DIR / "app.py"))
+    app = importlib.util.module_from_spec(spec)
+    sys.modules["_app_hygiene_sig"] = app
+    try:
+        spec.loader.exec_module(app)
+    except SystemExit:
+        pass
+    base = {"sample_size": 100, "study_title": "T", "study_description": "D", "generation_method": "abe_v2",
+            "confirmed_scales": [{"name": "A", "num_items": 3, "scale_points": 7, "scale_min": 1, "scale_max": 7}],
+            "inferred_design": {"conditions": ["X", "Y"], "factors": [], "scales": []}}
+    monkeypatch.setattr(st, "session_state", dict(base))
+    reference = app._design_signature()
+    assert reference and len(reference) == 16
+    same = dict(base, sample_size=100.0, confirmed_scales=[{"scale_max": 7.0, "scale_min": 1, "scale_points": 7, "num_items": 3, "name": "A"}])
+    monkeypatch.setattr(st, "session_state", same)
+    assert app._design_signature() == reference
+    for key, value in {"sample_size": 101, "generation_method": "template", "study_title": "T2",
+                       "confirmed_scales": [{"name": "A", "num_items": 4, "scale_points": 7, "scale_min": 1, "scale_max": 7}],
+                       "inferred_design": {"conditions": ["X", "Z"], "factors": [], "scales": []}}.items():
+        monkeypatch.setattr(st, "session_state", dict(base, **{key: value}))
+        assert app._design_signature() != reference, key
+    monkeypatch.setattr(st, "session_state", dict(base))
+    from utils.enhanced_simulation_engine import EffectSizeSpec
+
+    spec_a = EffectSizeSpec(variable="A", factor="c", level_high="X", level_low="Y", cohens_d=0.5)
+    spec_b = EffectSizeSpec(variable="A", factor="c", level_high="X", level_low="Y", cohens_d=0.6)
+    assert app._design_signature([spec_a]) != reference and app._design_signature([spec_a]) != app._design_signature([spec_b])
+    assert app._design_signature([spec_a]) == app._design_signature([EffectSizeSpec(
+        variable="A", factor="c", level_high="X", level_low="Y", cohens_d=0.5)])
