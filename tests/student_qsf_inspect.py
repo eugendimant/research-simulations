@@ -135,49 +135,55 @@ def inspect(name, df, inp, preview):
             local.append(f"OE '{c[:24]}': " + ", ".join(probs))
     return local
 
-print(f"Inspecting {len(STUDENT_FILES)} student QSFs (N={N})\n" + "=" * 72)
-for nm in STUDENT_FILES:
-    path = os.path.join(QSF_DIR, nm)
-    print(f"\n### {nm}")
-    if not os.path.exists(path):
-        print("  (file not found)"); continue
-    try:
-        with open(path, "rb") as f:
-            preview = QSFPreviewParser().parse(f.read())
-        inp = app._preview_to_engine_inputs(preview)
-    except Exception as e:
-        print(f"  PARSE/BRIDGE CRASH: {type(e).__name__}: {e}")
-        issues_global.append((nm, "parse crash")); traceback.print_exc(); continue
-    print(f"  parsed: conds={len(inp['conditions'])} scales={len(inp['scales'])} "
-          f"oe={len(inp.get('open_ended_questions') or [])} "
-          f"sliders={len(preview.slider_questions or [])} text_entry={len(preview.text_entry_questions or [])} "
-          f"total_q={preview.total_questions}")
-    try:
-        eng = EnhancedSimulationEngine(
-            study_title=preview.survey_name or nm,
-            study_description=(preview.study_context or {}).get("description", "") or nm,
-            sample_size=N, conditions=inp["conditions"], factors=inp["factors"],
-            scales=inp["scales"], additional_vars=[],
-            demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
-            open_ended_questions=inp.get("open_ended_questions"),
-            study_context=inp.get("study_context"), seed=11)
-        if getattr(eng, "llm_generator", None) is not None:
-            eng.llm_generator.disable_permanently("inspect - no network")
-        df, meta = eng.generate()
-    except Exception as e:
-        print(f"  SIMULATE CRASH: {type(e).__name__}: {e}")
-        issues_global.append((nm, f"sim crash: {e}")); traceback.print_exc(); continue
-    print(f"  simulated: rows={len(df)} cols={len(df.columns)}")
-    local = inspect(nm, df, inp, preview)
-    if local:
-        for li in local:
-            print(f"    ⚠ {li}")
-            issues_global.append((nm, li))
-    else:
-        print("    ✓ no output-data issues detected")
+def main() -> int:
+    print(f"Inspecting {len(STUDENT_FILES)} student QSFs (N={N})\n" + "=" * 72)
+    for nm in STUDENT_FILES:
+        path = os.path.join(QSF_DIR, nm)
+        print(f"\n### {nm}")
+        if not os.path.exists(path):
+            print("  (file not found)"); continue
+        try:
+            with open(path, "rb") as f:
+                preview = QSFPreviewParser().parse(f.read())
+            inp = app._preview_to_engine_inputs(preview)
+        except Exception as e:
+            print(f"  PARSE/BRIDGE CRASH: {type(e).__name__}: {e}")
+            issues_global.append((nm, "parse crash")); traceback.print_exc(); continue
+        print(f"  parsed: conds={len(inp['conditions'])} scales={len(inp['scales'])} "
+              f"oe={len(inp.get('open_ended_questions') or [])} "
+              f"sliders={len(preview.slider_questions or [])} text_entry={len(preview.text_entry_questions or [])} "
+              f"total_q={preview.total_questions}")
+        try:
+            eng = EnhancedSimulationEngine(
+                study_title=preview.survey_name or nm,
+                study_description=(preview.study_context or {}).get("description", "") or nm,
+                sample_size=N, conditions=inp["conditions"], factors=inp["factors"],
+                scales=inp["scales"], additional_vars=[],
+                demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+                open_ended_questions=inp.get("open_ended_questions"),
+                study_context=inp.get("study_context"), seed=11)
+            if getattr(eng, "llm_generator", None) is not None:
+                eng.llm_generator.disable_permanently("inspect - no network")
+            df, meta = eng.generate()
+        except Exception as e:
+            print(f"  SIMULATE CRASH: {type(e).__name__}: {e}")
+            issues_global.append((nm, f"sim crash: {e}")); traceback.print_exc(); continue
+        print(f"  simulated: rows={len(df)} cols={len(df.columns)}")
+        local = inspect(nm, df, inp, preview)
+        if local:
+            for li in local:
+                print(f"    ⚠ {li}")
+                issues_global.append((nm, li))
+        else:
+            print("    ✓ no output-data issues detected")
 
-print("\n" + "=" * 72)
-print(f"TOTAL flagged issues across {len(STUDENT_FILES)} student QSFs: {len(issues_global)}")
-# crashes are hard failures; data-quality flags are warnings
-crashes = [i for i in issues_global if "crash" in i[1]]
-sys.exit(1 if crashes else 0)
+    print("\n" + "=" * 72)
+    print(f"TOTAL flagged issues across {len(STUDENT_FILES)} student QSFs: {len(issues_global)}")
+    # crashes are hard failures; data-quality flags are warnings
+    crashes = [i for i in issues_global if "crash" in i[1]]
+    return 1 if crashes else 0
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

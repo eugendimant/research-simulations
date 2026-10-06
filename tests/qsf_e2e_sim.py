@@ -45,68 +45,73 @@ def check(name, cond, detail=""):
         fails.append(f"{name}: {detail}")
     print(f"  [{'PASS' if cond else 'FAIL'}] {name}{('  ' + detail) if (detail and not cond) else ''}")
 
-files = []
-for nm in SAMPLE:
-    p = os.path.join(QSF_DIR, nm)
-    if os.path.exists(p):
-        files.append(p)
-print(f"Running e2e simulation on {len(files)} real QSFs (N={N} each)\n")
+def main() -> int:
+    files = []
+    for nm in SAMPLE:
+        p = os.path.join(QSF_DIR, nm)
+        if os.path.exists(p):
+            files.append(p)
+    print(f"Running e2e simulation on {len(files)} real QSFs (N={N} each)\n")
 
-for path in files:
-    name = os.path.basename(path)
-    print(f"--- {name} ---")
-    try:
-        with open(path, "rb") as f:
-            preview = QSFPreviewParser().parse(f.read())
-    except Exception as e:
-        check(f"{name}: parse", False, f"{type(e).__name__}: {e}"); continue
+    for path in files:
+        name = os.path.basename(path)
+        print(f"--- {name} ---")
+        try:
+            with open(path, "rb") as f:
+                preview = QSFPreviewParser().parse(f.read())
+        except Exception as e:
+            check(f"{name}: parse", False, f"{type(e).__name__}: {e}"); continue
 
-    try:
-        inp = app._preview_to_engine_inputs(preview)
-    except Exception as e:
-        check(f"{name}: bridge", False, f"{type(e).__name__}: {e}")
-        traceback.print_exc(); continue
+        try:
+            inp = app._preview_to_engine_inputs(preview)
+        except Exception as e:
+            check(f"{name}: bridge", False, f"{type(e).__name__}: {e}")
+            traceback.print_exc(); continue
 
-    n_scales = len(inp["scales"]); n_oe = len(inp.get("open_ended_questions") or [])
-    n_cond = len(inp["conditions"])
-    fabricated = (n_scales == 1 and inp["scales"][0].get("detected_from_qsf") is False)
-    print(f"    conds={n_cond} scales={n_scales} oe={n_oe} "
-          f"sliders={len(preview.slider_questions or [])} "
-          f"text_entry={len(preview.text_entry_questions or [])}"
-          f"{'  [DV FABRICATED - real DVs not simulated]' if fabricated else ''}")
+        n_scales = len(inp["scales"]); n_oe = len(inp.get("open_ended_questions") or [])
+        n_cond = len(inp["conditions"])
+        fabricated = (n_scales == 1 and inp["scales"][0].get("detected_from_qsf") is False)
+        print(f"    conds={n_cond} scales={n_scales} oe={n_oe} "
+              f"sliders={len(preview.slider_questions or [])} "
+              f"text_entry={len(preview.text_entry_questions or [])}"
+              f"{'  [DV FABRICATED - real DVs not simulated]' if fabricated else ''}")
 
-    try:
-        eng = EnhancedSimulationEngine(
-            study_title=preview.survey_name or name,
-            study_description=(preview.study_context or {}).get("description", "") or name,
-            sample_size=N, conditions=inp["conditions"], factors=inp["factors"],
-            scales=inp["scales"], additional_vars=[],
-            demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
-            open_ended_questions=inp.get("open_ended_questions"),
-            study_context=inp.get("study_context"), seed=7)
-        if getattr(eng, "llm_generator", None) is not None:
-            eng.llm_generator.disable_permanently("e2e test - no network")
-        df, meta = eng.generate()
-    except Exception as e:
-        check(f"{name}: simulate", False, f"{type(e).__name__}: {e}")
-        traceback.print_exc(); continue
+        try:
+            eng = EnhancedSimulationEngine(
+                study_title=preview.survey_name or name,
+                study_description=(preview.study_context or {}).get("description", "") or name,
+                sample_size=N, conditions=inp["conditions"], factors=inp["factors"],
+                scales=inp["scales"], additional_vars=[],
+                demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+                open_ended_questions=inp.get("open_ended_questions"),
+                study_context=inp.get("study_context"), seed=7)
+            if getattr(eng, "llm_generator", None) is not None:
+                eng.llm_generator.disable_permanently("e2e test - no network")
+            df, meta = eng.generate()
+        except Exception as e:
+            check(f"{name}: simulate", False, f"{type(e).__name__}: {e}")
+            traceback.print_exc(); continue
 
-    check(f"{name}: simulate", True)
-    check(f"{name}: rows==N", len(df) == N, f"got {len(df)}")
-    # NaN check in numeric DV columns (scale columns)
-    nan_cols = []
-    for c in df.columns:
-        if pd.api.types.is_numeric_dtype(df[c]):
-            arr = pd.to_numeric(df[c], errors="coerce").to_numpy()
-            if np.isinf(arr).any():
-                nan_cols.append(c + "(inf)")
-    check(f"{name}: no inf in numeric", not nan_cols, ", ".join(nan_cols[:5]))
+        check(f"{name}: simulate", True)
+        check(f"{name}: rows==N", len(df) == N, f"got {len(df)}")
+        # NaN check in numeric DV columns (scale columns)
+        nan_cols = []
+        for c in df.columns:
+            if pd.api.types.is_numeric_dtype(df[c]):
+                arr = pd.to_numeric(df[c], errors="coerce").to_numpy()
+                if np.isinf(arr).any():
+                    nan_cols.append(c + "(inf)")
+        check(f"{name}: no inf in numeric", not nan_cols, ", ".join(nan_cols[:5]))
 
-print("\n" + "=" * 70)
-if fails:
-    print(f"E2E SIM: {len(fails)} FAILURES")
-    for f in fails:
-        print("  - " + f)
-    sys.exit(1)
-print("E2E SIM: ALL CHECKS PASSED")
-sys.exit(0)
+    print("\n" + "=" * 70)
+    if fails:
+        print(f"E2E SIM: {len(fails)} FAILURES")
+        for f in fails:
+            print("  - " + f)
+        return 1
+    print("E2E SIM: ALL CHECKS PASSED")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -40,7 +40,7 @@ def test_app_imports_without_error():
     except SystemExit:
         pass  # app.py reached the Streamlit runtime — all imports already resolved
     except ImportError as e:  # pragma: no cover - this is the failure we guard against
-        raise AssertionError(f"app.py failed to import (production-down class): {e}")
+        raise AssertionError(f"app.py failed to import (production-down class): {e}") from e
 
 
 def test_app_survives_missing_private_atomic_helper():

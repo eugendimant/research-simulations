@@ -8,6 +8,8 @@ import os
 import traceback
 import time
 
+import pytest
+
 # Path setup
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "simulation_app"))
 
@@ -310,6 +312,15 @@ def main():
                 print(f"    {s['file']}: {s['errors']}")
 
     return 0 if all_passed else 1
+
+
+@pytest.mark.parametrize("qsf_path", QSF_FILES, ids=[os.path.basename(p) for p in QSF_FILES])
+def test_abe3_stress_qsf(qsf_path):
+    """Parse one example QSF, generate N=100, validate the output."""
+    assert os.path.exists(qsf_path), f"example QSF missing: {qsf_path}"
+    summary = run_test(qsf_path)
+    assert summary.get("generate_ok"), f"generation failed: {summary.get('errors')}"
+    assert not summary.get("errors"), f"validation errors: {summary['errors']}"
 
 
 if __name__ == "__main__":

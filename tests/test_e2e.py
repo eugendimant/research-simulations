@@ -74,7 +74,7 @@ def df_and_metadata():
         study_title="Test Study", study_description="A test study.",
     )
     inferred = _parser.build_inferred_design(design)
-    from utils.enhanced_simulation_engine import EnhancedSimulationEngine, ExclusionCriteria
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
     engine = EnhancedSimulationEngine(
         study_title="Test Study", study_description="A test study.",
         sample_size=60, conditions=inferred["conditions"],
@@ -100,10 +100,11 @@ def metadata(df_and_metadata):
 TESTS_RUN = 0
 TESTS_PASSED = 0
 TESTS_FAILED = 0
+CRASHES: list = []
 
 
 def report_result(test_name: str, passed: bool, message: str) -> None:
-    """Record and print a test result."""
+    """Record and print a test result; raise AssertionError on failure so pytest fails."""
     global TESTS_RUN, TESTS_PASSED, TESTS_FAILED
     TESTS_RUN += 1
     if passed:
@@ -112,12 +113,13 @@ def report_result(test_name: str, passed: bool, message: str) -> None:
     else:
         TESTS_FAILED += 1
         print(f"  [FAIL] {test_name}: {message}")
+        raise AssertionError(f"{test_name}: {message}")
 
 
 # =============================================================================
 # Test 1: Builder Path - Simple 2-condition between-subjects design
 # =============================================================================
-def test_1_simple_between_subjects() -> None:
+def run_test_1_simple_between_subjects() -> None:
     """Test the full builder path for a simple 2-condition between-subjects design."""
     print("\n" + "=" * 70)
     print("TEST 1: Builder Path - Simple 2-condition between-subjects design")
@@ -232,7 +234,7 @@ def test_1_simple_between_subjects() -> None:
 # =============================================================================
 # Test 2: Builder Path - Factorial 2x2 design
 # =============================================================================
-def test_2_factorial_design(parser: SurveyDescriptionParser) -> None:
+def run_test_2_factorial_design(parser: SurveyDescriptionParser) -> None:
     """Test the builder path for a factorial 2x2 design."""
     print("\n" + "=" * 70)
     print("TEST 2: Builder Path - Factorial 2x2 design")
@@ -309,7 +311,7 @@ def test_2_factorial_design(parser: SurveyDescriptionParser) -> None:
 # =============================================================================
 # Test 3: Builder Path - With effect sizes
 # =============================================================================
-def test_3_effect_sizes() -> Tuple[pd.DataFrame, dict]:
+def run_test_3_effect_sizes() -> Tuple[pd.DataFrame, dict]:
     """Test simulation with explicit effect size specifications."""
     print("\n" + "=" * 70)
     print("TEST 3: Builder Path - With effect sizes")
@@ -371,8 +373,8 @@ def test_3_effect_sizes() -> Tuple[pd.DataFrame, dict]:
         diff = treatment_mean - control_mean
 
         report_result(
-            "3c - effect direction correct",
-            True,  # We just report the values; effect direction depends on simulation internals
+            "3c - effect direction correct (treatment mean > control mean for d=+0.5)",
+            treatment_mean > control_mean,
             f"Control mean={control_mean:.2f}, Treatment mean={treatment_mean:.2f}, diff={diff:.2f}",
         )
 
@@ -389,7 +391,7 @@ def test_3_effect_sizes() -> Tuple[pd.DataFrame, dict]:
 # =============================================================================
 # Test 4: Edge cases - numeric scales from builder
 # =============================================================================
-def test_4_numeric_scales(
+def run_test_4_numeric_scales(
     parser: SurveyDescriptionParser, conditions: list
 ) -> None:
     """Test numeric scale parsing and simulation (e.g., WTP)."""
@@ -474,7 +476,7 @@ def test_4_numeric_scales(
 # =============================================================================
 # Test 5: Validation tests
 # =============================================================================
-def test_5_validation(parser: SurveyDescriptionParser) -> None:
+def run_test_5_validation(parser: SurveyDescriptionParser) -> None:
     """Test design validation catches errors correctly."""
     print("\n" + "=" * 70)
     print("TEST 5: Validation tests")
@@ -560,7 +562,7 @@ def test_5_validation(parser: SurveyDescriptionParser) -> None:
 # =============================================================================
 # Test 6: Instructor report generation
 # =============================================================================
-def test_6_instructor_report(df: pd.DataFrame, metadata: dict) -> None:
+def run_test_6_instructor_report(df: pd.DataFrame, metadata: dict) -> None:
     """Test that instructor reports can be generated without crashing."""
     print("\n" + "=" * 70)
     print("TEST 6: Instructor report generation")
@@ -623,10 +625,11 @@ def main() -> int:
 
     try:
         # Test 1 returns shared objects for later tests
-        result1 = test_1_simple_between_subjects()
+        result1 = run_test_1_simple_between_subjects()
         df1, meta1, parser, conditions = result1
     except Exception as e:
         print(f"\n  [FATAL] Test 1 crashed: {e}")
+        CRASHES.append(f"Test 1: {e!r}")
         traceback.print_exc()
         parser = SurveyDescriptionParser()
         conditions = [
@@ -636,28 +639,32 @@ def main() -> int:
         df1, meta1 = None, {}
 
     try:
-        test_2_factorial_design(parser)
+        run_test_2_factorial_design(parser)
     except Exception as e:
         print(f"\n  [FATAL] Test 2 crashed: {e}")
+        CRASHES.append(f"Test 2: {e!r}")
         traceback.print_exc()
 
     df3, meta3 = None, {}
     try:
-        df3, meta3 = test_3_effect_sizes()
+        df3, meta3 = run_test_3_effect_sizes()
     except Exception as e:
         print(f"\n  [FATAL] Test 3 crashed: {e}")
+        CRASHES.append(f"Test 3: {e!r}")
         traceback.print_exc()
 
     try:
-        test_4_numeric_scales(parser, conditions)
+        run_test_4_numeric_scales(parser, conditions)
     except Exception as e:
         print(f"\n  [FATAL] Test 4 crashed: {e}")
+        CRASHES.append(f"Test 4: {e!r}")
         traceback.print_exc()
 
     try:
-        test_5_validation(parser)
+        run_test_5_validation(parser)
     except Exception as e:
         print(f"\n  [FATAL] Test 5 crashed: {e}")
+        CRASHES.append(f"Test 5: {e!r}")
         traceback.print_exc()
 
     # Use df3/meta3 for report generation (larger dataset with effect sizes)
@@ -666,9 +673,10 @@ def main() -> int:
     report_meta = meta3 if meta3 else meta1
     if report_df is not None:
         try:
-            test_6_instructor_report(report_df, report_meta)
+            run_test_6_instructor_report(report_df, report_meta)
         except Exception as e:
             print(f"\n  [FATAL] Test 6 crashed: {e}")
+            CRASHES.append(f"Test 6: {e!r}")
             traceback.print_exc()
     else:
         print("\n  [SKIP] Test 6 skipped - no DataFrame available from prior tests")
@@ -682,12 +690,39 @@ def main() -> int:
     print(f"  Tests failed: {TESTS_FAILED}")
     print("=" * 70)
 
-    if TESTS_FAILED > 0:
+    if TESTS_FAILED > 0 or CRASHES:
         print(f"\n  RESULT: FAILED ({TESTS_FAILED} test(s) failed)")
         return 1
     else:
         print(f"\n  RESULT: ALL {TESTS_PASSED} TESTS PASSED")
         return 0
+
+
+# =============================================================================
+# pytest entry points (thin wrappers; real logic lives in run_test_*)
+# =============================================================================
+def test_1_simple_between_subjects() -> None:
+    run_test_1_simple_between_subjects()
+
+
+def test_2_factorial_design(parser: SurveyDescriptionParser) -> None:
+    run_test_2_factorial_design(parser)
+
+
+def test_3_effect_sizes() -> None:
+    run_test_3_effect_sizes()
+
+
+def test_4_numeric_scales(parser: SurveyDescriptionParser, conditions: list) -> None:
+    run_test_4_numeric_scales(parser, conditions)
+
+
+def test_5_validation(parser: SurveyDescriptionParser) -> None:
+    run_test_5_validation(parser)
+
+
+def test_6_instructor_report(df: pd.DataFrame, metadata: dict) -> None:
+    run_test_6_instructor_report(df, metadata)
 
 
 if __name__ == "__main__":
