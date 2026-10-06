@@ -4324,11 +4324,23 @@ class EnhancedSimulationEngine:
         # falls back to zero, which is explicit and inspectable. The returned value
         # is passed through empirical_registry.adjust_effect(), so an entry whose
         # numbers were never checked against a source pushes the data less hard.
+        #
+        # The reference arm never takes a literature effect. The match is made on
+        # content, and a control label usually repeats the paradigm it is the
+        # control FOR -- `cognitive_dissonance_control` shares every content word
+        # with `cognitive_dissonance_induced`. Both would match the same entry and
+        # both would be shifted by the same published d, which leaves no contrast
+        # at all: the fallback meant to rescue a null design would have recreated
+        # one. A control arm is the zero point, exactly as it is on the explicit
+        # path above.
+        if self._is_control_arm(condition):
+            return _auto * _effect_scale
         try:
             _lit = _literature_effects.lookup(
                 condition=str(condition),
                 variable=str(variable),
                 study_context=f"{self.study_title or ''} {self.study_description or ''}",
+                rng=self._stable_rng("literature-effect", str(condition), str(variable)),
             )
         except Exception:
             return _auto * _effect_scale
@@ -6893,6 +6905,25 @@ class EnhancedSimulationEngine:
         r"discrimination|stigma|hostil|rumination|worry|guilt|shame)"
     )
 
+    def _is_control_arm(self, condition: str) -> bool:
+        """Whether ``condition`` names the reference arm of the design."""
+        _c = str(condition or "").lower()
+        return any(w in _c for w in self._CONTROL_ARM_WORDS)
+
+    def _stable_rng(self, *parts: str) -> random.Random:
+        """A Random seeded only by this run's seed and ``parts``.
+
+        Anything drawn from it is reproducible: the same simulation seed and the
+        same (condition, variable) give the same draw, in this process and in the
+        next one. ``random.Random()`` with no argument seeds from the OS, so two
+        engines built with the same seed would export different numbers -- the one
+        thing a seeded simulator must never do. Python's ``hash()`` is salted per
+        process and is no good here either, hence the digest.
+        """
+        _key = "|".join(str(p) for p in parts).encode("utf-8", "replace")
+        _digest = hashlib.sha256(_key).digest()[:8]
+        return random.Random(int(self.seed) ^ int.from_bytes(_digest, "big"))
+
     def _meta_anchored_effect(self, condition: str, variable: str, meta_d: float) -> float:
         """Effect for ``condition`` when the study names a paradigm with a published estimate.
 
@@ -7532,6 +7563,37 @@ class EnhancedSimulationEngine:
             modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.06
 
         return modifiers
+
+    def _survey_wording_for(self, variable_name: str) -> Tuple[str, str]:
+        """(question_text, item_text) for a generated column, or two empty strings.
+
+        Columns of an uploaded survey are often bare identifiers -- `Q17`, `DV_3` --
+        and a content matcher given only the identifier can never recognise the
+        construct, which is precisely the case this fallback exists for. The
+        wording is already on the scale the column came from, so index it once and
+        strip the trailing item number to get back to the scale.
+        """
+        _idx = getattr(self, "_wording_index", None)
+        if _idx is None:
+            _idx = {}
+            for _sc in (getattr(self, "scales", None) or []):
+                try:
+                    _q = str(_sc.get("question_text", "") or "")
+                    _d = str(_sc.get("dv_description", "") or "")
+                    _keys = [_sc.get("variable_name"), _sc.get("name")]
+                    _keys.extend(_sc.get("item_names", []) or [])
+                    for _k in _keys:
+                        _k = str(_k or "").strip().lower()
+                        if _k and _k not in _idx:
+                            _idx[_k] = (_q, _d)
+                except Exception:
+                    continue
+            self._wording_index = _idx
+        _v = str(variable_name or "").strip().lower()
+        if _v in _idx:
+            return _idx[_v]
+        _stem_name = re.sub(r"[_\-\s]*\d+$", "", _v)
+        return _idx.get(_stem_name, ("", ""))
 
     def _get_domain_response_calibration(
         self,
@@ -8185,7 +8247,7 @@ class EnhancedSimulationEngine:
         # "High" and "Low" conditions still showed d ~0.24, a configured d got an
         # unrequested boost, and names like "Paid"/"Fair"/"Maintain" matched 'ai'.
 
-        # v1.2.9.6: LAST RESORT, and it has to be last.
+        # v1.2.9.7: LAST RESORT, and it has to be last.
         #
         # The substring map near the top reaches about 40 of the 201 published
         # norms, and only when the variable name happens to contain the mapped
@@ -8211,7 +8273,12 @@ class EnhancedSimulationEngine:
         )
         if HAS_CONSTRUCT_MATCHER and not _already_calibrated:
             try:
-                _m = _construct_matcher.match(variable_name=variable_name)
+                _wording = self._survey_wording_for(variable_name)
+                _m = _construct_matcher.match(
+                    variable_name=variable_name,
+                    question_text=_wording[0],
+                    item_text=_wording[1],
+                )
             except Exception:
                 _m = None
             if _m is not None:
@@ -8604,7 +8671,7 @@ class EnhancedSimulationEngine:
         # =====================================================================
         condition_effect = self._get_effect_for_condition(condition, variable_name)
 
-        # v1.2.9.6: a condition effect is specified in Cohen's d — a GAP DIVIDED BY
+        # v1.2.9.7: a condition effect is specified in Cohen's d — a GAP DIVIDED BY
         # AN SD — so it has to travel with whatever SD this variable ends up with.
         # The domain calibration below widens or narrows the within-person SD by
         # `variance_adjustment` (an intention scale gets +0.05, a moral-identity

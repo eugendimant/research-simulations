@@ -365,3 +365,56 @@ def test_validator_straightlining_range_follows_block_width():
     assert hi3 > hi10 and lo3 > lo10
     # The old flat benchmark forced a 10-item block to 3-8%; measured is far lower.
     assert hi10 < 0.03
+
+
+# ---------------------------------------------------------------------------
+# Literature fallback: the reference arm, and reproducibility
+# ---------------------------------------------------------------------------
+
+def _dissonance_engine(seed=11):
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    return EnhancedSimulationEngine(
+        study_title="Dissonance", study_description="", sample_size=20,
+        conditions=["cognitive_dissonance_control", "cognitive_dissonance_induced"],
+        factors=[],
+        scales=[{
+            "name": "attitude", "variable_name": "attitude", "num_items": 4,
+            "scale_points": 7, "_validated": True, "scale_min": 1, "scale_max": 7,
+            "question_text": "How favourable is your attitude toward the essay topic?",
+            "dv_description": "attitude",
+        }],
+        additional_vars=[], demographics={}, seed=seed,
+    )
+
+
+def test_literature_fallback_leaves_the_control_arm_at_zero():
+    """A control label repeats the paradigm it controls for.
+
+    Matched on content, `cognitive_dissonance_control` shares every word with
+    `cognitive_dissonance_induced`, so without a guard both arms take the same
+    published effect and the contrast vanishes -- the fallback meant to rescue a
+    null design would recreate one.
+    """
+    engine = _dissonance_engine()
+    control = engine._get_effect_for_condition("cognitive_dissonance_control", "attitude")
+    treated = engine._get_effect_for_condition("cognitive_dissonance_induced", "attitude")
+    # Not exactly zero: the keyword pipeline's stable-hash jitter leaves noise at
+    # d ~ 0.0001. What matters is that no published effect was applied to it.
+    assert abs(control) < 0.01
+    assert abs(treated - control) > 0.01
+
+
+def test_stable_rng_depends_only_on_the_seed():
+    """Two engines built with the same seed must draw the same numbers."""
+    a = _dissonance_engine(11)._stable_rng("literature-effect", "cond", "dv").random()
+    b = _dissonance_engine(11)._stable_rng("literature-effect", "cond", "dv").random()
+    c = _dissonance_engine(12)._stable_rng("literature-effect", "cond", "dv").random()
+    assert a == b
+    assert a != c
+
+
+def test_survey_wording_reaches_a_numbered_item():
+    """`attitude_3` must resolve back to its scale's question text."""
+    q, item = _dissonance_engine()._survey_wording_for("attitude_3")
+    assert "attitude" in q.lower()
+    assert item == "attitude"
