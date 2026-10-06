@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.9.4 - Straight-lining matched to real rates at every block width. Measured over every contiguous window of four published instruments (48,431 respondents), the share of respondents answering a block identically falls from 7.1% at 3 items to 0.17% at 10, and a same-keyed block runs 3-6x a mixed-keyed one because nothing contradicts a run of identical answers when every item points the same way. The engine delivered a flat 5.2% whatever the block looked like; it now hits the measured rate at every width (19.3% against 19.4% at k=3, 8.2% against 8.1% at k=5, 3.7% against 3.6% at k=8). The pass also corrects downward, which it could not before, because the marginal-shape work produces constant rows readily. The adversarial validator's straight-lining benchmark, a hardcoded 3-8% band that it actively rewrote data to satisfy, now reads the same measured curve
+Version: 1.2.9.5 - Straight-lining matched to real rates at every block width. Measured over every contiguous window of four published instruments (48,431 respondents), the share of respondents answering a block identically falls from 7.1% at 3 items to 0.17% at 10, and a same-keyed block runs 3-6x a mixed-keyed one because nothing contradicts a run of identical answers when every item points the same way. The engine delivered a flat 5.2% whatever the block looked like; it now hits the measured rate at every width (19.3% against 19.4% at k=3, 8.2% against 8.1% at k=5, 3.7% against 3.6% at k=8). The pass also corrects downward, which it could not before, because the marginal-shape work produces constant rows readily. The adversarial validator's straight-lining benchmark, a hardcoded 3-8% band that it actively rewrote data to satisfy, now reads the same measured curve
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.9.4"
+__version__ = "1.2.9.5"
 
 
 # =============================================================================

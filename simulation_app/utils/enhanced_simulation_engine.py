@@ -12228,7 +12228,7 @@ class EnhancedSimulationEngine:
                             _sl_hit, f"scale '{log_entry.get('name')}' straight-lining")
                     self._item_realism_log.append(
                         dict(report, scale=log_entry.get("name"),
-                             pass_name="identical_answers",
+                             stage="identical_answers",
                              entry_id=(_sl_hit.entry_id if _sl_hit else ""))
                     )
             except Exception as err:
@@ -12731,7 +12731,7 @@ class EnhancedSimulationEngine:
                                     f"{_dc_report.reason}"
                                 )
                                 self._item_realism_log.append(
-                                    dict(scale=scale_name_raw, pass_name="decouple",
+                                    dict(scale=scale_name_raw, stage="decouple",
                                          **_dc_report.as_dict())
                                 )
                     except Exception as _dc_err:
@@ -12795,7 +12795,7 @@ class EnhancedSimulationEngine:
                                     f"[{_hit.entry_id}, {_hit.tier}]"
                                 )
                                 self._item_realism_log.append(
-                                    dict(scale=scale_name_raw, pass_name="marginal",
+                                    dict(scale=scale_name_raw, stage="marginal",
                                          entry_id=_hit.entry_id, tier=_hit.tier,
                                          **vars(_md_rep))
                                 )
