@@ -101,7 +101,8 @@ def _run_all():
     check("HTML has trait profile", "Personality Profile" in html1 or "trait" in html1.lower())
     check("HTML has study context", "Research Context" in html1)
     check("HTML has confidential badge", "CONFIDENTIAL" in html1)
-    check("HTML has version", "1.3" in html1)
+    from utils.instructor_report import __version__ as _report_version
+    check("HTML has version", f"v{_report_version}" in html1, f"expected v{_report_version}")
 
     print()
 
