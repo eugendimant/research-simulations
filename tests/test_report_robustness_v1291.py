@@ -288,6 +288,164 @@ def test_tiny_p_values_are_written_as_less_than_001(stats_mode):
 
 
 # ---------------------------------------------------------------------------
+# 5. One bad section is replaced by one line; the rest of the report is kept
+# ---------------------------------------------------------------------------
+@pytest.fixture()
+def full_study():
+    """A study whose metadata makes every optional section appear."""
+    df = _base_frame(40)
+    cols = _likert_items(df, "Trust", {"Treatment": 1.0})
+    meta = _meta(
+        df, [_scale("Trust", 3)], {"Trust": cols},
+        effect_sizes_configured=[{"variable": "Trust", "cohens_d": 0.5, "direction": "higher", "level_high": "Treatment", "level_low": "Control"}],
+        effect_sizes_observed=[{"variable": "Trust", "cohens_d": 0.5, "condition_high": "Treatment", "condition_low": "Control"}],
+        exclusion_summary={"flagged_speed": 1, "flagged_attention": 0, "flagged_straightline": 2, "total_excluded": 3},
+        generation_warnings=["a generation warning"], column_descriptions={"Trust_1": "first item"},
+        persona_distribution={"engaged": 0.6, "satisficer": 0.4},
+    )
+    return df, meta
+
+
+MD_SECTIONS = {  # method -> (title in the note, heading the section writes)
+    "_md_overview": ("Study overview", "## STUDY OVERVIEW"),
+    "_md_quality_assurance": ("Data quality assurance", "## DATA QUALITY ASSURANCE"),
+    "_md_data_quality": ("1. Data quality summary", "## 1. DATA QUALITY SUMMARY"),
+    "_md_design": ("2. Experimental design verification", "## 2. EXPERIMENTAL DESIGN VERIFICATION"),
+    "_md_dv_header": ("3. Dependent variable analysis", "## 3. DEPENDENT VARIABLE ANALYSIS"),
+    "_md_dv_scale": ("3. Dependent variable analysis: Trust", "### Trust"),
+    "_md_prereg": ("4. Preregistration alignment check", "## 4. PREREGISTRATION ALIGNMENT CHECK"),
+    "_md_persona": ("5. Persona distribution and impact", "## 5. PERSONA DISTRIBUTION & IMPACT"),
+    "_md_open_ended": ("6. Open-ended questions summary", "## 6. OPEN-ENDED QUESTIONS SUMMARY"),
+    "_md_effect_sizes": ("7. Effect size quality assessment", "## 7. EFFECT SIZE QUALITY ASSESSMENT"),
+    "_md_condition_balance": ("8. Condition balance analysis", "## 8. CONDITION BALANCE ANALYSIS"),
+    "_md_recommendations": ("9. Instructor recommendations", "## 9. INSTRUCTOR RECOMMENDATIONS"),
+}
+
+HTML_SECTIONS = {
+    "_html_overview": ("Study overview", "Study Overview</h2>"),
+    "_html_sample_overview": ("1. Sample overview", "1. Sample Overview</h2>"),
+    "_html_dv_header": ("3. Statistical analysis by DV", "3. Statistical Analysis by DV</h2>"),
+    "_html_dv_scale": ("3. Statistical analysis by DV: Trust", "<h3>Trust</h3>"),
+    "_html_persona": ("4-5. Persona and categorical analysis", "4. Persona Analysis"),
+    "_html_exec_summary": ("2. Executive summary", "2. Executive Summary</h2>"),
+    "_html_effect_verification": ("6. Effect size verification", "6. Effect Size Verification</h2>"),
+    "_html_exclusions": ("7. Data quality and exclusions", "7. Data Quality &amp; Exclusions</h2>"),
+    "_html_generation_warnings": ("Generation warnings", "a generation warning"),
+    "_html_methodology": ("8. Instructor notes and methodology", "8. Instructor Notes &amp; Methodology</h2>"),
+    "_html_data_dictionary": ("9. Data dictionary", "9. Data Dictionary</h2>"),
+}
+
+
+def _boom(*_a, **_k):
+    raise RuntimeError("boom <b>x</b>")
+
+
+def test_a_clean_run_lists_no_skipped_sections(full_study):
+    df, meta = full_study
+    gen_md, gen_html = ComprehensiveInstructorReport(), ComprehensiveInstructorReport()
+    md = gen_md.generate_comprehensive_report(df=df, metadata=meta, prereg_text="Trust will be higher in Treatment", team_info={})
+    html = gen_html.generate_html_report(df=df, metadata=meta, prereg_text="Trust will be higher in Treatment", team_info={})
+    assert gen_md.section_errors == [] and gen_html.section_errors == []
+    assert "could not be generated" not in md and "could not be generated" not in html
+    for _title, heading in MD_SECTIONS.values():
+        assert heading in md, heading
+    for _title, heading in HTML_SECTIONS.values():
+        assert heading in html, heading
+
+
+@pytest.mark.parametrize("method", sorted(MD_SECTIONS))
+def test_a_failing_markdown_section_costs_only_that_section(full_study, method):
+    df, meta = full_study
+    gen = ComprehensiveInstructorReport()
+    setattr(gen, method, _boom)
+    md = gen.generate_comprehensive_report(df=df, metadata=meta, prereg_text="Trust will be higher in Treatment", team_info={})
+    title, own_heading = MD_SECTIONS[method]
+    assert f'[section "{title}" could not be generated: RuntimeError: boom <b>x</b>]' in md
+    assert own_heading not in md or method == "_md_dv_header"  # what the failed section had written is gone
+    for other, (_t, heading) in MD_SECTIONS.items():
+        if other not in (method, "_md_dv_header" if method == "_md_dv_scale" else method):
+            assert heading in md, f"{heading} lost when {method} failed"
+    assert md.count("could not be generated") == 1
+    assert gen.section_errors == [f"'{title}': RuntimeError: boom <b>x</b>"]
+    assert "END OF COMPREHENSIVE INSTRUCTOR REPORT" in md or method == "_md_recommendations"
+
+
+@pytest.mark.parametrize("method", sorted(HTML_SECTIONS))
+def test_a_failing_html_section_costs_only_that_section(full_study, method):
+    df, meta = full_study
+    gen = ComprehensiveInstructorReport()
+    if method == "_html_exec_summary":
+        gen._generate_executive_summary = _boom  # the summary builder itself fails
+    else:
+        setattr(gen, method, _boom)
+    html = gen.generate_html_report(df=df, metadata=meta, prereg_text="Trust will be higher in Treatment", team_info={})
+    title, own_heading = HTML_SECTIONS[method]
+    assert "[section &quot;" + title + "&quot; could not be generated: RuntimeError: boom &lt;b&gt;x&lt;/b&gt;]" in html
+    assert "<b>x</b>" not in html  # the reason is escaped
+    assert own_heading not in html or method in ("_html_dv_header", "_html_exec_summary")
+    for other, (_t, heading) in HTML_SECTIONS.items():
+        if other == method or (method == "_html_dv_scale" and other in ("_html_dv_header", "_html_exec_summary")):
+            continue  # (with no analysable DV left there is nothing to summarise, as before)
+        assert heading in html, f"{heading} lost when {method} failed"
+    assert html.count("could not be generated") == 1
+    assert len(gen.section_errors) == 1 and gen.section_errors[0].startswith(f"'{title}': RuntimeError")
+    assert html.rstrip().endswith("</html>") and "Back to top" in html  # the document is still well-formed to the end
+
+
+def test_the_executive_summary_note_stays_in_the_summary_slot(full_study):
+    df, meta = full_study
+    gen = ComprehensiveInstructorReport()
+    gen._generate_executive_summary = _boom
+    html = gen.generate_html_report(df=df, metadata=meta, team_info={})
+    assert html.index("could not be generated") < html.index("3. Statistical Analysis by DV</h2>")
+    assert "EXEC_SUMMARY_PLACEHOLDER" not in html
+
+
+def test_one_bad_dv_does_not_cost_the_other_dvs(stats_mode):
+    df = _base_frame(40)
+    cols_a = _likert_items(df, "Alpha", {"Treatment": 1.0})
+    cols_b = _likert_items(df, "Beta", {"Treatment": 1.0}, seed=9)
+    # the middle entry is not a scale at all (a malformed spec from the builder path)
+    meta = _meta(df, [_scale("Alpha", 3), "garbled scale spec", _scale("Beta", 3)], {"Alpha": cols_a, "Beta": cols_b})
+    gen_md, gen_html = ComprehensiveInstructorReport(), ComprehensiveInstructorReport()
+    md = gen_md.generate_comprehensive_report(df=df, metadata=meta, team_info={})
+    html = gen_html.generate_html_report(df=df, metadata=meta, team_info={})
+    for text in (md, _text_of_html(html)):
+        assert "Alpha" in text and "Beta" in text
+        assert "garbled scale spec" in text and "could not be generated" in text
+    assert "<h3>Alpha</h3>" in html and "<h3>Beta</h3>" in html and "Executive Summary" in html
+    assert "### Alpha" in md and "### Beta" in md and "END OF COMPREHENSIVE INSTRUCTOR REPORT" in md
+    assert any("garbled scale spec" in e for e in gen_md.section_errors + gen_html.section_errors)
+
+
+def test_instances_made_without_init_still_work(full_study):
+    df, meta = full_study
+    gen = ComprehensiveInstructorReport.__new__(ComprehensiveInstructorReport)
+    assert "Executive Summary" in gen.generate_html_report(df=df, metadata=meta, team_info={})
+    assert gen.section_errors == []
+
+
+def test_malformed_metadata_values_do_not_stop_the_report():
+    df = _base_frame(10)
+    meta = {"conditions": None, "scales": None, "factors": None, "open_ended_questions": None, "study_title": "x"}
+    md, html = _both_reports(df, meta)
+    assert "COMPREHENSIVE INSTRUCTOR REPORT" in md and html.rstrip().endswith("</html>")
+
+
+def test_the_app_lists_skipped_sections_and_keeps_the_real_report(app_env, full_study, monkeypatch):
+    df, meta = full_study
+
+    def broken_persona(self, ctx):
+        raise KeyError("persona_distribution")
+
+    monkeypatch.setattr(app_env.ComprehensiveInstructorReport, "_html_persona", broken_persona)
+    out = app_env._build_instructor_reports(**_kwargs(df, meta))
+    assert "<h1>Report Error</h1>" not in out["comp_html"] and "Executive Summary" in out["comp_html"]
+    assert "COMPREHENSIVE INSTRUCTOR REPORT" in out["comp_md"]
+    assert out["problems"] == ["instructor analysis (HTML), skipped section '4-5. Persona and categorical analysis': KeyError: 'persona_distribution'"]
+
+
+# ---------------------------------------------------------------------------
 # Helper units
 # ---------------------------------------------------------------------------
 def test_helper_units():

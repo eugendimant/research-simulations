@@ -9,6 +9,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 __version__ = "1.2.9.1"  # v1.2.9.1: report describes the effects actually built in (report-facing version stamp)
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 from datetime import datetime
 import json
 import base64
@@ -293,6 +294,42 @@ def _finite_results_only(results: Any) -> Any:
         elif _all_finite(value):
             cleaned[key] = value
     return cleaned
+
+
+def _report_context(df: pd.DataFrame, metadata: Dict[str, Any], prereg_text: str,
+                    team_info: Optional[Dict[str, Any]], html: bool) -> SimpleNamespace:
+    """Shared state of one report run: the output list plus the values that several sections need.
+
+    These values used to be computed inside the first section that needed them, so a failure there left every
+    later section without them. They are computed once, defensively, before any section runs.
+    """
+    n_total = len(df)
+    try:
+        n_excluded = int(df["Exclude_Recommended"].sum()) if "Exclude_Recommended" in df.columns else 0
+    except (TypeError, ValueError):
+        logger.warning("Exclude_Recommended could not be summed; assuming no recommended exclusions", exc_info=True)
+        n_excluded = 0
+    conditions = list(metadata.get("conditions") or [])
+    try:
+        df = _align_condition_values(df, [str(c) for c in conditions])
+    except (TypeError, ValueError, KeyError):
+        logger.warning("Condition labels could not be aligned with the metadata; using them as they are", exc_info=True)
+    # v1.0.6.3: Fallback (HTML) - if the metadata conditions do not match the data, use the data's own values
+    if html and conditions and "CONDITION" in df.columns:
+        data_conditions = df["CONDITION"].unique().tolist()
+        if data_conditions and sum(1 for c in conditions if c in data_conditions) == 0:
+            conditions = data_conditions
+    return SimpleNamespace(
+        out=[], html=html, df=df,
+        # v1.2.4.0: the FULL dataset is analysed. Exclude_Recommended is informational (it teaches students about
+        # data quality) and must NOT reduce the analysis N: instructors expect the full sample.
+        df_clean=df,
+        metadata=metadata, prereg_text=prereg_text, team_info=team_info,
+        n_total=n_total, n_excluded=n_excluded, n_clean=n_total - n_excluded,
+        exclusion_rate=(n_excluded / n_total * 100) if n_total > 0 else 0,
+        conditions=conditions, factors=metadata.get("factors") or [], scales=metadata.get("scales") or [],
+        col_registry={}, dv_batch=[], all_scale_results=[], exec_summary_index=None,
+    )
 
 
 _P_ZERO_TEXT = re.compile(r"\bp\s*=\s*0\.0{3,4}(?![0-9])")
@@ -2504,6 +2541,37 @@ class ComprehensiveInstructorReport:
     def __init__(self):
         self._warnings: List[str] = []
         self._insights: List[str] = []
+        self.section_errors: List[str] = []  # sections the last report had to skip (see _run_section)
+
+    def _run_section(self, ctx: Any, title: str, build: Any, slot: Optional[int] = None) -> bool:
+        """Run one report section. If it raises, replace what it wrote by a one-line note and carry on.
+
+        The note reads ``[section "<title>" could not be generated: <reason>]``; the failure is logged and added to
+        ``self.section_errors`` so the caller can flag it. ``slot`` is the index of a reserved output entry (the
+        executive-summary placeholder) that should hold the note instead of the end of the report.
+        Returns True when the section ran cleanly.
+        """
+        mark = len(ctx.out)
+        n_results = len(ctx.all_scale_results)
+        try:
+            build(ctx)
+            return True
+        except Exception as exc:  # noqa: BLE001 - one bad section must not cost the whole report
+            reason = re.sub(r"\s+", " ", f"{type(exc).__name__}: {exc}").strip()[:300]
+            logger.warning("Report section %r could not be generated: %s", title, reason, exc_info=True)
+            self.section_errors.append(f"'{title}': {reason}")
+            del ctx.out[mark:]
+            del ctx.all_scale_results[n_results:]
+            note = f'[section "{title}" could not be generated: {reason}]'
+            if ctx.html:
+                entries = [f"<div class='warning-box'>{_html_lib.escape(note)}</div>"]
+            else:
+                entries = [note, ""]
+            if slot is not None and 0 <= slot < len(ctx.out):
+                ctx.out[slot] = entries[0]
+            else:
+                ctx.out.extend(entries)
+            return False
 
     def generate_comprehensive_report(
         self,
@@ -2513,8 +2581,40 @@ class ComprehensiveInstructorReport:
         prereg_text: str = "",
         team_info: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Generate the comprehensive instructor-only report."""
-        lines: List[str] = []
+        """Generate the comprehensive instructor-only report (Markdown).
+
+        The report is built section by section, each behind a guard: a section that raises is replaced by one line,
+        ``[section "<title>" could not be generated: <reason>]``, and the others are not affected. Skipped sections
+        are logged and listed in ``self.section_errors``. Every dependent variable is its own guarded block.
+        """
+        self.section_errors = []
+        ctx = _report_context(df, metadata, prereg_text, team_info, html=False)
+        for title, build in (
+            ("Study overview", self._md_overview),
+            ("Data quality assurance", self._md_quality_assurance),
+            ("1. Data quality summary", self._md_data_quality),
+            ("2. Experimental design verification", self._md_design),
+            ("3. Dependent variable analysis", self._md_dv_header),
+        ):
+            self._run_section(ctx, title, build)
+        for scale in list(ctx.scales or []):
+            ctx.dv_batch = [scale]
+            name = scale.get("name", "Scale") if isinstance(scale, dict) else scale
+            self._run_section(ctx, f"3. Dependent variable analysis: {name}", self._md_dv_scale)
+        for title, build in (
+            ("4. Preregistration alignment check", self._md_prereg),
+            ("5. Persona distribution and impact", self._md_persona),
+            ("6. Open-ended questions summary", self._md_open_ended),
+            ("7. Effect size quality assessment", self._md_effect_sizes),
+            ("8. Condition balance analysis", self._md_condition_balance),
+            ("9. Instructor recommendations", self._md_recommendations),
+        ):
+            self._run_section(ctx, title, build)
+        return _finalize_p_text("\n".join(map(str, ctx.out)), html=False)
+
+    def _md_overview(self, ctx: Any) -> None:
+        """Report header and study overview."""
+        lines, metadata, team_info = ctx.out, ctx.metadata, ctx.team_info
 
         # Header
         lines.append("=" * 80)
@@ -2627,6 +2727,10 @@ class ComprehensiveInstructorReport:
         lines.append(f"**Total Simulations Run (all time):** {total_simulations}")
         lines.append("")
 
+    def _md_quality_assurance(self, ctx: Any) -> None:
+        """Automated quality checks: scale ranges and open-ended response uniqueness."""
+        lines, df, metadata = ctx.out, ctx.df, ctx.metadata
+
         # === v1.2.5: DATA QUALITY ASSURANCE SECTION ===
         lines.append("")
         lines.append("-" * 80)
@@ -2681,6 +2785,11 @@ class ComprehensiveInstructorReport:
                 lines.append(f"- {col}: {unique_responses}/{total} unique ({pct:.1f}%) {status}")
             lines.append("")
 
+    def _md_data_quality(self, ctx: Any) -> None:
+        """Section 1: exclusions, attention checks and completion times."""
+        lines, df = ctx.out, ctx.df
+        n_total, n_excluded, n_clean, exclusion_rate = ctx.n_total, ctx.n_excluded, ctx.n_clean, ctx.exclusion_rate
+
         # =============================================================
         # SECTION 1: DATA QUALITY SUMMARY
         # =============================================================
@@ -2688,11 +2797,6 @@ class ComprehensiveInstructorReport:
         lines.append("## 1. DATA QUALITY SUMMARY")
         lines.append("-" * 80)
         lines.append("")
-
-        n_total = len(df)
-        n_excluded = int(df["Exclude_Recommended"].sum()) if "Exclude_Recommended" in df.columns else 0
-        n_clean = n_total - n_excluded
-        exclusion_rate = (n_excluded / n_total * 100) if n_total > 0 else 0
 
         lines.append(f"| Metric | Value |")
         lines.append(f"|--------|-------|")
@@ -2726,6 +2830,11 @@ class ComprehensiveInstructorReport:
             lines.append(f"- Very slow (>30min): {(df['Completion_Time_Seconds'] > 1800).sum()}")
             lines.append("")
 
+    def _md_design(self, ctx: Any) -> None:
+        """Section 2: design type, condition distribution and factor structure."""
+        lines, metadata, df, n_total = ctx.out, ctx.metadata, ctx.df, ctx.n_total
+        conditions, factors, scales = ctx.conditions, ctx.factors, ctx.scales
+
         # =============================================================
         # SECTION 2: EXPERIMENTAL DESIGN CHECK
         # =============================================================
@@ -2733,11 +2842,6 @@ class ComprehensiveInstructorReport:
         lines.append("## 2. EXPERIMENTAL DESIGN VERIFICATION")
         lines.append("-" * 80)
         lines.append("")
-
-        conditions = metadata.get("conditions", [])
-        factors = metadata.get("factors", [])
-        scales = metadata.get("scales", [])
-        df = _align_condition_values(df, [str(c) for c in conditions])
 
         lines.append(f"**Design type:** {metadata.get('design_type', 'Between-subjects')}")
         lines.append(f"**Number of conditions:** {len(conditions)}")
@@ -2779,6 +2883,10 @@ class ComprehensiveInstructorReport:
                 lines.append(f"- **{fname}**: {', '.join(str(l) for l in levels)} ({len(levels)} levels)")
             lines.append("")
 
+    def _md_dv_header(self, ctx: Any) -> None:
+        """Section 3 heading; also prepares the data and column registry the per-DV blocks use."""
+        lines, df, metadata = ctx.out, ctx.df, ctx.metadata
+
         # =============================================================
         # SECTION 3: DV ANALYSIS & STATISTICS
         # =============================================================
@@ -2794,6 +2902,12 @@ class ComprehensiveInstructorReport:
 
         # v1.4.11: Build column registry from scale_generation_log if available
         _col_registry: Dict[str, List[str]] = _scale_column_registry(metadata)
+        ctx.df_clean, ctx.col_registry = df_clean, _col_registry
+
+    def _md_dv_scale(self, ctx: Any) -> None:
+        """Section 3: the block of one dependent variable (``ctx.dv_batch`` holds just that scale)."""
+        lines, df_clean, conditions = ctx.out, ctx.df_clean, ctx.conditions
+        _col_registry, scales = ctx.col_registry, ctx.dv_batch
 
         for scale in scales:
             scale_name = scale.get("name", "Scale")
@@ -2895,6 +3009,10 @@ class ComprehensiveInstructorReport:
 
             lines.append("")
 
+    def _md_prereg(self, ctx: Any) -> None:
+        """Section 4: preregistration alignment check."""
+        lines, prereg_text, scales, n_total = ctx.out, ctx.prereg_text, ctx.scales, ctx.n_total
+
         # =============================================================
         # SECTION 4: PREREGISTRATION CHECK
         # =============================================================
@@ -2935,6 +3053,10 @@ class ComprehensiveInstructorReport:
             lines.append("```")
             lines.append("")
 
+    def _md_persona(self, ctx: Any) -> None:
+        """Section 5: persona distribution and its impact on the data."""
+        lines, metadata, n_total = ctx.out, ctx.metadata, ctx.n_total
+
         # =============================================================
         # SECTION 5: PERSONA DISTRIBUTION ANALYSIS
         # =============================================================
@@ -2970,6 +3092,10 @@ class ComprehensiveInstructorReport:
             if careless_share > 0.1:
                 lines.append(f"⚠️ Notable careless/random ({careless_share:.0%}) - verify exclusion criteria are working")
             lines.append("")
+
+    def _md_open_ended(self, ctx: Any) -> None:
+        """Section 6: open-ended questions and how the responses were generated."""
+        lines, df, metadata, conditions = ctx.out, ctx.df, ctx.metadata, ctx.conditions
 
         # =============================================================
         # SECTION 6: OPEN-ENDED QUESTIONS SUMMARY (NEW v2.4.4)
@@ -3077,6 +3203,10 @@ class ComprehensiveInstructorReport:
                 lines.append("Each response is unique per participant with topic-grounded content matching persona profiles.")
             lines.append("")
 
+    def _md_effect_sizes(self, ctx: Any) -> None:
+        """Section 7: configured versus observed effect sizes."""
+        lines, metadata = ctx.out, ctx.metadata
+
         # =============================================================
         # SECTION 7: EFFECT SIZE QUALITY ASSESSMENT (NEW v2.4.4)
         # =============================================================
@@ -3129,6 +3259,10 @@ class ComprehensiveInstructorReport:
             lines.append("No effect sizes were explicitly configured for this simulation.")
             lines.append("The simulation used domain-inferred defaults based on study context.")
             lines.append("")
+
+    def _md_condition_balance(self, ctx: Any) -> None:
+        """Section 8: participants per condition."""
+        lines, df, conditions = ctx.out, ctx.df, ctx.conditions
 
         # =============================================================
         # SECTION 8: CONDITION BALANCE ANALYSIS (NEW v2.4.4)
@@ -3189,6 +3323,10 @@ class ComprehensiveInstructorReport:
             lines.append("No CONDITION column found in data.")
             lines.append("")
 
+    def _md_recommendations(self, ctx: Any) -> None:
+        """Section 9: recommendations for instructors, and the report footer."""
+        lines, conditions, n_clean, exclusion_rate = ctx.out, ctx.conditions, ctx.n_clean, ctx.exclusion_rate
+
         # =============================================================
         # SECTION 9: RECOMMENDATIONS
         # =============================================================
@@ -3220,8 +3358,6 @@ class ComprehensiveInstructorReport:
         lines.append("-" * 80)
         lines.append("END OF COMPREHENSIVE INSTRUCTOR REPORT")
         lines.append("-" * 80)
-
-        return _finalize_p_text("\n".join(lines), html=False)
 
     def _get_detailed_impact(self, persona: str) -> str:
         """Get detailed impact description for instructor understanding."""
@@ -5231,7 +5367,41 @@ class ComprehensiveInstructorReport:
         prereg_text: str = "",
         team_info: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Generate a comprehensive HTML report with visualizations and statistical tests."""
+        """Generate a comprehensive HTML report with visualizations and statistical tests.
+
+        The report is built section by section, each behind a guard: a section that raises is replaced by one note,
+        ``[section "<title>" could not be generated: <reason>]``, and the others are not affected. Skipped sections
+        are logged and listed in ``self.section_errors``. Every dependent variable is its own guarded block.
+        """
+        self.section_errors = []
+        ctx = _report_context(df, metadata, prereg_text, team_info, html=True)
+        ctx.out = self._html_document_head(metadata)
+        self._run_section(ctx, "Study overview", self._html_overview)
+        self._run_section(ctx, "1. Sample overview", self._html_sample_overview)
+        self._run_section(ctx, "Executive summary slot", self._html_exec_slot)
+        self._run_section(ctx, "3. Statistical analysis by DV", self._html_dv_header)
+        for scale in list(ctx.scales or []):
+            ctx.dv_batch = [scale]
+            name = scale.get("name", "Scale") if isinstance(scale, dict) else scale
+            self._run_section(ctx, f"3. Statistical analysis by DV: {name}", self._html_dv_scale)
+        self._run_section(ctx, "4-5. Persona and categorical analysis", self._html_persona)
+        self._run_section(ctx, "2. Executive summary", self._html_exec_summary, slot=ctx.exec_summary_index)
+        for title, build in (
+            ("6. Effect size verification", self._html_effect_verification),
+            ("7. Data quality and exclusions", self._html_exclusions),
+            ("Generation warnings", self._html_generation_warnings),
+            ("8. Instructor notes and methodology", self._html_methodology),
+            ("9. Data dictionary", self._html_data_dictionary),
+            ("Footer", self._html_footer),
+        ):
+            self._run_section(ctx, title, build)
+        # Safety net: whatever user-controlled text reached the markup, the finished report contains no
+        # script, iframe, form, event handler, external resource or javascript: link, and the browser
+        # that opens the file is told to run no script and load nothing from the network.
+        return _harden_report_html(_finalize_p_text("\n".join(map(str, ctx.out)), html=True))
+
+    def _html_document_head(self, metadata: Dict[str, Any]) -> List[str]:
+        """Open the HTML document: styles, contents sidebar and the start of the report container."""
 
         # CSS styles for the report (v1.3.4: improved layout with TOC and sections)
         css = """
@@ -5323,6 +5493,11 @@ class ComprehensiveInstructorReport:
             "<div class='report-container'>",
             "<a id='top'></a>",
         ]
+        return html_parts
+
+    def _html_overview(self, ctx: Any) -> None:
+        """Report header and study overview (design, DVs, generation method and details)."""
+        html_parts, metadata, team_info = ctx.out, ctx.metadata, ctx.team_info
 
         # Header
         html_parts.append("<span class='confidential'>CONFIDENTIAL &mdash; INSTRUCTOR ONLY</span>")
@@ -5536,19 +5711,10 @@ class ComprehensiveInstructorReport:
         html_parts.append("</div>")  # close Study Overview section-block
         html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
 
-        # Summary metrics
-        n_total = len(df)
-        n_excluded = int(df["Exclude_Recommended"].sum()) if "Exclude_Recommended" in df.columns else 0
-        n_clean = n_total - n_excluded
-        exclusion_rate = (n_excluded / n_total * 100) if n_total > 0 else 0
-        conditions = metadata.get("conditions", [])
-        df = _align_condition_values(df, [str(c) for c in conditions])
-        # v1.0.6.3: Fallback — if metadata conditions don't match df, use df values
-        if conditions and "CONDITION" in df.columns:
-            _df_conds = df["CONDITION"].unique().tolist()
-            _matches = sum(1 for c in conditions if c in _df_conds)
-            if _matches == 0 and _df_conds:
-                conditions = _df_conds
+    def _html_sample_overview(self, ctx: Any) -> None:
+        """Section 1: sample size, exclusions and condition distribution."""
+        html_parts, df, n_total, n_clean, exclusion_rate, conditions = (
+            ctx.out, ctx.df, ctx.n_total, ctx.n_clean, ctx.exclusion_rate, ctx.conditions)
 
         html_parts.append("<a id='sample-overview'></a>")
         html_parts.append("<h2>1. Sample Overview</h2>")
@@ -5572,15 +5738,19 @@ class ComprehensiveInstructorReport:
 
         html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
 
-        # v1.2.4.0: Use FULL dataset for instructor report analysis.
-        # Exclude_Recommended is informational (teaches students about data quality)
-        # but should NOT reduce the analysis N — instructors expect the full sample.
-        df_clean = df
+    def _html_exec_slot(self, ctx: Any) -> None:
+        """Reserve the place of the executive summary; it is filled in after the DV analysis."""
+        html_parts = ctx.out
 
         # v1.3.4: Executive Summary placeholder — will be computed after DV analysis and inserted here
         html_parts.append("<a id='exec-summary'></a>")
         exec_summary_index = len(html_parts)
         html_parts.append("<!-- EXEC_SUMMARY_PLACEHOLDER -->")
+        ctx.exec_summary_index = exec_summary_index
+
+    def _html_dv_header(self, ctx: Any) -> None:
+        """Section 3 heading; also prepares the column registry the per-DV blocks use."""
+        html_parts, metadata = ctx.out, ctx.metadata
 
         # DV Analysis with statistical tests
         scales = metadata.get("scales", [])
@@ -5592,6 +5762,12 @@ class ComprehensiveInstructorReport:
 
         # v1.0.6.3: Build column registry for HTML report (same as markdown)
         _html_col_registry: Dict[str, List[str]] = _scale_column_registry(metadata)
+        ctx.scales, ctx.all_scale_results, ctx.col_registry = scales, all_scale_results, _html_col_registry
+
+    def _html_dv_scale(self, ctx: Any) -> None:
+        """Section 3: the block of one dependent variable (``ctx.dv_batch`` holds just that scale)."""
+        html_parts, df_clean, metadata, conditions, prereg_text = ctx.out, ctx.df_clean, ctx.metadata, ctx.conditions, ctx.prereg_text
+        all_scale_results, _html_col_registry, scales = ctx.all_scale_results, ctx.col_registry, ctx.dv_batch
 
         for scale in scales:
             scale_name = scale.get("name", "Scale")
@@ -6138,6 +6314,10 @@ class ComprehensiveInstructorReport:
                     "stats_results": stats_results
                 })
 
+    def _html_persona(self, ctx: Any) -> None:
+        """Sections 4-5: persona distribution and response styles, then the categorical analysis."""
+        html_parts, df_clean, metadata, conditions, n_total = ctx.out, ctx.df_clean, ctx.metadata, ctx.conditions, ctx.n_total
+
         # Chi-squared test for categorical associations
         if "CONDITION" in df_clean.columns and "Gender" in df_clean.columns:
             html_parts.append("<a id='persona-analysis'></a>")
@@ -6337,6 +6517,11 @@ class ComprehensiveInstructorReport:
 
         html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
 
+    def _html_exec_summary(self, ctx: Any) -> None:
+        """Section 2: build the executive summary and put it into its reserved place."""
+        html_parts, all_scale_results, prereg_text = ctx.out, ctx.all_scale_results, ctx.prereg_text
+        n_total, conditions, exec_summary_index = ctx.n_total, ctx.conditions, ctx.exec_summary_index
+
         # v1.3.4: Insert executive summary into its placeholder position (before statistical analysis)
         if all_scale_results:
             exec_summary = self._generate_executive_summary(
@@ -6348,6 +6533,10 @@ class ComprehensiveInstructorReport:
             html_parts[exec_summary_index] = exec_summary
         else:
             html_parts[exec_summary_index] = ""  # Remove placeholder if no results
+
+    def _html_effect_verification(self, ctx: Any) -> None:
+        """Section 6: configured versus observed effect sizes."""
+        html_parts, metadata = ctx.out, ctx.metadata
 
         # ── Observed vs Configured Effect Sizes ─────────────────────────
         obs_effects = metadata.get("effect_sizes_observed", [])
@@ -6388,6 +6577,10 @@ class ComprehensiveInstructorReport:
                     )
                 html_parts.append("</table>")
 
+    def _html_exclusions(self, ctx: Any) -> None:
+        """Section 7: exclusion flags."""
+        html_parts, metadata = ctx.out, ctx.metadata
+
         # ── Exclusion Summary ─────────────────────────────────────────
         excl = metadata.get("exclusion_summary", {})
         if excl:
@@ -6408,6 +6601,10 @@ class ComprehensiveInstructorReport:
                               f"<div class='metric-label'>Total Excluded</div></div>")
             html_parts.append("</div>")
 
+    def _html_generation_warnings(self, ctx: Any) -> None:
+        """Warnings the engine recorded while generating the data."""
+        html_parts, metadata = ctx.out, ctx.metadata
+
         # ── Generation Warnings ────────────────────────────────────────
         gen_warnings = metadata.get("generation_warnings", [])
         if gen_warnings:
@@ -6416,6 +6613,10 @@ class ComprehensiveInstructorReport:
             for gw in gen_warnings:
                 html_parts.append(f"<li>{gw}</li>")
             html_parts.append("</ul></div>")
+
+    def _html_methodology(self, ctx: Any) -> None:
+        """Section 8: notes for instructors and methodology."""
+        html_parts = ctx.out
 
         # Footer - Notes for Instructors
         html_parts.append("<a id='methodology'></a>")
@@ -6451,6 +6652,10 @@ class ComprehensiveInstructorReport:
 
         html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
 
+    def _html_data_dictionary(self, ctx: Any) -> None:
+        """Section 9: description of every output column."""
+        html_parts, metadata = ctx.out, ctx.metadata
+
         # === DATA DICTIONARY (placed at the very bottom for reference) ===
         _col_descs_html = metadata.get("column_descriptions", {})
         if _col_descs_html and isinstance(_col_descs_html, dict):
@@ -6465,12 +6670,11 @@ class ComprehensiveInstructorReport:
             html_parts.append("</table>")
             html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
 
+    def _html_footer(self, ctx: Any) -> None:
+        """Closing line and the end of the report container."""
+        html_parts = ctx.out
+
         html_parts.append(f"<p style='color:#999;font-size:0.9em;margin-top:30px;text-align:center;'>"
                           f"Generated by Behavioral Experiment Simulation Tool v{__version__} "
                           f"&middot; Software by Dr. Eugen Dimant &middot; PolyForm Noncommercial 1.0.0</p>")
         html_parts.append("</div></div></body></html>")  # close report-container + page-wrapper
-
-        # Safety net: whatever user-controlled text reached the markup, the finished report contains no
-        # script, iframe, form, event handler, external resource or javascript: link, and the browser
-        # that opens the file is told to run no script and load nothing from the network.
-        return _harden_report_html(_finalize_p_text("\n".join(html_parts), html=True))
