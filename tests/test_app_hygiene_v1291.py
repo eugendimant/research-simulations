@@ -359,16 +359,7 @@ def test_resend_button_of_a_stored_package_survives_a_new_run_finishing_before_t
 
 
 def test_stored_package_keys_are_unique_stable_and_safe():
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("_app_hygiene_keys", str(_APP_DIR / "app.py"))
-    sys.path.insert(0, str(_APP_DIR))
-    app = importlib.util.module_from_spec(spec)
-    sys.modules["_app_hygiene_keys"] = app
-    try:
-        spec.loader.exec_module(app)
-    except SystemExit:
-        pass
+    app = _load_app_module("_app_hygiene_keys")
     key = app._stored_package_key("_admin_pkg_send_", "20261006_100000__PILOT_S2")
     assert key == app._stored_package_key("_admin_pkg_send_", "20261006_100000__PILOT_S2")
     assert key.startswith("_admin_pkg_send_20261006_100000__PILOT_S2_")
@@ -462,17 +453,26 @@ def test_no_raw_html_call_interpolates_exception_text_unescaped():
 
 # ---- 5. the builder suggests a within-subjects design from whole words, not substrings -----------
 def _load_app_module(name: str):
+    """Execute app.py as a plain module (like the import-safety tests), from a scratch cwd so that
+    its data/ folder never lands in the repository."""
     import importlib.util
+    import os
+    import tempfile
 
     if str(_APP_DIR) not in sys.path:
         sys.path.insert(0, str(_APP_DIR))
     spec = importlib.util.spec_from_file_location(name, str(_APP_DIR / "app.py"))
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
-    try:
-        spec.loader.exec_module(module)
-    except SystemExit:
-        pass
+    previous = os.getcwd()
+    with tempfile.TemporaryDirectory() as scratch:
+        os.chdir(scratch)
+        try:
+            spec.loader.exec_module(module)
+        except SystemExit:
+            pass
+        finally:
+            os.chdir(previous)
     return module
 
 
