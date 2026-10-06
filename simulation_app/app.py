@@ -4916,6 +4916,60 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
     }
 
 
+# The QSF bridge calls a recovered numeric text box "numeric"; the Design page's type menu (and the
+# engine, via _BUILDER_TO_ENGINE_TYPE) call it "numeric_input".
+_DESIGN_PAGE_TYPE_ALIASES: Dict[str, str] = {"numeric": "numeric_input"}
+# Streamlit number boxes only hold integers inside the JS safe range; seeded bounds stay well inside it.
+_DESIGN_PAGE_MAX_BOUND = 10 ** 9
+
+
+def _design_page_bound(value: Any, default: int) -> int:
+    """Return ``value`` as a finite int within +-1e9, or ``default`` when it is not a finite number."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(number):
+        return default
+    return int(max(-_DESIGN_PAGE_MAX_BOUND, min(_DESIGN_PAGE_MAX_BOUND, number)))
+
+
+def _qsf_design_scales(preview: Optional[QSFPreviewResult]) -> List[Dict[str, Any]]:
+    """Return the survey's own DVs in the shape the QSF Design page edits; ``[]`` when none were found.
+
+    Wraps ``_preview_to_engine_inputs`` (detected scales plus recovered slider and numeric-entry DVs)
+    so the Design page starts from what the parser found instead of one generic ``Main_DV``. The
+    bridge's own ``Main_DV`` placeholder (nothing detected) is reported as ``[]`` so the caller keeps
+    its default, and a bridge failure is logged and reported the same way.
+    """
+    if preview is None:
+        return []
+    try:
+        bridged = _preview_to_engine_inputs(preview).get("scales") or []
+    except Exception as exc:  # noqa: BLE001 - a parse oddity must never take the Design page down
+        _log(
+            f"Design page: could not derive DVs from the QSF ({type(exc).__name__}: {exc}); "
+            "falling back to the default DV.",
+            level="warning",
+        )
+        return []
+    scales: List[Dict[str, Any]] = []
+    for spec in bridged:
+        if not isinstance(spec, dict) or not str(spec.get("name", "")).strip():
+            continue
+        dv = dict(spec)
+        dv_type = str(dv.get("type") or "likert")
+        dv["type"] = _DESIGN_PAGE_TYPE_ALIASES.get(dv_type, dv_type)
+        is_numeric = dv["type"] == "numeric_input"
+        dv["scale_min"] = _design_page_bound(dv.get("scale_min"), 0 if is_numeric else 1)
+        dv["scale_max"] = _design_page_bound(dv.get("scale_max"), _design_page_bound(dv.get("scale_points"), 7))
+        scales.append(dv)
+    if (len(scales) == 1 and scales[0].get("variable_name") == "Main_DV"
+            and not scales[0].get("detected_from_qsf")):
+        return []  # the bridge's "nothing detected" placeholder, not a survey DV
+    return scales
+
+
 @st.cache_resource
 def _get_group_manager() -> GroupManager:
     return GroupManager()
@@ -10765,6 +10819,7 @@ if active_page == 2:
 
         # Filter out empty scales
         scales = [s for s in scales if s.get("name", "").strip()]
+        _scales_from_design = bool(scales)
         if not scales:
             scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7}]
 
@@ -10775,7 +10830,13 @@ if active_page == 2:
         dv_version = st.session_state.get("_dv_version", 0)
 
         if "confirmed_scales" not in st.session_state:
-            st.session_state["confirmed_scales"] = scales.copy()
+            # v1.2.9.1: First visit on the QSF path (inferred_design is only written at the END of
+            # this page, so it has no scales yet): start from the survey's own DVs - detected scales
+            # plus recovered slider / numeric-entry DVs - instead of one generic Main_DV. The
+            # generic default remains the fallback when the parser found nothing.
+            st.session_state["confirmed_scales"] = (
+                scales.copy() if _scales_from_design else (_qsf_design_scales(preview) or scales.copy())
+            )
             st.session_state["_dv_version"] = 0
         if "scales_confirmed" not in st.session_state:
             st.session_state["scales_confirmed"] = False
@@ -10821,7 +10882,10 @@ if active_page == 2:
                     _n_items = int(_n_items)
                 except (ValueError, TypeError):
                     _n_items = 1
-                if _n_items == 1 and dv_type in ("likert", "slider", "numeric_input"):
+                # v1.2.9.1: "numeric_input" keeps its type (and its wider Min/Max boxes) with one
+                # item: collapsing it to "single_item" dropped the money/count realism the engine
+                # applies to numeric inputs and capped its range at 100.
+                if _n_items == 1 and dv_type in ("likert", "slider"):
                     dv_type = "single_item"
                 elif _n_items > 1 and dv_type == "single_item":
                     dv_type = "numbered_items"
@@ -10869,7 +10933,8 @@ if active_page == 2:
                         num_items = st.number_input(
                             items_label,
                             min_value=1,
-                            max_value=50,
+                            # v1.2.9.1: a detected battery can hold more than 50 items
+                            max_value=max(50, int(items_val or 1)),
                             value=int(items_val) if items_val else 1,
                             key=f"dv_items_v{dv_version}_{i}",
                             help=items_help
@@ -10892,10 +10957,12 @@ if active_page == 2:
                         current_min = int(scale_min) if scale_min is not None else 1
                         if dv_type == 'numeric_input':
                             # Numeric inputs can have any range (incl. negative for games with taking)
+                            # v1.2.9.1: bounds widen to hold a seeded value (e.g. a year-of-birth
+                            # range starting at 1900) instead of raising on the first render.
                             new_scale_min = st.number_input(
                                 "Min",
-                                min_value=-1000,
-                                max_value=1000,
+                                min_value=min(-1000, current_min),
+                                max_value=max(1000, current_min),
                                 value=current_min,
                                 key=f"dv_min_v{dv_version}_{i}",
                                 help="Minimum value (e.g., 0 for slider, -10 for games with taking option)"
@@ -10903,8 +10970,8 @@ if active_page == 2:
                         else:
                             new_scale_min = st.number_input(
                                 "Min",
-                                min_value=-1000,
-                                max_value=100,
+                                min_value=min(-1000, current_min),
+                                max_value=max(100, current_min),
                                 value=current_min,
                                 key=f"dv_min_v{dv_version}_{i}",
                                 help="Minimum scale value (e.g., 0 or 1, negative for bipolar scales)"
@@ -10917,19 +10984,21 @@ if active_page == 2:
                             # Numeric inputs can have any range
                             new_scale_max = st.number_input(
                                 "Max",
-                                min_value=1,
-                                max_value=10000,
+                                min_value=min(1, current_max),
+                                max_value=max(10000, current_max),
                                 value=current_max,
                                 key=f"dv_max_v{dv_version}_{i}",
                                 help="Maximum value (e.g., 100 for percentage, 1000 for WTP)"
                             )
                         else:
                             # v1.2.6.1: Allow min_value=1 for binary items (0/1 scales)
+                            # v1.2.9.1: bounds widen to hold the seeded value (a 0-500 slider kept
+                            # its range instead of being cut to 0-100 on first render)
                             new_scale_max = st.number_input(
                                 "Max",
-                                min_value=1,
-                                max_value=100,
-                                value=min(max(1, current_max), 100),  # Cap at 100, floor at 1
+                                min_value=min(1, current_max),
+                                max_value=max(100, current_max),
+                                value=current_max,
                                 key=f"dv_max_v{dv_version}_{i}",
                                 help="Maximum scale value (e.g., 1 for binary, 5, 7, 10, 100)"
                             )
@@ -10940,18 +11009,30 @@ if active_page == 2:
                         new_scale_max = new_scale_min + 1
 
                     # Calculate scale_points from min/max for compatibility
-                    scale_points = new_scale_max  # Used for data generation
+                    # v1.2.9.1: number of response options. A DV the user has not re-ranged keeps the count
+                    # it arrived with (the parser's own scale_points); a re-ranged one gets max - min + 1.
+                    # The old "= max" understated 0-based sliders (0-100 -> 100) and bipolar scales (-3..3 -> 3).
+                    scale_points = max(2, new_scale_max - new_scale_min + 1)  # Used for data generation
+                    if (new_scale_min, new_scale_max) == (current_min, current_max):
+                        try:
+                            scale_points = max(2, int(scale.get("scale_points") or scale_points))
+                        except (TypeError, ValueError):
+                            pass  # keep max - min + 1 when the stored count is not a number
 
                     with col4:
                         # v1.2.5.3: Editable DV type dropdown
                         _dv_type_options = list(type_badges.keys())
+                        if dv_type not in _dv_type_options:
+                            # v1.2.9.1: a detected type the menu does not list (rank_order, best_worst,
+                            # ...) stays selectable instead of silently turning into "matrix".
+                            _dv_type_options.append(dv_type)
                         _dv_type_labels = list(type_badges.values())
                         _current_type_idx = _dv_type_options.index(dv_type) if dv_type in _dv_type_options else 0
                         _type_key = f"dv_type_v{dv_version}_{i}"
                         selected_type = st.selectbox(
                             "Type",
                             options=_dv_type_options,
-                            format_func=lambda x: type_badges.get(x, x),
+                            format_func=lambda x: type_badges.get(x, str(x).replace("_", " ").title()),
                             index=_current_type_idx,
                             key=_type_key,
                             label_visibility="collapsed",
