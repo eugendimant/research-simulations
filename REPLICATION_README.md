@@ -39,7 +39,7 @@ streamlit run simulation_app/app.py
 ## Reproduce the validation
 ```bash
 # Unit / regression suite (includes the v1.2.6.x–v1.2.7.x bug-fix regressions)
-python3 -m pytest tests/test_bugfixes_v1264.py -q
+python3 -m pytest tests/test_bugfixes_v1264.py -q   # 38 tests
 
 # Parse every example QSF — expect 0 crashes
 python3 tests/qsf_robustness.py
@@ -47,7 +47,7 @@ python3 tests/qsf_robustness.py
 # End-to-end simulate a diverse QSF sample — expect "ALL CHECKS PASSED"
 python3 tests/qsf_e2e_sim.py 25
 
-# Effect-direction fuzz over 2,592 condition×variable combos
+# Crash/scoping fuzz over 2,592 condition×variable combos
 python3 tests/effect_fuzz.py
 
 # Deep output-data inspection of the 10 most-recent student QSFs
@@ -79,7 +79,7 @@ print(df.shape); print(df.head())
   to force the offline (non-LLM) open-ended generator; otherwise the tool tries
   free LLM providers for open-ended text and falls back to templates.
 - **Version sync:** the app checks `REQUIRED_UTILS_VERSION == utils.__version__`
-  at startup; all 9 version locations are kept in sync (currently `1.2.8.7`). The
+  at startup; all 10 version locations are kept in sync (currently `1.2.8.7`). The
   canonical list of those locations is in `CLAUDE.md`.
 - **Known remaining roadmap** (not bugs) is documented in
   `docs/COVERAGE_ROADMAP.md` — e.g. within-subjects repeated-measures done as a

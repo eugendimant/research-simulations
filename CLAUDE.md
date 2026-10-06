@@ -38,23 +38,24 @@ Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider sta
 
 ---
 
-## ABSOLUTE RULE: Version Synchronization — ALL 9 Locations, EVERY Commit
+## ABSOLUTE RULE: Version Synchronization — ALL 10 Locations, EVERY Commit
 
 **A version mismatch causes a VISIBLE ERROR BANNER for all users.** The app checks `REQUIRED_UTILS_VERSION == utils.__version__` at startup. If they differ by even one digit, users see a yellow warning bar. **It MUST NEVER happen again.**
 
-### The 9 version locations — ALL must contain the EXACT SAME version string:
+### The 10 version locations — ALL must contain the EXACT SAME version string:
 
 | # | File | Location |
 |---|------|----------|
-| 1 | `simulation_app/app.py` | `REQUIRED_UTILS_VERSION = "X.X.X.X"` (line ~56) |
-| 2 | `simulation_app/app.py` | `APP_VERSION = "X.X.X.X"` (line ~122) |
-| 3 | `simulation_app/app.py` | `BUILD_ID = "YYYYMMDD-vXXXXX-description"` (line ~57) |
+| 1 | `simulation_app/app.py` | `REQUIRED_UTILS_VERSION = "X.X.X.X"` (line ~57) |
+| 2 | `simulation_app/app.py` | `APP_VERSION = "X.X.X.X"` (line ~149) |
+| 3 | `simulation_app/app.py` | `BUILD_ID = "YYYYMMDD-vXXXXX-description"` (line ~58) |
 | 4 | `simulation_app/utils/__init__.py` | `__version__ = "X.X.X.X"` (line ~68) |
 | 5 | `simulation_app/utils/__init__.py` | `Version: X.X.X.X` in docstring (line ~5) |
 | 6 | `simulation_app/utils/qsf_preview.py` | `__version__ = "X.X.X.X"` (line ~36) |
 | 7 | `simulation_app/utils/response_library.py` | `__version__ = "X.X.X.X"` (line ~66) |
 | 8 | `simulation_app/README.md` | `**Version X.X.X.X**` in header (line ~3) |
 | 9 | `simulation_app/README.md` | `## The behavioral engine (vX.X.X.X)` section header |
+| 10 | `simulation_app/README.md` | `(Version X.X.X.X)` in the citation block at the bottom |
 
 ### MANDATORY WORKFLOW — Do this BEFORE every commit:
 
@@ -63,7 +64,7 @@ Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider sta
 - Examples: `1.0.7.3` → `1.0.7.4`, `1.0.7.9` → `1.0.8.0`, `1.0.9.9` → `1.1.0.0`
 - **NEVER use two-digit segments** like `.10`, `.11`. Each segment is a single digit 0-9.
 
-**Step 2: Update ALL 9 locations with the SAME version string.** Never touch one file without the other. The #1 failure mode is updating `utils/__init__.py` without updating `REQUIRED_UTILS_VERSION` in `app.py` (or vice versa). Treat them as a single atomic operation.
+**Step 2: Update ALL 10 locations with the SAME version string.** Never touch one file without the other. The #1 failure mode is updating `utils/__init__.py` without updating `REQUIRED_UTILS_VERSION` in `app.py` (or vice versa). Treat them as a single atomic operation.
 
 **Step 3: Update BUILD_ID** to force Streamlit cache invalidation. Format: `"YYYYMMDD-vXXXXX-short-description"`
 
@@ -148,7 +149,7 @@ Never leave changes uncommitted. Never forget the PR link.
 
 ### Before Every Commit:
 1. Run `python3 -m py_compile <file>` on ALL modified Python files
-2. Verify version numbers are synchronized (all 9 locations)
+2. Verify version numbers are synchronized (all 10 locations)
 3. Run tests: `python3 -m pytest tests/test_e2e.py -v --tb=short`
 4. Test the app loads without version mismatch warning
 5. Ensure no syntax errors or import failures
@@ -197,7 +198,7 @@ Runs in this order:
 2. **Full generation** (`_generate_open_response()` in enhanced_simulation_engine.py): Three-level cascade
 
 ### Three-Level Cascade:
-1. **LLM Generator** (llm_response_generator.py): Free LLM APIs (Google AI Flash → Lite → Groq → Cerebras → SambaNova → Mistral → OpenRouter)
+1. **LLM Generator** (llm_response_generator.py): 9 free provider entries, in order — Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Gemini 2.5 Flash Lite → Groq GPT-OSS 120B → Groq Qwen3.6 27B → Cerebras GPT-OSS 120B → SambaNova Llama 3.3 70B → Mistral Small → OpenRouter Mistral Small 3.1. `_builtin_providers` in that file is authoritative
 2. **ComprehensiveResponseGenerator** (response_library.py): Template-based + Markov chain
 3. **TextResponseGenerator** (persona_library.py): Basic template fallback
 
@@ -241,7 +242,7 @@ Every simulated participant is ONE person. Their numeric responses and open-text
 | 1. **Permanent disable** | `llm_response_generator.py` | `_force_disabled` flag + `disable_permanently()` — auto-recovery CANNOT undo | N/A |
 | 2. **Cumulative failures** | `llm_response_generator.py` | `_cumulative_failure_count` (never resets on success) | 15 total |
 | 3. **Per-participant timeout** | `enhanced_simulation_engine.py` | Tracks wall-clock time per OE response | 3 consecutive > 45s |
-| 4. **OE generation budget** | `enhanced_simulation_engine.py` | Uses `disable_permanently()` | 180s total |
+| 4. **OE generation budget** | `enhanced_simulation_engine.py` | Uses `disable_permanently()` | 180s per open-ended question |
 | 5. **Global watchdog thread** | `app.py` | Daemon thread checks every 30s — **progress-aware** (v1.2.6.4) | 120s stall (primary); 30 min absolute backstop fires ONLY if also stalled |
 
 > **v1.2.6.4 — Progress-aware watchdog:** Generation is NEVER killed while it is
@@ -275,7 +276,7 @@ Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests 
 
 | Bug | What Happened | Where | Fix |
 |-----|---------------|-------|-----|
-| Auto-recovery cycle | `is_llm_available` re-enabled dead providers every 20s | `llm_response_generator.py:2296` | `_force_disabled` checked first |
+| Auto-recovery cycle | `is_llm_available` re-enabled dead providers every 20s | `llm_response_generator.py` — `is_llm_available` (~:2557) | `_force_disabled` checked first |
 | Quality filter too strict | Topic keyword matching rejected valid LLM responses silently | `_is_low_quality_response()` | 3-char prefix matching + accept-on-full-rejection |
 | Rate limiter timestamp | `wait_if_needed()` returned without appending timestamp when sleep > 15s | `_RateLimiter.wait_if_needed()` | Returns bool; caller checks |
 | Prefill budget too short | 30s filled only 2/15 pool buckets → 500+ on-demand calls | `enhanced_simulation_engine.py` | Increased to 90s |

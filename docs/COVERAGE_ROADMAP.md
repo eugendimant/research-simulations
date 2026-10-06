@@ -44,11 +44,13 @@ data-validity fixes:**
   (b) fractional (0–0.25) and huge (0–100000) slider ranges no longer collapse
   to a constant — they fill a clean integer grid with realistic spread.
 - **Streamlined:** the type-aware post-processing was extracted from the giant
-  `generate()` into three named helpers; classification regexes compile once. Verified across the example-QSF corpus, the DV types that
-actually occur are: `matrix(1808), single_item(921), numbered_items(154),
-numeric_input(52), slider(29), constant_sum(8), rank_order(5), likert(4),
-numbered(1)`. (Types like `single_choice`/`best_worst`/`paired_comparison`/
-`hot_spot` have parser code paths but **0 occurrences** in real QSFs — non-issues.)
+  `generate()` into three named helpers; classification regexes compile once. Re-derived 2026-10-06 by parsing all 302 example QSFs (0 parse failures) and
+counting `detected_scales[*]["type"]`, the DV types that actually occur are:
+`matrix(991), slider(627), single_item(300), numbered_items(239),
+constant_sum(32), rank_order(27), numeric_input(18)`. (Types with parser code
+paths but **0 occurrences** in real QSFs: `likert`, `numbered`, `single_choice`,
+`best_worst`, `paired_comparison`, `hot_spot`.) Regenerate this census rather
+than editing it — the corpus grows with every auto-collect commit.
 
 | Area | Was | Now |
 |------|-----|-----|
@@ -63,8 +65,8 @@ numbered(1)`. (Types like `single_choice`/`best_worst`/`paired_comparison`/
 The seam is now **correct for every DV type that occurs in real QSFs**. All
 changes are **additive and gated on `type` + name cues**, so generic numeric
 (age/temperature) and all Likert/matrix/slider DVs are **byte-identical**.
-Validated: 15 regression tests, effect fuzz (2,592 combos), 0 crashes across every
-example QSF, 0 issues across 10 student QSFs, e2e all-pass.
+Validated: 38 regression tests in `tests/test_bugfixes_v1264.py`, crash/scoping fuzz
+(2,592 combos), 0 crashes across every example QSF, 0 issues across 10 student QSFs, e2e all-pass.
 
 ---
 
@@ -78,9 +80,11 @@ Ordered by (frequency of need × value ÷ risk). These are larger, mostly
    structurally simulated as between-subjects. Needs repeated DV columns
    (`DV_T1/T2…`) from a shared per-participant latent + level shift, giving
    realistic test-retest r≈0.5–0.7. *(Highest-value remaining design gap.)*
-2. **Slider continuous realism** — sliders (29 in corpus) generate as bounded
-   integers; feeling-thermometers/VAS could use finer granularity + endpoint
-   heaping. Low risk, modest value.
+2. **Slider continuous realism** — sliders generate as bounded integers;
+   feeling-thermometers/VAS could use finer granularity + endpoint heaping.
+   Low risk. **Re-prioritized 2026-10-06:** this was ranked "modest value" on a
+   corpus count of 29; the real count is **627**, the second most common DV type
+   after matrix. Value is high, not modest — this belongs above item 1.
 3. **WTP anchoring** — extend the new money right-skew to shift toward an explicit
    anchor value when one appears in the question text (Tversky & Kahneman 1974).
 
@@ -140,9 +144,12 @@ Ordered by (frequency of need × value ÷ risk). These are larger, mostly
   a depression/anxiety/Machiavellianism DV with no manipulation centers near the
   scale's default, not at the published norm mean. Anchoring generated means to
   published construct norms is a worthwhile, separate, deeper change.
-- The **`HBSParticipantFactory` census demographics** are appended as `ABE3_*`
-  columns indexed by `i % n_states` (position-misaligned with the persona that
-  generated each row) and do not drive DVs — worth aligning + activating.
+- The **`HBSParticipantFactory` census demographics** are appended as seven
+  descriptive `ABE3_*` columns (education, income, party ID, ideology, state,
+  region, response style) indexed by `i % n_states` — position-misaligned with
+  the persona that generated each row — and do not drive DVs. There is no
+  `ABE3_Age`: the `Age` column is an independent normal draw from the
+  user-supplied mean/SD. Worth aligning + activating.
 
 ---
 
