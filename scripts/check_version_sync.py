@@ -37,8 +37,10 @@ LOCATIONS: List[Tuple[str, Path, str]] = [
      rf'^__version__\s*=\s*["\']{VERSION_RE}["\']'),
     ("README.md header '**Version X**'", APP / "README.md",
      rf'^\*\*Version\s+{VERSION_RE}\*\*'),
-    ("README.md '## Features (vX)'", APP / "README.md",
-     rf'^##\s+Features\s+\(v{VERSION_RE}\)'),
+    ("README.md '## The behavioral engine (vX)'", APP / "README.md",
+     rf'^##\s+The behavioral engine\s+\(v{VERSION_RE}\)'),
+    ("README.md citation '(Version X)'", APP / "README.md",
+     rf'\(Version\s+{VERSION_RE}\)\s*\[Computer software\]'),
 ]
 
 def read_versions() -> List[Tuple[str, Optional[str], str]]:

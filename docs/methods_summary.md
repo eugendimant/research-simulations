@@ -69,11 +69,11 @@ If you haven't built your survey yet — or prefer a faster setup — you can **
 3. **Scales and DVs**: Describe your measures in paragraph or list format. The parser recognizes:
    - Standard scale specifications: `"Trust scale (4 items, 1-7)"`
    - Detailed academic format: `"Perceived Quality (PQ): 3 items (7-point Likert; 1=low, 7=high)"`
-   - Known validated instruments: `"BFI-10"`, `"PANAS"`, `"GAD-7"`, `"PHQ-9"`
+   - Known validated instruments: `"BFI-10"`, `"PANAS"`, `"GAD-7"`, `"PHQ-9"` and others. Three tables recognize these: `KNOWN_SCALES` (`utils/survey_builder.py`, 84 entries) supplies expected structure on this builder path — it is where `GAD-7` (7 items, 0-3), `PHQ-9` (9 items, 0-3) and a `BFI-10`-specific entry (10 items, 1-5) live; `WELL_KNOWN_SCALES` (`utils/qsf_preview.py`, 10 entries) is present for the QSF path but its detector `_detect_well_known_scale()` has no callers, so the QSF path recognizes no validated instruments today; and the construct map supplies published norms for calibration. A name may hit one, two or all three
    - Numeric measures: `"Willingness to Pay (WTP): 1 item (open-ended numeric)"`
    - Binary measures: `"Manipulation check (Yes/No)"`
 4. **Open-ended questions**: Simply list your qualitative questions
-5. **Research domain**: Select from 225+ research domains for persona-appropriate responses
+5. **Research domain**: Pick one of the 16 broad domains from the dropdown — the only domain widget in the builder is a selectbox (`app.py:5541`), and the domain auto-detected from your description is prepended to the list when it is not one of the 16; the 273-domain detector then refines it from your question wording
 6. **Sample size and effect sizes**: Configure your simulation parameters
 
 The builder outputs the same structured design specification used by the QSF pathway, ensuring identical simulation quality regardless of input method.
@@ -87,7 +87,8 @@ Regardless of input method, you review and adjust the detected design:
 - **Scale type auto-correction**: Single-item DVs are automatically identified (not mislabeled as "Likert Scale"); multi-item scales are properly categorized by type (matrix, numbered items, single item). Scale min/max values are propagated from QSF detection.
 - Add or remove measures as needed
 - **Custom demographic variables**: Add demographic questions beyond the defaults (Age, Gender). Quick-add templates include Political Orientation, Education Level, Ethnicity, Household Income, Employment Status, Religion, and Party Identification. Each demographic is fully customizable:
-  - **Categorical**: Edit options and their probability weights (e.g., Political Orientation with "Very Conservative" through "Very Progressive")
+  - **Categorical**: Edit options and their probability weights
+- **Ordinal**: Ordered categories with weights (e.g. Political Orientation, "Very Liberal" through "Very Conservative")
   - **Ordinal**: Set ordered categories with center-weighted distribution
   - **Numeric**: Configure mean, standard deviation, and min/max bounds (e.g., household income)
   - **Distribution preview**: See the expected distribution before generating
@@ -103,7 +104,7 @@ The system produces a publication-ready CSV file containing:
 - Unique open-ended text responses
 - Demographics (including custom variables) and metadata
 - Quality metrics and validation flags
-- A comprehensive instructor report with statistical analyses, persona breakdowns, and effect size verification
+- A study summary report (`User_Study_Summary.md` / `.html`) with persona breakdowns, trait profiles by condition, and a configured-vs-observed effect size table
 
 ---
 
@@ -127,11 +128,13 @@ Rather than generating random responses, the system assigns each simulated parti
 
 This rich scientific foundation enables each persona to generate responses that align with documented human response patterns across these diverse research domains.
 
-**The personas reflect actual patterns observed in human respondents:**
+**The personas reflect actual patterns observed in human respondents.** The six response-style personas below carry the following sampling weights (relative weights, normalized at assignment, not a partition of 100%); 72 further domain-specific personas across 24 categories are layered on top when the study domain matches:
 
 **Engaged Responders (35%)**: High attention, thoughtful responses, full scale use. Based on Krosnick's (1991) "optimizers" who invest cognitive effort in providing accurate answers. These participants draw on genuine reflection about the topic at hand.
 
 **Satisficers (22%)**: Lower effort responses, tendency toward agreement, restricted scale range. Krosnick's research documented this common response strategy where participants provide acceptable rather than optimal answers.
+
+**Socially Desirable Responders (12%)**: Inflate socially favorable answers and suppress unfavorable ones. Paulhus (2002) distinguishes impression management from self-deception; the engine applies the adjustment proportionally to item sensitivity.
 
 **Extreme Responders (10%)**: Consistent use of scale endpoints. Greenleaf's (1992) work identified this stable response style that varies across individuals.
 
@@ -147,11 +150,18 @@ Treatment effects are calibrated using Cohen's d, the standard measure in behavi
 d = (Treatment Mean - Control Mean) / Pooled Standard Deviation
 ```
 
-When you specify d = 0.5, the system adjusts response distributions so that the mean difference between conditions matches your target. This is achieved through:
+When you specify d = 0.5, the system shifts response distributions between
+conditions in the configured direction. The configured *d* is a **target, not an
+achieved value** — see the effect-size note under Validation below. This works
+through:
 
 1. **Semantic parsing** of condition names to determine effect direction
 2. **Graduated adjustments** applied at the individual response level
-3. **Validation checks** confirming achieved effects match targets
+
+Achieved effects are written to `Metadata.json` under `effect_sizes_observed`
+for you to check. No automatic target check runs during generation:
+`_validate_effect_sizes()` exists in the engine, with a 0.15 tolerance, but has
+no callers.
 
 ### Scale Reliability Modeling
 
@@ -161,7 +171,7 @@ Multi-item scales exhibit realistic internal consistency (Cronbach's alpha) thro
 Response = lambda * Common_Factor + sqrt(1 - lambda^2) * Unique_Error
 ```
 
-Where lambda (factor loading) is derived from the target reliability. Items measuring the same construct share common variance while retaining item-specific variation, producing alpha values typically ranging 0.75-0.90.
+Where lambda (factor loading) is derived from the target reliability. Items measuring the same construct share common variance while retaining item-specific variation, producing alpha values from about 0.75 up to the mid-0.90s. Correlation injection is one-sided — it raises alpha toward the target (default 0.75) and never lowers it (`enhanced_simulation_engine.py:11877`, whose comment notes items "often exceed the target") — so a fair share of scales land above 0.90.
 
 ### Response Style Modeling
 
@@ -173,7 +183,7 @@ The system models several well-documented response styles:
 
 **Social Desirability**: Inflation of socially favorable responses. Applied proportionally based on item content, with **domain-sensitive intensity**: highly sensitive topics (prejudice, dishonesty) receive 1.5× the social desirability adjustment, while factual/behavioral reports receive only 0.5×. Based on Nederhof (1985) and Paulhus (2002).
 
-**Midpoint Avoidance**: Cultural variation in willingness to use neutral midpoint. East Asian samples typically show lower midpoint avoidance than Western samples.
+**Midpoint Avoidance** *(table present, not yet wired)*: Cultural variation in willingness to use the neutral midpoint. East Asian samples typically show lower midpoint avoidance than Western samples. The `CULTURAL_RESPONSE_STYLES` table encodes this, but `_apply_cultural_response_style()` is not called during generation and the `midpoint_preference` trait is not read by the engine — tracked as Tier C work in `docs/COVERAGE_ROADMAP.md`.
 
 ### Persona-Demographic Coupling
 
@@ -204,12 +214,18 @@ Reverse-coded items receive sophisticated handling that goes beyond simple scale
 - **Acquiescence interaction**: Even respondents who correctly reverse show partial acquiescence pull (~0.5 point, Weijters et al. 2010)
 - **Cross-item failure consistency**: A participant who fails one reverse item is more likely to fail the next (trait-like within session)
 
-### Response Validation Layer
+### Response Validation Layer *(implemented, not yet called during generation)*
 
-Generated responses are validated against expected patterns for each persona type:
-- **Longstring detection**: Flags unrealistic straight-lining for engaged personas
-- **IRV checks**: Ensures response variability matches persona engagement level
-- **Endpoint utilization**: Verifies extreme response style personas actually use scale endpoints
+`_validate_participant_responses()` checks generated responses against expected
+patterns per persona type, but `generate()` does not invoke it, so none of these
+checks currently run:
+- **Longstring detection**: flags unrealistic straight-lining for engaged personas
+- **IRV checks**: response variability against persona engagement level
+- **Endpoint utilization**: whether extreme-response personas really use endpoints
+
+The validation that *does* run post-generation is `HBSValidator` — completion-time
+plausibility, open-ended uniqueness and length, straight-lining prevalence and
+rating–text coherence. Wiring this layer in is tracked in `docs/COVERAGE_ROADMAP.md`.
 
 ### Survey Flow Logic
 
@@ -223,40 +239,50 @@ The system respects your experimental design by tracking which questions each pa
 
 ## Open-Ended Response Generation
 
-Open-ended text responses are generated using a two-tier system that maximizes realism and uniqueness.
+Open-ended text responses are generated by a three-level cascade: each level is tried in turn and the next is reached only if the one above it yields nothing usable.
 
 ### Tier 1: AI-Powered Generation (Primary)
 
 When available, responses are generated by a large language model (LLM) that receives the full experimental context — study description, condition assignment, and participant persona — and produces natural, question-specific text that mirrors real survey responses.
 
-**Zero-configuration AI**: The tool ships with built-in API keys for three free LLM providers, so AI-powered responses work out of the box with no setup required:
+**Zero-configuration AI**: The tool ships with built-in API keys for six free LLM providers, so AI-powered responses work out of the box with no setup required. Nine provider entries are tried in order (some providers contribute more than one model line, so the retirement of a single model degrades the chain instead of breaking it):
 
-| Provider | Model | Free Tier |
-|----------|-------|-----------|
-| **Groq** (primary) | Llama 3.3 70B Versatile | 14,400 requests/day |
-| **Cerebras** (failover) | Llama 3.3 70B | 1M tokens/day |
-| **OpenRouter** (failover) | Mistral Small 3.1 24B | Free model tier |
+| Order | Provider | Model |
+|-------|----------|-------|
+| 1 | **Google AI** | `gemini-3.1-flash-lite` |
+| 2 | **Google AI** | `gemini-2.5-flash` |
+| 3 | **Google AI** | `gemini-2.5-flash-lite` |
+| 4 | **Groq** | `openai/gpt-oss-120b` |
+| 5 | **Groq** | `qwen/qwen3.6-27b` |
+| 6 | **Cerebras** | `gpt-oss-120b` |
+| 7 | **SambaNova** | `Meta-Llama-3.3-70B-Instruct` |
+| 8 | **Mistral AI** | `mistral-small-latest` |
+| 9 | **OpenRouter** | `mistralai/mistral-small-3.1-24b-instruct:free` |
 
-If one provider reaches its rate limit, the system automatically tries the next. Users can optionally provide their own free API key from any of these providers for additional capacity.
+If one provider reaches its rate limit or errors, the system automatically tries the next.
+
+A key you supply is **appended after** the built-ins, not put ahead of them — the tool deliberately spends its own free capacity first and reaches your key only once the built-ins are exhausted (`llm_response_generator.py:2508`). Keys supplied through environment variables land at provider-specific positions in the chain. Model assignments and ordering change as free tiers are retired; `_builtin_providers` in `utils/llm_response_generator.py` is authoritative.
+
+**Sample-size cap**: built-in free-tier keys are shared across all users, so the **Built-in AI** method generates LLM open-ended text for the first `MAX_FREE_LLM_N` = 100 participants only and falls back to the compositional template engine for the remainder. The app warns before generating and reports the resulting split. Supplying your own key removes the cap.
 
 **Key features:**
 
 1. **Batch generation**: 20 persona-guided responses are generated per API call, each tailored to a different participant profile (varying in verbosity, formality, engagement level, and sentiment)
 2. **Draw-with-replacement pooling**: A pool of LLM-generated base responses is pre-built for each question × condition × sentiment bucket; individual participants draw from this pool with deep persona-driven variation applied, ensuring no two responses are identical even when they share a common base
-3. **7-layer deep variation**: Each drawn response passes through word-level micro-variation, sentence restructuring, verbosity control, formality adjustment, engagement modulation, typo injection, and synonym substitution — producing unique output for every participant
-4. **Smart pool scaling**: Pool size automatically adapts to sample size (using √n × 3 + 10, clamped to [30, 80] per bucket), balancing API efficiency with response diversity
-5. **3-provider failover chain**: Groq → Cerebras → OpenRouter → user's own key, ensuring maximum uptime with no single point of failure
+3. **8-layer deep variation**: Each drawn response passes through word-level micro-variation, sentence restructuring, verbosity control, formality adjustment, engagement modulation, typo injection, synonym substitution and punctuation variation (Layers 0-7, several with sub-layers) — producing unique output for every participant
+4. **Smart pool scaling**: Pool size automatically adapts to sample size. Per sentiment bucket the target is `sqrt(participants_per_bucket) * 2.4 + 8`, clamped to [18, 60], where `participants_per_bucket = sample_size / (n_conditions × n_sentiments)` — balancing API efficiency against response diversity
+5. **9-entry failover chain**: see the provider table above; a user-supplied key is appended after all built-ins, so it is used only once the built-in free capacity is spent
 
-### Tier 2: Adaptive Behavioral Engine 3.0 (Fallback / Standalone)
+### Tier 2: Adaptive Behavioral Engine 3.0 (selected explicitly)
 
-When selected as the primary method or when AI providers are unavailable, the system uses the **Adaptive Behavioral Engine 3.0** — a narrative-enhanced behavioral engine that integrates census-weighted demographics, stylometric voice fingerprinting, and 5 individual-level consistency improvements into the 225+ domain template engine. Building on the compositional architecture introduced in v1.2.3.1, ABE 3.0 adds dedicated narrative intent builders (Brotherton 2013, Pennebaker 1997, Green & Brock 2000) and produces highly varied, topic-grounded responses:
+No generation method is pre-selected; ABE 3.0 runs when you pick its tile. It is *not* the within-run LLM fallback: choosing Built-in AI or Your API Key forces `_use_abe_v2 = False` (`app.py:12756`, `:12942`), so when a run exceeds the 100-participant cap, exhausts the open-ended budget, or gets an empty LLM response, the text comes from the compositional template engine (`ComprehensiveResponseGenerator`, `enhanced_simulation_engine.py:3108`). ABE 3.0 takes over mid-run only if you re-select it in the recovery prompt. ABE 3.0 itself is a narrative-enhanced behavioral engine that integrates census-weighted demographics, stylometric voice fingerprinting, and 5 individual-level consistency improvements into the domain template engine. Building on the compositional architecture introduced in v1.2.3.1, ABE 3.0 adds dedicated narrative intent builders (Brotherton 2013, Pennebaker 1997, Green & Brock 2000) and produces highly varied, topic-grounded responses:
 
-1. **Intent-driven composition**: Each response is assembled from opener + intent-matched core + domain-enriched elaboration + coda. Question intent is classified into 8 categories (opinion, explanation, description, emotional reaction, evaluation, prediction, causal explanation, decision explanation) and templates are selected accordingly
-2. **40+ domain vocabulary sets**: Specialized terminology for clinical/mental health, sports, legal, food, developmental, personality, cognitive, neuroscience, financial, cross-cultural, and 30+ more domains ensures responses use field-appropriate language
-3. **Rich question-text mining**: 33 action verb patterns, 24 object/target pattern groups, and 15 key phrase patterns extract the actual topic from the question text for template insertion
+1. **Intent-driven composition**: Each response is assembled from opener + intent-matched core + domain-enriched elaboration + coda. Question intent is classified into 16 categories (opinion, explanation, description, emotional reaction, evaluation, prediction, causal explanation, decision explanation, creative belief, personal disclosure, creative narrative, personal story, hypothetical, recommendation, comparison, recall) and templates are selected accordingly
+2. **36 domain vocabulary sets**: Specialized terminology for clinical/mental health, sports, legal, food, developmental, personality, cognitive, neuroscience, financial and cross-cultural work, among 26 other domains, so responses use field-appropriate language
+3. **Rich question-text mining**: 32 action verb patterns, 23 object/target pattern groups, and 19 key phrase patterns extract the actual topic from the question text for template insertion
 4. **Domain-gated condition modifiers**: Condition-specific personalizations (e.g., "As someone who leans progressive") are only applied when the domain matches — political modifiers only fire for political studies, health modifiers only for health studies
 5. **Behavioral coherence**: Templates are post-processed to match the participant's numeric response pattern — straight-liners get truncated text, extreme raters get intensified language, high social desirability personas get qualifying hedges
-6. **25 careless response templates**: Even low-effort responses reference the actual topic ("trump is ok i guess") rather than generic off-topic text ("fine")
+6. **87 careless response templates** across 10 intent- and sentiment-keyed banks: even low-effort responses reference the actual topic ("trump is ok i guess") rather than generic off-topic text ("fine")
 7. **Context-awareness**: Responses reference the experimental manipulation when appropriate
 8. **Condition-specificity**: Only participants who would see a question receive a response
 
@@ -295,50 +321,66 @@ For a question "What did you think about the AI recommendations?":
 **Control participant** (no AI):
 > *(Empty - this participant didn't see this question)*
 
+### Tier 3: Last-resort template generator
+
+If both levels above return nothing — an exhausted LLM chain and a template miss
+for an unusual question type — `TextResponseGenerator`
+(`utils/persona_library.py`) emits a short, topic-grounded response from the
+participant's persona and the extracted question topic. It is wrapped in its own
+try/except so a failure here leaves a plausible answer rather than a blank cell.
+This level is reached rarely; when it is, the response is still about the
+question's topic, never generic filler.
+
 ---
 
-## Research Domain Coverage: 225+ Scientific Areas
+## Research Domain Coverage
 
 The response generation system has been trained on **hundreds of scientific insights** drawn from decades of research across the social and behavioral sciences. This extensive knowledge base enables the tool to generate contextually appropriate responses for virtually any research topic you might study.
 
 ### Major Research Fields
 
-The system covers **33 major research categories** with over **225 specialized domains**:
+**273 research domains** are keyword-detectable, via 3,452 keyword patterns.
+**189** of them are grouped into the 23 categories below (191 memberships — two
+domains, `social_media` and `algorithmic_fairness`, are cross-listed); the other
+84 are detectable but ungrouped. **104** of the detectable domains carry a reachable
+open-ended template set, 68 of them inside these categories. (`DOMAIN_TEMPLATES`
+holds 116 keys, but template lookup goes through `domain.value`
+(`response_library.py:8622`), so the 10 keys that are not `StudyDomain` values —
+`artificial_intelligence`, `climate_change`, `ethical_dilemma`, `forgiveness`,
+`gratitude_experience`, `gratitude_intervention`, `moral_cleansing`,
+`narrative_transportation`, `nostalgia`, `sleep_quality` — can never be
+selected. Two more, `general` and `survey_feedback`, are reachable as fallbacks
+but are not keyword-detectable domains.)
 
-| Field | Domains | Example Topics |
-|-------|---------|----------------|
-| **Behavioral Economics** | 12 | Trust games, dictator games, ultimatum games, public goods, risk preferences, time preferences, loss aversion, framing effects, anchoring, sunk cost fallacy |
-| **Social Psychology** | 15 | Intergroup relations, social identity, norms, conformity, prosocial behavior, cooperation, fairness, social influence, attribution, stereotypes, prejudice, empathy |
-| **Political Science** | 10 | Polarization, partisanship, voting behavior, media effects, policy attitudes, civic engagement, political trust, ideology, misinformation |
-| **Consumer/Marketing** | 10 | Brand perception, advertising effectiveness, purchase intent, brand loyalty, price perception, service quality, customer satisfaction, word-of-mouth |
-| **Organizational Behavior** | 10 | Leadership, teamwork, motivation, job satisfaction, organizational commitment, work-life balance, employee engagement, organizational culture |
-| **Technology & AI** | 10 | AI attitudes, privacy concerns, automation, algorithm aversion, technology adoption, social media, digital wellbeing, human-AI interaction |
-| **Health Psychology** | 10 | Medical decision-making, wellbeing, health behaviors, mental health, vaccination attitudes, pain management, patient-provider communication |
-| **Ethics & Moral Psychology** | 10 | Moral judgment, ethical dilemmas, moral emotions, values, ethical leadership, corporate ethics, moral cleansing, sacred values, moral licensing |
-| **Environmental Psychology** | 8 | Sustainability, climate attitudes, pro-environmental behavior, green consumption, conservation, energy behavior |
-| **Cognitive Psychology** | 8 | Decision-making, memory, attention, reasoning, problem-solving, cognitive biases, metacognition |
-| **Narrative & Communication** | 8 | Narrative transportation, story persuasion, source credibility, elaboration likelihood, inoculation, message framing |
-| **Digital & Attention** | 6 | Phone distraction, notification effects, media multitasking, digital detox, screen time, social media comparison |
-| **Positive Psychology** | 8 | Gratitude, savoring, kindness interventions, best possible self, growth mindset, resilience, flourishing |
+The table is generated from `DOMAIN_CATEGORIES` in `utils/response_library.py`,
+which is authoritative. "Example domains" lists the first few members of each
+category verbatim, not a paraphrase.
 
-### Additional Specialized Domains
-
-The system also covers:
-
-- **Education** (8 domains): Learning, academic motivation, teaching effectiveness, online learning, educational technology
-- **Developmental Psychology** (6 domains): Parenting, childhood development, aging, life transitions
-- **Clinical Psychology** (6 domains): Anxiety, depression, coping strategies, therapy attitudes, stress
-- **Communication** (6 domains): Persuasion, media effects, interpersonal communication, narrative processing
-- **Neuroeconomics** (6 domains): Reward processing, impulse control, emotional regulation, cognitive load
-- **Sports Psychology** (6 domains): Athletic motivation, team dynamics, performance anxiety, fan behavior
-- **Legal Psychology** (6 domains): Jury decision-making, witness memory, procedural justice
-- **Food Psychology** (6 domains): Eating behavior, food choice, nutrition knowledge, body image
-- **Human Factors** (6 domains): User experience, interface design, safety behavior, human error
-- **Cross-Cultural** (5 domains): Cultural values, acculturation, cultural identity
-- **Positive Psychology** (5 domains): Gratitude, resilience, flourishing, life satisfaction
-- **Financial Psychology** (6 domains): Financial literacy, investment behavior, retirement planning
-- **Personality Psychology** (6 domains): Big Five traits, narcissism, dark triad, self-concept
-- **Social Media Research** (6 domains): Online identity, digital communication, influencer effects
+| Category | Domains | Example domains |
+|----------|---------|-----------------|
+| **Organizational Behavior** | 16 | organizational, workplace, leadership, teamwork, motivation, job satisfaction |
+| **Social Psychology** | 15 | social psychology, intergroup, identity, norms, conformity, prosocial |
+| **Environmental** | 14 | environmental, sustainability, climate attitudes, pro environmental, green consumption, conservation |
+| **Behavioral Economics** | 12 | behavioral economics, dictator game, public goods, trust game, ultimatum game, prisoners dilemma |
+| **Consumer & Marketing** | 10 | consumer, brand, advertising, product evaluation, purchase intent, brand loyalty |
+| **Health Psychology** | 10 | health, medical decision, wellbeing, health behavior, mental health, vaccination |
+| **Political Science** | 10 | political, polarization, partisanship, voting, media, policy attitudes |
+| **Technology & AI** | 10 | technology, ai attitudes, privacy, automation, algorithm aversion, technology adoption |
+| **Ethics & Moral Psychology** | 9 | ethics, moral judgment, moral dilemma, ethical leadership, corporate ethics, research ethics |
+| **Decision Science** | 8 | decision science, choice architecture, nudge, default effects, information overload, regret |
+| **Education** | 8 | education, learning, academic motivation, teaching effectiveness, online learning, educational technology |
+| **AI Alignment & Ethics** | 7 | ai alignment, ai ethics, ai safety, machine values, ai governance, ai transparency |
+| **Social Media Research** | 7 | social media, social media use, online identity, digital communication, influencer marketing, online communities |
+| **Clinical Psychology** | 6 | clinical, anxiety, depression, coping, therapy attitudes, stress |
+| **Financial Psychology** | 6 | financial psychology, financial literacy, investment behavior, debt attitudes, retirement planning, financial stress |
+| **Gaming & Entertainment** | 6 | gaming psychology, esports, gambling, entertainment media, streaming behavior, virtual reality |
+| **Health Disparities** | 6 | health disparities, healthcare access, health equity, social determinants, health literacy, medical mistrust |
+| **Personality Psychology** | 6 | personality, big five, narcissism, dark triad, trait assessment, self concept |
+| **Digital Society** | 5 | digital divide, online polarization, algorithmic fairness, data privacy, digital literacy |
+| **Future of Work** | 5 | automation anxiety, gig economy, skills obsolescence, universal basic income, human machine collaboration |
+| **Innovation & Creativity** | 5 | innovation, creativity, entrepreneurship, idea generation, creative process |
+| **Risk & Safety** | 5 | risk perception, safety attitudes, hazard perception, disaster preparedness, risk communication |
+| **Trust & Credibility** | 5 | institutional trust, expert credibility, source credibility, science trust, media trust |
 
 ### Topic-Specific Response Generation
 
@@ -370,18 +412,25 @@ Configurable proportion of participants fail attention checks, matching real-wor
 
 ### Careless Response Detection
 
-The system can identify (and optionally flag or exclude) simulated careless responses:
+The generated dataset flags (and can recommend excluding) simulated careless
+responses. These columns ship: `Max_Straight_Line`, `Flag_StraightLine`,
+`Flag_Speed`, `Flag_Attention`, `Exclude_Recommended`.
 
-- **Straight-lining**: Same response repeated across items
-- **Alternating patterns**: Systematic alternation (1-7-1-7)
-- **Midpoint overuse**: Excessive neutral responses
-- **Response time anomalies**: Unrealistically fast completion
+- **Straight-lining**: same response repeated across items
+- **Response time anomalies**: unrealistically fast completion
+
+Alternating patterns (1-7-1-7) **are** detected, in the live exclusion path
+(`enhanced_simulation_engine.py:11161-11167`), and folded into the shipped
+`Max_Straight_Line` column by taking the worse of the two streaks (`:11169`),
+which in turn drives `Flag_StraightLine`. Midpoint overuse is implemented only
+in `_detect_careless_patterns()` (`:1512`), which has no callers, so it never
+reaches an output column.
 
 ### Validation Metrics
 
 Generated datasets include quality metrics:
 
-- Achieved effect sizes with confidence intervals
+- Achieved effect sizes — Cohen's *d*, both group means and both Ns (no confidence intervals). 95% CIs appear in the emailed instructor report, as per-condition means, and in the password-gated Analytics Dashboard, which also plots Cohen's *d* with 95% CIs (`app.py:2753`, `:2958`) — though that dashboard returns early unless `plotly` is importable, and `plotly` is not in `requirements.txt`
 - Condition balance verification
 - Missing data rates
 - Response distribution statistics
@@ -399,24 +448,35 @@ Generated datasets include quality metrics:
 ### Output Format
 
 - **CSV file** compatible with R, SPSS, Stata, Python
-- **Instructor report** (HTML) with comprehensive statistical analyses, persona breakdowns, effect size verification, trait profiles by condition, and visualization
+- **Study summary** (Markdown + HTML) with persona breakdowns, trait profiles by condition and configured-vs-observed effect sizes. The fuller statistical report — inferential tests, Condition × Gender chi-squared, charts — is generated separately and emailed to the instructor; it is not part of the download
 - **Metadata** JSON with simulation parameters
-- **Analysis scripts** auto-generated for R, Python, SPSS, and Stata
+- **Analysis scripts** auto-generated for R, Python, Julia, SPSS, and Stata
 
 ### Supported Question Types
 
 | Type | Example | Input Methods |
 |------|---------|---------------|
 | Likert Scales | 7-point agreement scales | QSF, Builder |
-| Sliders | Visual analog scales (0-100) | QSF, Builder |
 | Matrix Tables | Multi-item scales with shared options | QSF, Builder |
+| Sliders | Visual analog scales (0-100) | QSF, Builder |
 | Multiple Choice | Single selection questions | QSF |
 | Text Entry | Open-ended responses | QSF, Builder |
 | Numeric Input | Willingness to pay, quantities | QSF, Builder |
-| Semantic Differential | Bipolar adjective scales | QSF, Builder |
 | Binary | Yes/No, True/False | QSF, Builder |
+| Constant Sum | Budget allocation across items | QSF |
 | Rank Order | Preference rankings | QSF |
-| Heatmaps | Click coordinate data | QSF |
+
+**Detected but not generated.** The parser recognizes hot-spot/heatmap questions,
+but no data is produced for them — `_generate_heatmap_response` exists in the
+engine and is never called. Best-worst and paired-comparison DV types likewise
+have parser paths with no generation behind them; none of these occur in the
+example QSF corpus (see `docs/COVERAGE_ROADMAP.md`). Single-choice items are not
+a separate DV type — they are grouped into `likert`/`single_item` and generate
+normally.
+
+**Not supported.** Semantic differential (bipolar adjective) scales are neither
+detected nor generated; scale-type detection expansion is on the roadmap in
+`CLAUDE.md`.
 
 ### Supported Experimental Designs
 
@@ -451,10 +511,10 @@ Synthetic data should never be misrepresented as real participant data in public
 
 The responses exhibit statistical properties matching published research on human survey behavior:
 
-- Mean responses around 5.0-5.5 on 7-point scales (documented positive response bias)
+- Mean responses around 4.0-5.2 on 7-point scales before domain calibration (documented positive response bias); realized DV means span roughly 3.5-5.5 once construct norms apply, with clinical DVs centering lower and satisfaction DVs higher
 - Standard deviations of 1.2-1.8 (typical for Likert data)
-- Cronbach's alphas of 0.75-0.90 for multi-item scales
-- Effect sizes within +/-0.15 of specified targets
+- Cronbach's alphas from about 0.75 up to the mid-0.90s for multi-item scales (raised toward the target, never lowered)
+- Effect sizes: a configured Cohen's *d* is recovered to within roughly -8% to +12% across scale widths and item counts, and a null effect stays null (`tests/test_effect_size_recovery.py`). Effects inferred from condition wording when no *d* is configured are literature-sized and directional rather than fitted to a target. Verify the achieved effect in `Metadata.json` (`effect_sizes_observed`) before relying on the magnitude.
 
 ### Can I use this for any survey?
 
@@ -468,7 +528,7 @@ It may not be suitable for purely exploratory surveys or complex longitudinal de
 
 ### Do I need a Qualtrics survey file?
 
-No. As of version 1.3, you can describe your experiment in plain language using the **Conversational Builder**. The system parses your natural language description to extract conditions, scales, and open-ended questions. This is especially useful for:
+No. You can describe your experiment in plain language using the **Conversational Builder**. The system parses your natural language description to extract conditions, scales, and open-ended questions. This is especially useful for:
 
 - Early-stage study design before building the actual survey
 - Quick pilot data generation
@@ -506,7 +566,7 @@ The comprehensive HTML report includes:
 - **Effect size verification**: Configured vs. observed effects with Cohen's d interpretation
 - **Data quality**: Exclusion breakdown (speed, attention, straight-lining), validation corrections
 - **Categorical analysis**: Condition × Gender cross-tabulation with chi-squared test
-- **Executive summary**: AI-generated synthesis of key findings
+- **Executive summary**: automatically generated synthesis of key findings — rule-based, computed from the scale statistics; no LLM is involved
 - **Scientific references**: Full citations for the methodological foundations
 
 ---
@@ -543,9 +603,9 @@ The simulation algorithms are grounded in established survey methodology researc
 3. **Greenleaf, E. A. (1992)**. Measuring extreme response style. *Public Opinion Quarterly, 56*, 328-351.
 4. **Billiet, J. B., & McClendon, M. J. (2000)**. Modeling acquiescence in measurement models for two balanced sets of items. *Structural Equation Modeling, 7*, 608-628.
 5. **Meade, A. W., & Craig, S. B. (2012)**. Identifying careless responses in survey data. *Psychological Methods, 17*, 437-455.
-6. **Paulhus, D. L. (2002)**. Socially desirable responding. *Journal of Personality Assessment, 40*, 13-44.
+6. **Paulhus, D. L. (2002)**. Socially desirable responding: The evolution of a construct. In H. I. Braun, D. N. Jackson & D. E. Wiley (Eds.), *The role of constructs in psychological and educational measurement* (pp. 49-69). Erlbaum.
 7. **Nederhof, A. J. (1985)**. Methods of coping with social desirability bias. *European Journal of Social Psychology, 15*, 263-280.
-8. **Woods, C. M. (2006)**. Careless responding to reverse-worded items. *Journal of Psychoeducational Assessment, 24*, 207-220.
+8. **Woods, C. M. (2006)**. Careless responding to reverse-worded items: Implications for confirmatory factor analysis. *Journal of Psychopathology and Behavioral Assessment, 28*(3), 186-191.
 9. **Weijters, B., et al. (2010)**. The effect of rating scale format on response styles. *International Journal of Research in Marketing, 27*, 236-247.
 
 ### Behavioral Economics & Game Theory
@@ -569,13 +629,13 @@ The simulation algorithms are grounded in established survey methodology researc
 
 If you use this tool in your research or teaching, please acknowledge:
 
-> Dimant, E. (2025). Behavioral Experiment Simulation Tool (Version 1.4.10) [Computer software].
+> Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 1.2.8.9) [Computer software].
 
 ---
 
 ## Changelog Highlights
 
-### Version 1.2.0.5 (Latest)
+### Version 1.2.8.9 (and earlier 1.2.8.x)
 - **Custom demographic variables**: Full flexibility to add and customize demographic questions (Political Orientation, Education, Ethnicity, Income, Employment, Religion, Party ID) with editable options, weights, and distributions
 - **Persona-demographic coupling**: Swap-sort algorithm creates realistic correlations between persona types and demographic values while preserving exact marginal distributions
 - **Scale type auto-correction**: Single-item DVs properly identified; scale type/min/max propagated from QSF detection
@@ -599,21 +659,21 @@ If you use this tool in your research or teaching, please acknowledge:
 - **Smart pool scaling**: Automatically adapts response pool size to study sample size
 - **Template fallback**: Seamless degradation to template engine when AI is unavailable
 
-### Version 1.3
+### Earlier: Conversational Builder
 - **Conversational Builder**: Describe experiments in plain language — no QSF file required
 - **Automatic factorial detection**: Parses N×M designs from natural language (e.g., "3 × 2, between-subjects")
 - **Comprehensive instructor report**: Persona distribution tables, personality trait profiles by condition, effect size verification, exclusion breakdowns
-- **Scale auto-detection**: Recognizes detailed academic scale formats, validated instruments (BFI-10, PANAS, etc.), numeric inputs, binary measures
+- **Scale auto-detection**: Recognizes detailed academic scale formats, validated instruments (Big Five, PANAS and others), numeric inputs, binary measures
 - **Custom persona weights**: Adjust response style distributions for domain-specific realism
-- **Domain-specific personas**: 225+ research domains influence which persona archetypes are activated
+- **Domain-specific personas**: the detected research domain influences which persona archetypes are activated
 
-### Version 1.2
+### Earlier: persona and factorial expansion
 - Enhanced persona system with 50+ behavioral archetypes across 15 research domains
 - Factorial design tables with visual cell numbering
 - Effect size specification with Cohen's d calibration
-- Auto-generated analysis scripts for R, Python, SPSS, and Stata
+- Auto-generated analysis scripts for R, Python, Julia, SPSS, and Stata
 
-### Version 1.0
+### Initial release
 - Initial release with QSF upload, persona-based response generation, and basic instructor reports
 
 ---
@@ -624,6 +684,6 @@ For questions, feature requests, or collaboration inquiries, please contact thro
 
 ---
 
-*Version 1.2.0.5 | Proprietary Software | All Rights Reserved*
+*Version 1.2.8.9 | Proprietary Software | All Rights Reserved*
 
 *Developed by Dr. Eugen Dimant*
