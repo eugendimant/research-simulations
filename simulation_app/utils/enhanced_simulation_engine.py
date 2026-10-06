@@ -297,6 +297,41 @@ try:
 except ImportError:
     HAS_KNOWLEDGE_BASE = False
 
+# v1.2.9.1: Empirical realism layer — provenance for the knowledge base, a
+# content-based construct matcher, verified distribution shapes, and the
+# real-data benchmark. Each import is guarded: these are additive, and the app
+# must still load if any one of them is unavailable.
+try:
+    from .item_realism import (
+        decouple_block,
+        match_straightlining,
+        target_r_from_alpha,
+        match_item_dispersion,
+        DEFAULT_STRAIGHTLINE_SHARE,
+    )
+    HAS_ITEM_REALISM = True
+except Exception:
+    HAS_ITEM_REALISM = False
+
+try:
+    from . import empirical_registry as _empirical_registry
+    from . import design_signature as _design_signature
+    HAS_EMPIRICAL_REGISTRY = True
+except Exception:
+    HAS_EMPIRICAL_REGISTRY = False
+
+try:
+    from . import construct_matcher as _construct_matcher
+    HAS_CONSTRUCT_MATCHER = True
+except Exception:
+    HAS_CONSTRUCT_MATCHER = False
+
+try:
+    from . import literature_effects as _literature_effects
+    HAS_LITERATURE_EFFECTS = True
+except Exception:
+    HAS_LITERATURE_EFFECTS = False
+
 # Import comprehensive response library for LLM-quality text generation
 try:
     from .response_library import (
@@ -3411,6 +3446,14 @@ class EnhancedSimulationEngine:
         # v1.2.3.5: validation_log MUST be initialized before any _log() calls.
         # The ABE v2 init block below uses _log(), so this must come first.
         self.column_info: List[Tuple[str, str]] = []
+        # v1.2.9.1: what the empirical-realism passes did, for the audit page and tests
+        self._item_realism_log: List[Dict[str, Any]] = []
+        # Which registry calibrations actually changed a number in THIS run, so the
+        # app can tell the user how much of their dataset rests on measured evidence
+        # rather than on unverified literature.
+        self.registry_ledger = (
+            _empirical_registry.RunLedger() if HAS_EMPIRICAL_REGISTRY else None
+        )
         self.validation_log: List[str] = []
         self._scale_generation_log: List[Dict[str, Any]] = []
 
@@ -3471,6 +3514,24 @@ class EnhancedSimulationEngine:
         except Exception as _llm_err:
             self.llm_init_error = str(_llm_err)
             self._log(f"LLM generator not available (using templates): {_llm_err}")
+
+    def llm_attempts_allowed(self) -> bool:
+        """Whether this run may call the LLM at all.
+
+        ``allow_template_fallback`` means two different things to the two
+        callers that set it, and conflating them caused a silent regression:
+
+        * "Template Engine" / ABE set it to mean *do not use the LLM*.
+        * "Built-in AI" sets it to mean *fall back gracefully when the LLM is
+          unavailable* — it still wants the LLM tried first.
+
+        ``free_llm_oe_cap > 0`` is what distinguishes the second case: it is an
+        upper bound on LLM-generated open-ended responses, so a caller that
+        wants the LLM attempted with graceful fallback sets a positive cap.
+        Both of the engine's LLM gates (pool prefill and per-participant
+        generation) must agree, so they both read this one predicate.
+        """
+        return (not self.allow_template_fallback) or self.free_llm_oe_cap > 0
 
     @staticmethod
     def _normalize_condition_allocation(
@@ -4259,7 +4320,63 @@ class EnhancedSimulationEngine:
         # explicit ones (nominal d = gap / 0.25 of range), so they get the same
         # item-count correction: otherwise a 4+ item composite shows d ~1.3-2x the
         # literature value the keyword rule encodes (valence 1.3 vs ~0.6).
-        return self._get_automatic_condition_effect(condition, variable) * self._explicit_effect_scale(variable)
+        _effect_scale = self._explicit_effect_scale(variable)
+        _auto = self._get_automatic_condition_effect(condition, variable)
+        # "Nothing matched" does not come back as exactly zero: measured on
+        # unmatched labels, the keyword pipeline returns noise-level values around
+        # +/-0.004 normalized, i.e. Cohen's d near 0.01. Anything below d = 0.05 is
+        # indistinguishable from no manipulation at all, so that is the trigger.
+        _NEGLIGIBLE = 0.05 * COHENS_D_TO_NORMALIZED
+        if abs(_auto) >= _NEGLIGIBLE or not HAS_LITERATURE_EFFECTS:
+            return _auto * _effect_scale
+
+        # v1.2.9.1 — LAST RESORT. The keyword rules above are a closed set: an
+        # uploaded study whose conditions are called `descriptive_norm_high` /
+        # `descriptive_norm_low` or `cognitive_dissonance_induced` matches none of
+        # them, and the condition then does NOTHING — the user's design silently
+        # becomes a null design, which is the worst failure a simulator can have.
+        # So when the rules find no effect at all, match the condition against the
+        # meta-analytic table on content instead. The match is deliberately strict
+        # (two shared content words, one of which must come from the condition
+        # label) because a wrong effect is worse than none: an unmatched condition
+        # falls back to zero, which is explicit and inspectable. The returned value
+        # is passed through empirical_registry.adjust_effect(), so an entry whose
+        # numbers were never checked against a source pushes the data less hard.
+        #
+        # The reference arm never takes a literature effect. The match is made on
+        # content, and a control label usually repeats the paradigm it is the
+        # control FOR -- `cognitive_dissonance_control` shares every content word
+        # with `cognitive_dissonance_induced`. Both would match the same entry and
+        # both would be shifted by the same published d, which leaves no contrast
+        # at all: the fallback meant to rescue a null design would have recreated
+        # one. A control arm is the zero point, exactly as it is on the explicit
+        # path above.
+        if self._is_control_arm(condition):
+            return _auto * _effect_scale
+        try:
+            _lit = _literature_effects.lookup(
+                condition=str(condition),
+                variable=str(variable),
+                study_context=f"{self.study_title or ''} {self.study_description or ''}",
+                rng=self._stable_rng("literature-effect", str(condition), str(variable)),
+            )
+        except Exception:
+            return _auto * _effect_scale
+        if _lit is None:
+            return _auto * _effect_scale
+        _normalized = float(_lit.effect_d) * COHENS_D_TO_NORMALIZED * _effect_scale
+        self._log(
+            f"No keyword rule matched condition '{condition}' for '{variable}'; "
+            f"used literature entry '{_lit.key}' ({_lit.source}, published "
+            f"d={_lit.published_d}, applied d={_lit.effect_d:.3f}, "
+            f"verification={_lit.status})"
+        )
+        if not hasattr(self, "_literature_effect_log"):
+            self._literature_effect_log = []
+        self._literature_effect_log.append(
+            dict(condition=str(condition), variable=str(variable), **_lit.as_dict())
+        )
+        return _normalized
 
     def _get_automatic_condition_effect(self, condition: str, variable: str, _raw: bool = False) -> float:
         """
@@ -6806,6 +6923,25 @@ class EnhancedSimulationEngine:
         r"discrimination|stigma|hostil|rumination|worry|guilt|shame)"
     )
 
+    def _is_control_arm(self, condition: str) -> bool:
+        """Whether ``condition`` names the reference arm of the design."""
+        _c = str(condition or "").lower()
+        return any(w in _c for w in self._CONTROL_ARM_WORDS)
+
+    def _stable_rng(self, *parts: str) -> random.Random:
+        """A Random seeded only by this run's seed and ``parts``.
+
+        Anything drawn from it is reproducible: the same simulation seed and the
+        same (condition, variable) give the same draw, in this process and in the
+        next one. ``random.Random()`` with no argument seeds from the OS, so two
+        engines built with the same seed would export different numbers -- the one
+        thing a seeded simulator must never do. Python's ``hash()`` is salted per
+        process and is no good here either, hence the digest.
+        """
+        _key = "|".join(str(p) for p in parts).encode("utf-8", "replace")
+        _digest = hashlib.sha256(_key).digest()[:8]
+        return random.Random(int(self.seed) ^ int.from_bytes(_digest, "big"))
+
     def _meta_anchored_effect(self, condition: str, variable: str, meta_d: float) -> float:
         """Effect for ``condition`` when the study names a paradigm with a published estimate.
 
@@ -7445,6 +7581,37 @@ class EnhancedSimulationEngine:
             modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.06
 
         return modifiers
+
+    def _survey_wording_for(self, variable_name: str) -> Tuple[str, str]:
+        """(question_text, item_text) for a generated column, or two empty strings.
+
+        Columns of an uploaded survey are often bare identifiers -- `Q17`, `DV_3` --
+        and a content matcher given only the identifier can never recognise the
+        construct, which is precisely the case this fallback exists for. The
+        wording is already on the scale the column came from, so index it once and
+        strip the trailing item number to get back to the scale.
+        """
+        _idx = getattr(self, "_wording_index", None)
+        if _idx is None:
+            _idx = {}
+            for _sc in (getattr(self, "scales", None) or []):
+                try:
+                    _q = str(_sc.get("question_text", "") or "")
+                    _d = str(_sc.get("dv_description", "") or "")
+                    _keys = [_sc.get("variable_name"), _sc.get("name")]
+                    _keys.extend(_sc.get("item_names", []) or [])
+                    for _k in _keys:
+                        _k = str(_k or "").strip().lower()
+                        if _k and _k not in _idx:
+                            _idx[_k] = (_q, _d)
+                except Exception:
+                    continue
+            self._wording_index = _idx
+        _v = str(variable_name or "").strip().lower()
+        if _v in _idx:
+            return _idx[_v]
+        _stem_name = re.sub(r"[_\-\s]*\d+$", "", _v)
+        return _idx.get(_stem_name, ("", ""))
 
     def _get_domain_response_calibration(
         self,
@@ -8098,6 +8265,55 @@ class EnhancedSimulationEngine:
         # "High" and "Low" conditions still showed d ~0.24, a configured d got an
         # unrequested boost, and names like "Paid"/"Fair"/"Maintain" matched 'ai'.
 
+        # v1.2.9.9: LAST RESORT, and it has to be last.
+        #
+        # The substring map near the top reaches about 40 of the 201 published
+        # norms, and only when the variable name happens to contain the mapped
+        # fragment. An uploaded survey calling its items `PSS4_1`, `stress_total`,
+        # `bfi_extra_1` or `panas_pos_4` matched nothing, so the published norm went
+        # unused. Content-based matching over the whole table closes that gap:
+        # instrument acronyms are matched exactly, otherwise by IDF-weighted token
+        # overlap, and an ambiguous match is treated as no match so a wrong norm is
+        # never applied.
+        #
+        # It runs AFTER every keyword branch, not before them. Placed earlier it
+        # returned first and REPLACED a richer keyword calibration with a thinner
+        # one — on an 8-item attitude scale that dropped the variance the attitude
+        # branch would have added and pushed a configured d of 0.50 up to 0.68,
+        # because d is gap over SD and the SD had been quietly narrowed. A
+        # last-resort rule that pre-empts the rules it is a fallback for is not a
+        # fallback. It now fires only where nothing else did.
+        _already_calibrated = (
+            calibration.get('_kb_source')
+            or calibration['mean_adjustment'] != 0.0
+            or calibration['variance_adjustment'] != 0.0
+            or calibration['positivity_bias'] != 0.0
+        )
+        if HAS_CONSTRUCT_MATCHER and not _already_calibrated:
+            try:
+                _wording = self._survey_wording_for(variable_name)
+                _m = _construct_matcher.match(
+                    variable_name=variable_name,
+                    question_text=_wording[0],
+                    item_text=_wording[1],
+                )
+            except Exception:
+                _m = None
+            if _m is not None:
+                _norm = get_construct_norm(_m.key, target_scale_points=7)
+                if _norm:
+                    _dev = (_norm['mean'] - 4.0) / 3.0
+                    calibration['mean_adjustment'] = _dev * 0.15
+                    calibration['positivity_bias'] = max(-0.10, min(0.12, _dev * 0.10))
+                    if _norm.get('skewness', 0) > 0.3:
+                        calibration['variance_adjustment'] += 0.06
+                    elif _norm.get('skewness', 0) < -0.3:
+                        calibration['variance_adjustment'] -= 0.02
+                    calibration['_kb_source'] = (
+                        f"ConstructNorm: {_m.key} (matched on "
+                        f"{'acronym' if _m.via_acronym else 'content'})"
+                    )
+
         return calibration
 
     def _detect_scale_geometry(
@@ -8472,6 +8688,21 @@ class EnhancedSimulationEngine:
         # Richard et al. (2003): Average d in social psychology ≈ 0.43
         # =====================================================================
         condition_effect = self._get_effect_for_condition(condition, variable_name)
+
+        # v1.2.9.9: a condition effect is specified in Cohen's d — a GAP DIVIDED BY
+        # AN SD — so it has to travel with whatever SD this variable ends up with.
+        # The domain calibration below widens or narrows the within-person SD by
+        # `variance_adjustment` (an intention scale gets +0.05, a moral-identity
+        # scale -0.02), and the effect was being added as a fixed shift regardless.
+        # The recovered d therefore moved whenever the calibration did, in the
+        # opposite direction and for no substantive reason: the same configured
+        # d = 0.50 came back as 0.50 or 0.68 depending only on which keyword branch
+        # the variable's NAME happened to hit. Scaling the shift by the same factor
+        # makes the recovered effect invariant to the calibration, which is what
+        # "configured d" has to mean if it means anything.
+        _var_adj = float(domain_calibration.get('variance_adjustment', 0.0) or 0.0)
+        if _var_adj:
+            condition_effect *= (1.0 + _var_adj)
 
         # =====================================================================
         # STEP 4a: Personality x Condition Interaction Effects
@@ -10298,7 +10529,7 @@ class EnhancedSimulationEngine:
             self.llm_generator is not None
             and not _llm_force_off
             and not _llm_throttled_now
-            and (not self.allow_template_fallback or self.free_llm_oe_cap > 0)
+            and self.llm_attempts_allowed()
         )
         if _should_try_llm:
             try:
@@ -12016,6 +12247,135 @@ class EnhancedSimulationEngine:
             except Exception as err:
                 self._log(f"WARNING: numeric realism transform failed for '{log_entry.get('name')}': {err}")
 
+    def _apply_identical_answer_realism(self, data, scale_log, frame=None) -> List[str]:
+        """Bring the share of identical-answer respondents up to the real level.
+
+        In real item-level data (see utils/reference_profiles.json), 5.2% of
+        respondents give the SAME answer to every item of a 5-item block once the
+        items are aligned to the construct direction — people sitting at the
+        ceiling of a construct, answering "6,6,6,6,6". A continuous latent trait
+        plus noise almost never produces five identical integers: before this pass
+        the simulator produced 0.2%, a 25-fold shortfall that any careless-
+        responding screen over the output would show up.
+
+        Only direction-aligned Likert-style blocks of 3+ items are touched, and a
+        block that already has enough constant rows is left exactly as it was.
+
+        `frame` is the authoritative source when given. By the point this runs,
+        later passes have written corrections into the DataFrame that never went
+        back into `data`, so reading `data` would resurrect pre-correction values:
+        doing that measured as condition means of 4.31/4.64 against the 3.00/4.00
+        the calibrated frame actually held.
+        """
+        changed: List[str] = []
+        if not HAS_ITEM_REALISM:
+            return changed
+        for log_entry in scale_log:
+            icols = log_entry.get("columns_generated") or []
+            if len(icols) < 3:
+                continue
+            if any(c in getattr(self, "_typed_dv_columns", set()) for c in icols):
+                continue        # rank-order / constant-sum blocks have their own shape
+            def _source(col):
+                if frame is not None and col in getattr(frame, "columns", []):
+                    return list(frame[col].tolist())
+                return list(data.get(col, []))
+
+            if any(len(_source(c)) < 20 for c in icols):
+                continue
+            try:
+                smin = float(log_entry.get("scale_min", 1))
+                smax = float(log_entry.get("scale_max", 5))
+                if smax - smin <= 0 or smax - smin > 10:
+                    continue    # wide/continuous DVs are shaped elsewhere
+                _rng = random.Random(self.seed + _stable_int_hash(str(log_entry.get("name", ""))))
+                cols = [_source(c) for c in icols]
+                if any(any(v != v for v in col) for col in cols):
+                    continue      # missing data present: leave the block alone
+                # v1.2.9.4 — the target is width- and keying-conditional, not one
+                # global share. Measured over every contiguous window of four
+                # published instruments, the rate falls from 7.1% at 3 items to
+                # 0.17% at 10, and a same-keyed block runs 3-6x a mixed-keyed one
+                # of the same width (nothing contradicts a run of identical answers
+                # when every item points the same way). A single 5.2% constant is
+                # therefore roughly right only for a direction-aligned 5-item block
+                # and wrong by an order of magnitude at either end of that range.
+                # The registry declines outside the widths it was measured at, and
+                # a declined lookup keeps the previous constant.
+                #
+                # v1.2.9.9 — the per-width entries were measured at k=3..10
+                # (k=3..9 same-keyed). Past that the lookup declines, and falling
+                # back to the 5.2% default would be worse than doing nothing: the
+                # measured rate is 0.169% at k=10 and 0.124% across a 22-50 item
+                # instrument, so a 22-item Big Five block would have about 40x too
+                # many respondents collapsed to a single value -- and because this
+                # pass now corrects downward as well as up, it would actively
+                # CREATE them, distorting composites, alpha and every
+                # careless-response flag computed from the block. So: the width
+                # entry, else the full-instrument entry, else leave the block
+                # alone. A declined lookup changes nothing, which is the rule the
+                # rest of the registry follows.
+                _target_share = None
+                _sl_hit = None
+                if HAS_EMPIRICAL_REGISTRY:
+                    _rev = log_entry.get("reverse_items") or []
+                    _keying = "mixed" if _rev else "same"
+                    _sl_sig = _design_signature.for_block(
+                        scale_min=smin, scale_max=smax, n_items=len(icols),
+                        keying=_keying,
+                    )
+                    _sl_hit = _empirical_registry.lookup_best(
+                        f"item.likert.{_keying}.k{len(icols)}",
+                        "straightlined_share", _sl_sig)
+                    if _sl_hit is None:
+                        _sl_hit = _empirical_registry.lookup_best(
+                            "item.likert5.full_instrument",
+                            "straightlined_share", _sl_sig)
+                    if _sl_hit is not None:
+                        _target_share = float(_sl_hit.value)
+                elif len(icols) <= 10:
+                    # No registry at all: the old global constant, which was
+                    # roughly right for a block of this width and is the previous
+                    # behaviour. Beyond that width it was never right, so skip.
+                    _target_share = DEFAULT_STRAIGHTLINE_SHARE
+                if _target_share is None:
+                    continue
+                new_cols, report = match_straightlining(
+                    cols, smin, smax,
+                    target_share=_target_share, rng=_rng,
+                )
+                if report.get("applied"):
+                    # Keep integer columns integral: these passes work in floats,
+                    # and letting that leak would turn an exported "4" into "4.0"
+                    # for every Likert item in the CSV.
+                    for j, c in enumerate(icols):
+                        vals = [int(round(v)) for v in new_cols[j]]
+                        data[c] = vals
+                        if frame is not None and c in getattr(frame, "columns", []):
+                            frame[c] = vals
+                    changed.extend(icols)
+                    _src = (f"{_sl_hit.entry_id}, {_sl_hit.tier}" if _sl_hit is not None
+                            else "default 5-item reference")
+                    self._log(
+                        f"Identical-answer realism for '{log_entry.get('name')}': "
+                        f"{report.get('share_before')} -> {report.get('share_after')} "
+                        f"(target {_target_share:.4f} from {_src})"
+                    )
+                    if _sl_hit is not None and self.registry_ledger is not None:
+                        self.registry_ledger.record_lookup(
+                            _sl_hit, f"scale '{log_entry.get('name')}' straight-lining")
+                    self._item_realism_log.append(
+                        dict(report, scale=log_entry.get("name"),
+                             stage="identical_answers",
+                             entry_id=(_sl_hit.entry_id if _sl_hit else ""))
+                    )
+            except Exception as err:
+                self._log(
+                    f"WARNING: identical-answer realism failed for "
+                    f"'{log_entry.get('name')}': {err}"
+                )
+        return changed
+
     def generate(self) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         # v1.2.8.4 (Codex P2 — de-serialize multi-user runs): generation no longer
         # seeds the process-GLOBAL np.random/random, so it no longer needs a
@@ -12475,6 +12835,114 @@ class EnhancedSimulationEngine:
                 except Exception as _corr_err:
                     self._log(f"WARNING: Could not inject correlation for '{scale_name_raw}': {_corr_err}")
 
+                # v1.2.9.1 — VERIFY the reliability that was actually achieved.
+                # Both paths above can leave a block MORE internally consistent
+                # than the target: injection overshoots (measured 0.58 -> 0.88
+                # while aiming at 0.75 on a 5-item block), and a block that
+                # started above target was previously left untouched. Benchmarked
+                # against real item-level data (utils/reference_profiles.json),
+                # that overshoot is the clearest signature of synthetic survey
+                # data: mean inter-item r 0.60 and alpha 0.88 where real 5-item
+                # blocks sit at 0.36 and 0.73, with within-person SD 0.72 against
+                # 1.02 and 0.2% of respondents giving identical answers against
+                # 5.2%. Scaling the item-specific variance up fixes all of them
+                # at once, and leaves every participant's rank on the construct —
+                # so every condition effect — where it was.
+                if HAS_ITEM_REALISM and num_items >= 3:
+                    try:
+                        _target_r = target_r_from_alpha(target_alpha, num_items)
+                        _cols = [list(data[c]) for c in item_col_names
+                                 if c in data]
+                        if len(_cols) == num_items:
+                            _new_cols, _dc_report = decouple_block(
+                                _cols, scale_min, scale_max,
+                                condition_labels=data.get("CONDITION"),
+                                target_r=_target_r,
+                                preserve_effect=True,
+                            )
+                            if _dc_report.applied:
+                                for j, c in enumerate(item_col_names):
+                                    data[c] = [int(round(v)) for v in _new_cols[j]]
+                                self._log(
+                                    f"Reliability correction for '{scale_name_raw}' "
+                                    f"(target alpha {target_alpha:.2f} -> r {_target_r:.3f}): "
+                                    f"{_dc_report.reason}"
+                                )
+                                self._item_realism_log.append(
+                                    dict(scale=scale_name_raw, stage="decouple",
+                                         **_dc_report.as_dict())
+                                )
+                    except Exception as _dc_err:
+                        self._log(
+                            f"WARNING: reliability correction failed for "
+                            f"'{scale_name_raw}': {_dc_err}"
+                        )
+
+                # v1.2.9.3 — MARGINAL SHAPE. The reliability pass above fixes how
+                # items relate to each other; this one fixes what a single item
+                # looks like on its own. Simulated items come out far too tame:
+                # measured across 17 blocks of four published instruments (48,431
+                # respondents), real item SD is 0.295 of the scale span with only
+                # a 0.019 spread across 5-point and 9-point scales alike, and 34%
+                # of all responses sit on an endpoint. A discretised normal puts
+                # almost nothing on the endpoints and is peaked where real data is
+                # flat (measured excess kurtosis -0.51).
+                #
+                # The fix rank-transports each item onto a maximum-entropy
+                # distribution carrying the item's own mean and the measured
+                # dispersion, so every participant keeps their position and the
+                # manipulation, the persona structure and the inter-item
+                # correlation all survive; only the marginal changes. The target
+                # is widened by whatever between-condition variance the column
+                # already holds, so a strong manipulation is not squeezed back
+                # toward a single-group spread.
+                #
+                # Gated on the registry: the benchmark declines on any design it
+                # was not measured under, and a declined lookup leaves the block
+                # exactly as the engine built it.
+                if HAS_ITEM_REALISM and HAS_EMPIRICAL_REGISTRY and num_items >= 3:
+                    try:
+                        _sig = _design_signature.for_block(
+                            scale_min=scale_min, scale_max=scale_max,
+                            n_items=num_items,
+                            design_type=getattr(self, "design_type", None),
+                            n_conditions=len(self.conditions or []),
+                        )
+                        _hit = _empirical_registry.lookup_best(
+                            "item.likert.any", "item_sd_fraction_of_span", _sig)
+                        _cols = [list(data[c]) for c in item_col_names if c in data]
+                        if _hit is not None and len(_cols) == num_items:
+                            _md_cols, _md_rep = match_item_dispersion(
+                                _cols, int(scale_min), int(scale_max),
+                                condition_labels=data.get("CONDITION"),
+                                sd_fraction=float(_hit.value),
+                                rng=random.Random(int(self.seed) + 0x5D15),
+                            )
+                            if _md_rep.adjusted_items and not _md_rep.skipped:
+                                for j, c in enumerate(item_col_names):
+                                    data[c] = [int(v) for v in _md_cols[j]]
+                                if self.registry_ledger is not None:
+                                    self.registry_ledger.record_lookup(
+                                        _hit, f"scale '{scale_name_raw}' item marginals")
+                                self._log(
+                                    f"Marginal shape for '{scale_name_raw}': item SD "
+                                    f"{_md_rep.sd_before:.2f} -> {_md_rep.sd_after:.2f} "
+                                    f"(target {_md_rep.target_sd:.2f}), endpoint share "
+                                    f"{_md_rep.endpoint_before:.3f} -> "
+                                    f"{_md_rep.endpoint_after:.3f} "
+                                    f"[{_hit.entry_id}, {_hit.tier}]"
+                                )
+                                self._item_realism_log.append(
+                                    dict(scale=scale_name_raw, stage="marginal",
+                                         entry_id=_hit.entry_id, tier=_hit.tier,
+                                         **vars(_md_rep))
+                                )
+                    except Exception as _md_err:
+                        self._log(
+                            f"WARNING: marginal shape pass failed for "
+                            f"'{scale_name_raw}': {_md_err}"
+                        )
+
         # v1.0.5.8: Anti-detection — detect and break alternating/zigzag patterns.
         # Mechanical alternation (e.g., 2,4,2,4,2,4 or 1,7,1,7,1,7) across items
         # is a classic tell for non-human data. Real humans show item-content-driven
@@ -12638,7 +13106,8 @@ class EnhancedSimulationEngine:
         # v1.2.2.9: EXCEPTION — when free_llm_oe_cap > 0, the user chose "Proceed
         # (AI for 100, template for rest)".  We MUST prefill so the first 100
         # participants have pool responses ready.
-        if self.llm_generator and self.open_ended_questions and (not self.allow_template_fallback or self.free_llm_oe_cap > 0):
+        if (self.llm_generator and self.open_ended_questions
+                and self.llm_attempts_allowed()):
             try:
                 self.llm_generator.reset_providers()
                 self._log("LLM providers reset before prefill (clean state)")
@@ -13477,8 +13946,23 @@ class EnhancedSimulationEngine:
             # Re-create DataFrame with repaired data
             df = pd.DataFrame(data)
 
+        # v1.2.9.1 — identical-answer realism, deliberately LAST.
+        # Generation leaves about 11% of respondents answering identically across
+        # a 5-item block; the consistency audit above then repairs nearly all of
+        # them away, leaving 0.3%. Real data sits in between: 5.2% of respondents
+        # in the reference sample give the same answer to every direction-aligned
+        # item of a 5-item block (utils/reference_profiles.json), because people at
+        # the ceiling of a construct genuinely answer "6,6,6,6,6". Restoring that
+        # share has to happen after every pass that would undo it.
+        # Only the touched columns are written back. Rebuilding the frame from
+        # `data` here would silently discard every df-level correction made above
+        # (the range clipping, for one) — which measured as a drop in the observed
+        # treatment effect from d=1.41 to d=0.34 before this was caught.
+        self._apply_identical_answer_realism(data, _scale_generation_log, frame=df)
+
         # Final consistency pass: every <Scale>_mean must equal the mean of the delivered
         # (reverse-recoded, missing-aware) items, whatever the steps above did to them.
+        # Runs after the identical-answer pass, which rewrites items.
         self._refresh_scale_composites(df, _scale_generation_log)
 
         # Compute observed effect sizes to validate simulation quality
