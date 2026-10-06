@@ -2691,9 +2691,10 @@ def _render_analytics_dashboard(
         '<h3 style="color:#e8e8e8;margin:0 0 4px 0;font-weight:700;letter-spacing:0.02em;">'
         'Analytics Dashboard</h3>'
         '<p style="color:#8896ab;margin:0;font-size:0.82rem;">'
-        'Professional statistical analysis of your simulated dataset</p></div>',
+        'Descriptive and test summaries of your simulated dataset</p></div>',
         unsafe_allow_html=True,
     )
+    _render_validity_notice()
 
     if not _has_plotly:
         st.warning("Plotly is required for the analytics dashboard. Install with: `pip install plotly`")
@@ -3023,10 +3024,14 @@ def _render_analytics_dashboard(
     # v1.8.9: SECTION 4b: Post-Hoc Power Analysis Summary
     # ──────────────────────────────────────────────────────────────
     if _composite_cols and n_conditions >= 2 and _es_rows:
-        with st.expander("Post-Hoc Power Estimates", expanded=False):
+        with st.expander("Observed-effect power (descriptive only)", expanded=False):
             st.caption(
-                "Approximate power for detecting the observed effect sizes at α = .05 (two-tailed). "
-                "These are post-hoc estimates — interpret with caution."
+                "Approximate power to detect the effect sizes observed in THIS synthetic "
+                "sample at α = .05 (two-tailed). Observed-effect power is a function of the "
+                "p-value, and here the effects were set by the simulation, so this table "
+                "describes the generator and is not a sample-size recommendation. For "
+                "planning, use an a-priori power analysis with an effect size from the "
+                "literature."
             )
             _power_rows = []
             for row in _es_rows:
@@ -3045,7 +3050,7 @@ def _render_analytics_dashboard(
                     "|d|": round(_d_obs, 3),
                     "n/group": _n_per_group,
                     "Est. Power": f"{_power:.0%}",
-                    "Adequacy": _power_label,
+                    "Level": _power_label,
                 })
             if _power_rows:
                 _pwr_df = pd.DataFrame(_power_rows)
@@ -3054,16 +3059,10 @@ def _render_analytics_dashboard(
                         lambda v: "background-color: #dcfce7" if v == "High"
                         else "background-color: #fef9c3" if v == "Moderate"
                         else "background-color: #fee2e2" if v in ("Low",) else "",
-                        subset=["Adequacy"],
+                        subset=["Level"],
                     ),
                     use_container_width=True,
                 )
-                _underpowered = sum(1 for r in _power_rows if r["Adequacy"] == "Low")
-                if _underpowered > 0:
-                    st.info(
-                        f"{_underpowered} comparison(s) appear underpowered (< 50%). "
-                        "Consider increasing sample size or targeting larger effects."
-                    )
 
     # ──────────────────────────────────────────────────────────────
     # SECTION 5: Normality Assessment
@@ -7460,6 +7459,20 @@ def _access_code_matches(supplied: str, secret_name: str) -> bool:
         return False
 
 
+VALIDITY_NOTICE = (
+    "**Synthetic data, not evidence.** The effects in this dataset are the ones the "
+    "simulation was configured to produce, so significance tests and effect sizes computed "
+    "on it describe the generator's settings, not real participants or the real world. "
+    "Use it for teaching, building and testing analysis pipelines, and pre-registration "
+    "dry runs. Do not report it as empirical data."
+)
+
+
+def _render_validity_notice() -> None:
+    """Show the standing caveat that simulated results are not empirical evidence."""
+    st.info(VALIDITY_NOTICE)
+
+
 def _collect_qsf_if_consented(filename: str, content: bytes) -> None:
     """Forward a survey file to the research collection repo ONLY with explicit consent.
 
@@ -8953,7 +8966,7 @@ if active_page == -1:
             '<div class="capability-item">'
             '<div class="cap-icon">\U0001f9ea</div>'
             '<div class="cap-text"><strong>Test Before You Collect</strong>'
-            '<span>Generate a publication-ready CSV with realistic Likert-scale responses, attention check '
+            '<span>Generate a realistic Likert-scale CSV (synthetic, for teaching and pipeline testing), attention check '
             'failures, individual differences, and demographic distributions. The data mirrors real Qualtrics '
             'output format so your analysis scripts work identically on both simulated and real data.</span></div></div>'
 
@@ -15560,6 +15573,8 @@ if active_page == 3:
             f'</div>',
             unsafe_allow_html=True,
         )
+
+        _render_validity_notice()
 
         # v1.1.0.4: Generation method badge — show which engine was used
         _gen_meta = st.session_state.get("last_metadata", {}) or {}
