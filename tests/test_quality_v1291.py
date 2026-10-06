@@ -520,3 +520,50 @@ def test_collector_duplicate_check_queries_the_configured_branch(monkeypatch):
     config.pop("branch")
     coll._file_exists_in_repo("new.qsf", config)
     assert seen["params"] == {"ref": "main"}
+
+
+def test_email_send_still_works_with_configured_secrets(monkeypatch):
+    """The SMTP path reads its settings through _secret(); with secrets present it must behave as before."""
+    import smtplib
+
+    import streamlit as st
+
+    app = _load_app()
+    sent = {}
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout=None, **_kw):
+            sent["host"], sent["port"] = host, port
+
+        def ehlo(self):
+            pass
+
+        def starttls(self, context=None):
+            sent["tls"] = True
+
+        def login(self, user, password):
+            sent["login"] = (user, password)
+
+        def send_message(self, msg):
+            sent["to"] = msg["To"]
+            sent["subject"] = msg["Subject"]
+            sent["attachments"] = [part.get_filename() for part in msg.get_payload() if part.get_filename()]
+
+        def quit(self):
+            sent["quit"] = True
+
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    monkeypatch.setattr(st, "secrets", {
+        "SMTP_SERVER": "smtp.example.org", "SMTP_PORT": 587, "SMTP_USERNAME": "sender@example.org",
+        "SMTP_PASSWORD": "app-password", "SMTP_FROM_EMAIL": "sender@example.org"})
+    ok, message = app._send_email_with_smtp("instructor@example.org", "Subject", "Body", [("results.zip", b"PK")])
+    assert ok, message
+    assert sent["host"] == "smtp.example.org" and sent["port"] == 587 and sent["tls"] is True
+    assert sent["login"] == ("sender@example.org", "app-password")
+    assert sent["to"] == "instructor@example.org" and sent["subject"] == "Subject"
+    assert sent["attachments"] == ["results.zip"] and sent["quit"] is True
+
+    # without any configuration the function reports it instead of raising
+    monkeypatch.setattr(st, "secrets", {})
+    ok, message = app._send_email_with_smtp("instructor@example.org", "Subject", "Body")
+    assert not ok and "not configured" in message
