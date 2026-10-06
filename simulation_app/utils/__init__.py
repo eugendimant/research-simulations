@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.9.0 - Privacy, reproducibility, export fidelity and a how-to guide served from the app: embedded API keys and default passwords removed (secrets via env or st.secrets), opt-in survey sharing, user-controlled seed with deterministic output, Qualtrics-faithful Simulated_Data.csv plus Simulation_Diagnostics.csv sidecar, analysis scripts that recode reverse items and match the delivered files, the student how-to guide PDF served via st.download_button so distribution no longer depends on the repository being public
+Version: 1.2.9.1 - Effect fidelity and text safety: a requested Cohen's d now holds on long scales (8-20 items), two- and three-point scales and economic-game outcomes, inferred effects can be switched off for a true null and every run reports the effects built in versus observed; open-ended text is edited only at grammatical positions and numeric text boxes get numbers; straight-line repair no longer erases effects on short or binary scales; the design step says that every design is generated between-subjects; the survey-collection endpoint validates and rate-limits uploads; noncommercial license added
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.9.0"
+__version__ = "1.2.9.1"
 
 
 # =============================================================================

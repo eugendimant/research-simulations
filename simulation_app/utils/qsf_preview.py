@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.9.0"
+__version__ = "1.2.9.1"  # v1.2.9.1: pass Qualtrics numeric validation through to the engine
 
 
 # ============================================================================
@@ -2761,6 +2761,8 @@ class QSFPreviewParser:
         invalid_patterns = [
             r'\$\{',  # ${e://Field/...} or ${rand://...}
             r'\$e://',  # $e://Field/...
+            r'^\s*\{[^{}]*\}\s*$',  # {e://Field/participantId}: placeholder with the "$" already stripped
+            r'\b(?:e|q|rand)://',  # any Qualtrics piped-text source
             r'rand://int',  # Random number placeholders
             r'^\d+$',  # Just a number
             r'^[A-Za-z]_\d+$',  # Single letter with number like Q_1
@@ -3591,7 +3593,8 @@ class QSFPreviewParser:
                     seen_variables.add(var_name)
 
                     # Determine if it's an ID field (still include but mark differently)
-                    is_id_field = any(pat in text_lower for pat in id_patterns)
+                    # v1.2.9.1: whole-word match so 'age' no longer fires on 'average'/'manage'/'message'.
+                    is_id_field = any(re.search(r'\b' + re.escape(pat) + r'\b', text_lower) for pat in id_patterns)
 
                     # Determine context type based on question text
                     if is_id_field:
@@ -3611,7 +3614,12 @@ class QSFPreviewParser:
                         'context_type': context_type,
                         'preceding_questions': preceding_questions,
                         'force_response': q_info.force_response,
-                        'source_type': 'text_entry'
+                        'source_type': 'text_entry',
+                        # v1.2.9.1: Qualtrics validation settings (ValidNumber, ValidZip, ...)
+                        # let the engine answer numeric text boxes with numbers.
+                        'content_type': q_info.content_type,
+                        'number_min': q_info.number_min,
+                        'number_max': q_info.number_max,
                     }
 
                     open_ended_details.append(detail)

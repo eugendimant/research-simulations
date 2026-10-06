@@ -4,13 +4,23 @@ GitHub QSF File Collector
 Automatically uploads new QSF files to a GitHub repository for collection purposes.
 Runs silently in the background without interrupting user workflow.
 
-Version: 1.2.0
+Version: 1.2.1
+
+v1.2.1 hardening (behavior unchanged for well-formed, consented uploads):
+    * Only genuine Qualtrics survey files are uploaded (JSON with SurveyEntry + SurveyElements).
+    * Files larger than MAX_QSF_BYTES are rejected.
+    * At most MAX_UPLOADS_PER_HOUR uploads per server process. Every upload is a git commit and a
+      commit to the deployed branch triggers a redeploy, so an unbounded stream could keep the app
+      restarting.
+    * The target branch is configurable (GITHUB_QSF_BRANCH, default "main" as before). Pointing it at
+      a dedicated branch keeps collected files out of the branch the app deploys from.
 
 Configuration via Streamlit secrets:
     GITHUB_TOKEN: Personal access token with repo write permissions
     GITHUB_REPO: Repository in format "owner/repo" (e.g., "eugendimant/research-simulations")
     GITHUB_QSF_PATH: Path within repo for QSF files (default: "simulation_app/example_files")
     GITHUB_COLLECTION_ENABLED: Set to "true" to enable (default: disabled)
+    GITHUB_QSF_BRANCH: Branch to commit to (default: "main")
 
 Token Types Supported:
     - Classic tokens (ghp_XXXXXX): Require 'repo' scope
@@ -35,15 +45,28 @@ To generate a GitHub token:
 
 import base64
 import hashlib
+import json
 import logging
 import threading
-from typing import Optional, Tuple
+import time
+from collections import deque
+from typing import Deque, Optional, Tuple
 from functools import lru_cache
 
 # Configure module logger
 logger = logging.getLogger(__name__)
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
+
+# Upper bound for a collected survey file. Real QSF exports are typically 20 KB - 2 MB.
+MAX_QSF_BYTES = 5 * 1024 * 1024
+# Upload budget per server process per hour (see module docstring for why).
+MAX_UPLOADS_PER_HOUR = 20
+# Longest file name (including ".qsf") that will be stored.
+MAX_FILENAME_LENGTH = 120
+
+_upload_times: Deque[float] = deque()
+_upload_lock = threading.Lock()
 
 
 def _validate_token_format(token: str) -> Tuple[bool, str]:
@@ -87,9 +110,10 @@ def _get_config() -> dict:
             "repo": st.secrets.get("GITHUB_REPO", "eugendimant/research-simulations"),
             "path": st.secrets.get("GITHUB_QSF_PATH", "simulation_app/example_files"),
             "enabled": str(st.secrets.get("GITHUB_COLLECTION_ENABLED", "false")).lower() == "true",
+            "branch": str(st.secrets.get("GITHUB_QSF_BRANCH", "main") or "main"),
         }
     except Exception:
-        return {"token": "", "repo": "", "path": "", "enabled": False}
+        return {"token": "", "repo": "", "path": "", "enabled": False, "branch": "main"}
 
 
 def is_collection_enabled() -> bool:
@@ -136,12 +160,54 @@ def _sanitize_filename(filename: str) -> str:
     # Collapse multiple spaces
     while "  " in sanitized:
         sanitized = sanitized.replace("  ", " ")
-    # Trim leading/trailing spaces and underscores
-    sanitized = sanitized.strip(" _")
+    # No dot runs or leading dots: a name can never read as ".." or a hidden file
+    while ".." in sanitized:
+        sanitized = sanitized.replace("..", ".")
+    # Trim leading/trailing spaces, underscores and dots
+    sanitized = sanitized.strip(" _.") or "survey"
     # Ensure .qsf extension
     if not sanitized.lower().endswith(".qsf"):
         sanitized = sanitized.rstrip(".") + ".qsf"
-    return sanitized.strip()
+    sanitized = sanitized.strip()
+    # Cap the length but keep the extension
+    if len(sanitized) > MAX_FILENAME_LENGTH:
+        stem = sanitized[: -len(".qsf")]
+        sanitized = stem[: MAX_FILENAME_LENGTH - len(".qsf")].rstrip(" _.") + ".qsf"
+    return sanitized
+
+
+def validate_qsf_payload(content: bytes) -> Tuple[bool, str]:
+    """Check that ``content`` looks like a Qualtrics survey file and is within the size limit.
+
+    Returns (ok, reason). Never raises.
+    """
+    try:
+        if not isinstance(content, (bytes, bytearray)):
+            return False, "content is not bytes"
+        if len(content) == 0:
+            return False, "empty file"
+        if len(content) > MAX_QSF_BYTES:
+            return False, f"file larger than {MAX_QSF_BYTES // (1024 * 1024)} MB"
+        data = json.loads(bytes(content).decode("utf-8-sig"))
+        if not isinstance(data, dict):
+            return False, "top level is not a JSON object"
+        if "SurveyEntry" not in data or not isinstance(data.get("SurveyElements"), list):
+            return False, "missing SurveyEntry / SurveyElements"
+        return True, "ok"
+    except Exception as exc:  # malformed JSON, bad encoding, etc.
+        return False, f"not a readable QSF ({type(exc).__name__})"
+
+
+def _allow_upload_now() -> bool:
+    """Sliding one-hour window limiter. Records the attempt when it returns True."""
+    now = time.time()
+    with _upload_lock:
+        while _upload_times and now - _upload_times[0] > 3600:
+            _upload_times.popleft()
+        if len(_upload_times) >= MAX_UPLOADS_PER_HOUR:
+            return False
+        _upload_times.append(now)
+        return True
 
 
 def _file_exists_in_repo(filename: str, config: dict) -> bool:
@@ -205,7 +271,7 @@ def _upload_to_github(filename: str, content: bytes, config: dict) -> Tuple[bool
         payload = {
             "message": commit_message,
             "content": content_b64,
-            "branch": "main",  # Or could be configurable
+            "branch": config.get("branch") or "main",
         }
 
         logger.info(f"Attempting GitHub upload: {filename} to {config['repo']}/{config['path']}")
@@ -262,6 +328,14 @@ def collect_qsf_async(filename: str, content: bytes) -> None:
             if not config["enabled"]:
                 return
 
+            ok, reason = validate_qsf_payload(content)
+            if not ok:
+                logger.info(f"QSF collection skipped: {reason}")
+                return
+            if not _allow_upload_now():
+                logger.info("QSF collection skipped: hourly upload limit reached")
+                return
+
             if not config["token"]:
                 logger.debug("QSF collection enabled but no GitHub token configured")
                 return
@@ -311,6 +385,12 @@ def collect_qsf_sync(filename: str, content: bytes) -> Tuple[bool, str]:
 
     if not config["token"]:
         return False, "GitHub token not configured"
+
+    ok, reason = validate_qsf_payload(content)
+    if not ok:
+        return False, f"Rejected: {reason}"
+    if not _allow_upload_now():
+        return False, "Hourly upload limit reached"
 
     # Sanitize filename
     safe_filename = _sanitize_filename(filename)

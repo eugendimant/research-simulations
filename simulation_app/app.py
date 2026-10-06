@@ -46,6 +46,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import streamlit.components.v1 as _st_components
+from html import escape as html_escape  # v1.2.9.1: escape user/QSF text before raw-HTML rendering
 
 # =============================================================================
 # MODULE VERSION VERIFICATION
@@ -54,8 +55,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.9.0"
-BUILD_ID = "20261006-v12900-serve-howto-pdf-in-app"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.9.1"
+BUILD_ID = "20261006-v12901-effect-fidelity-grammar-safe-text"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -103,6 +104,21 @@ from utils.enhanced_simulation_engine import (
     EffectSizeSpec,
     ExclusionCriteria,
 )
+try:
+    from utils.enhanced_simulation_engine import (
+        clean_question_text,
+        draw_numeric_answer,
+        infer_numeric_answer_spec,
+    )
+except ImportError:  # keep the app loading if the engine module is older than the app
+    def clean_question_text(text: Any) -> str:  # type: ignore[misc]
+        return str(text or "")
+
+    def infer_numeric_answer_spec(*_args: Any, **_kwargs: Any) -> Optional[Dict[str, Any]]:  # type: ignore[misc]
+        return None
+
+    def draw_numeric_answer(*_args: Any, **_kwargs: Any) -> str:  # type: ignore[misc]
+        return ""
 from utils.condition_identifier import (
     DesignAnalysisResult,
     VariableRole,
@@ -146,7 +162,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.9.0"  # v1.2.9.0: Serve the student-facing how-to guide PDF from the app so its link survives the repository being made private
+APP_VERSION = "1.2.9.1"  # v1.2.9.1: requested effect sizes hold on long scales and game DVs, grammar-safe open-ended text, numeric text boxes get numbers, honest design-structure notes
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -235,6 +251,13 @@ def _decrypt_api_key(ciphertext_hex: str) -> str:
 
 MAX_SIMULATED_N = 10000
 MAX_FREE_LLM_N = 100  # v1.2.1.9: Cap free LLM generation to prevent API exhaustion
+# v1.2.9.1: the generator assigns each simulated participant to ONE condition. The design
+# choices below are saved in the summary, but they do not change the structure of the data.
+DESIGN_STRUCTURE_NOTE = (
+    "This version generates one condition per participant (between-subjects, randomized at the "
+    "participant level). Your choice is recorded in the design summary, but the generated data will "
+    "not contain repeated measures, mixed-design columns or clustered observations."
+)
 
 STANDARD_DEFAULTS = {
     "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12, "age_min": 18, "age_max": 80, "include_age_column": True, "include_gender_column": True},
@@ -1410,9 +1433,16 @@ def _generate_preview_data(
                 continue
             _oe_responses = []
             _quality_levels = ['high', 'medium', 'high', 'medium', 'low']
+            # v1.2.9.1: same rules as the full run: clean question text, and numeric text boxes
+            # (age, counts, amounts...) preview as numbers, not essays.
+            _q_text = clean_question_text(_q_text) or str(_var)
+            _numeric_spec = infer_numeric_answer_spec(_q_text, _var, oe if isinstance(oe, dict) else None)
             for _p_idx in range(n_rows):
                 _cond = conditions[_p_idx % len(conditions)] if conditions else ""
-                if _p_idx < _n_oe_preview:
+                if _numeric_spec is not None and _p_idx < _n_oe_preview:
+                    _num_seed = (sum(ord(c) * (i + 1) for i, c in enumerate(str(_var)[:60])) + _p_idx * 7919) % (2 ** 31)
+                    _oe_responses.append(draw_numeric_answer(_numeric_spec, np.random.RandomState(_num_seed)))
+                elif _p_idx < _n_oe_preview:
                     _oe_responses.append(_get_sample_text_response(
                         quality=_quality_levels[_p_idx % len(_quality_levels)],
                         participant_idx=_p_idx,
@@ -3395,13 +3425,13 @@ def _send_email_with_smtp(
     from email import encoders
 
     # Get SMTP configuration from secrets
-    smtp_server = st.secrets.get("SMTP_SERVER", "")
-    smtp_port = int(st.secrets.get("SMTP_PORT", 587))
-    smtp_username = st.secrets.get("SMTP_USERNAME", "")
-    smtp_password = st.secrets.get("SMTP_PASSWORD", "")
-    from_email = st.secrets.get("SMTP_FROM_EMAIL", smtp_username)
-    from_name = st.secrets.get("SMTP_FROM_NAME", "Behavioral Experiment Simulation Tool")
-    use_tls = st.secrets.get("SMTP_USE_TLS", True)
+    smtp_server = _secret("SMTP_SERVER", "")
+    smtp_port = int(_secret("SMTP_PORT", 587))
+    smtp_username = _secret("SMTP_USERNAME", "")
+    smtp_password = _secret("SMTP_PASSWORD", "")
+    from_email = _secret("SMTP_FROM_EMAIL", smtp_username)
+    from_name = _secret("SMTP_FROM_NAME", "Behavioral Experiment Simulation Tool")
+    use_tls = _secret("SMTP_USE_TLS", True)
 
     if not smtp_server or not smtp_username or not smtp_password:
         return False, "Email not configured. Contact the administrator."
@@ -3469,6 +3499,16 @@ def _send_email_with_smtp(
         # Log full technical detail server-side; return a generic message to the user.
         _app_logging.getLogger(__name__).error("SMTP send failed: %s", e)
         return False, "Email could not be sent. Please check the configuration and try again."
+
+
+
+def _secret(name: str, default: Any = "") -> Any:
+    """Read one Streamlit secret. Returns ``default`` when the secret is missing or when no
+    secrets file exists at all (local runs), instead of raising."""
+    try:
+        return st.secrets.get(name, default)
+    except Exception:
+        return default
 
 
 def _send_email(
@@ -4964,14 +5004,14 @@ def _render_conversational_builder() -> None:
                 st.markdown(
                     f'<div style="background:{"#E8F5E9" if _sc.get("is_control") else "#E3F2FD"};'
                     f'border-radius:6px;padding:6px 10px;margin-top:4px;">'
-                    f'<strong>{_sc["name"]}</strong><br>'
+                    f'<strong>{html_escape(str(_sc["name"]))}</strong><br>'
                     f'<span style="font-size:0.8em;color:#666;">{"Control" if _sc.get("is_control") else "Treatment"}</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
             with _sc_col2:
                 st.markdown(
-                    f'<div style="color:#555;font-size:0.9em;padding-top:8px;">{_sc.get("description", "")}</div>',
+                    f'<div style="color:#555;font-size:0.9em;padding-top:8px;">{html_escape(str(_sc.get("description", "")))}</div>',
                     unsafe_allow_html=True,
                 )
             with _sc_col3:
@@ -5293,6 +5333,8 @@ def _render_conversational_builder() -> None:
         st.session_state["builder_design_type"] = design_type
         if design_type != _auto_design:
             st.session_state["_design_type_manually_set"] = True
+        if design_type != "between":
+            st.warning(DESIGN_STRUCTURE_NOTE)
 
     # ── Demographics + Participants (collapsible) ─────────────────────
     st.markdown("")
@@ -5735,7 +5777,7 @@ def _render_builder_design_review() -> None:
                 _badge_color = "#16A34A" if _type_badge == "Control" else "#2563EB"
                 st.markdown(
                     f'<div style="display:flex;align-items:center;gap:8px;">'
-                    f'<strong>{i+1}. {cond}</strong>'
+                    f'<strong>{i+1}. {html_escape(str(cond))}</strong>'
                     f'<span style="background:{_badge_color};color:white;font-size:0.7em;'
                     f'padding:2px 8px;border-radius:10px;">{_type_badge}</span>'
                     f'</div>',
@@ -8814,13 +8856,14 @@ if active_page == -1:
 
         '<div class="feature-card"><div class="fc-icon">\U0001F4AC</div>'
         '<h4>Realistic Open-Ended Responses</h4>'
-        '<p>AI-generated free-text answers that match numeric ratings, '
-        'built from 50+ behavioral personas across 225+ research domains.</p></div>'
+        '<p>Free-text answers written to fit each participant\'s ratings, '
+        'with 70+ response personas and topic matching across 225+ research domains.</p></div>'
 
         '<div class="feature-card"><div class="fc-icon">\U0001F4CA</div>'
-        '<h4>Ready-to-Run Analysis Code</h4>'
-        '<p>Get R and Python scripts tailored to your exact design — ANOVAs, t-tests, '
-        'regressions, mediation — ready for immediate execution.</p></div>'
+        '<h4>Data-Prep Scripts in Five Languages</h4>'
+        '<p>R, Python, Julia, SPSS and Stata scripts that load the data, code your conditions, '
+        'reverse-score items and build scale composites. The instructor report adds example '
+        't-test and ANOVA code.</p></div>'
 
         '<div class="feature-card"><div class="fc-icon">\U0001F393</div>'
         '<h4>Built for Research & Teaching</h4>'
@@ -8835,11 +8878,11 @@ if active_page == -1:
         '<div class="trust-strip">'
         '<div class="trust-item"><span class="trust-num">225+</span><span class="trust-label">Research Domains</span></div>'
         '<div class="trust-divider"></div>'
-        '<div class="trust-item"><span class="trust-num">40</span><span class="trust-label">Question Types</span></div>'
+        '<div class="trust-item"><span class="trust-num">40</span><span class="trust-label">Open-Text Question Types</span></div>'
         '<div class="trust-divider"></div>'
         '<div class="trust-item"><span class="trust-num">5</span><span class="trust-label">Analysis Languages</span></div>'
         '<div class="trust-divider"></div>'
-        '<div class="trust-item"><span class="trust-num">50+</span><span class="trust-label">Behavioral Personas</span></div>'
+        '<div class="trust-item"><span class="trust-num">70+</span><span class="trust-label">Response Personas</span></div>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -8986,16 +9029,17 @@ if active_page == -1:
             '<div class="capability-item">'
             '<div class="cap-icon">\U0001f4ac</div>'
             '<div class="cap-text"><strong>Realistic Open-Ended Responses</strong>'
-            '<span>Uses a multi-provider LLM failover chain with 50+ behavioral personas to generate unique, '
-            'context-aware free-text responses. Each response aligns with the participant\'s numeric ratings '
-            'and assigned persona. Supports 225+ research domains and 40 question types.</span></div></div>'
+            '<span>Uses a multi-provider LLM failover chain with 70+ response personas to write unique, '
+            'context-aware free-text answers. Each answer is matched to the participant\'s numeric ratings '
+            'and assigned persona. Recognizes 225+ research domains and 40 open-text question types.</span></div></div>'
 
             '<div class="capability-item">'
             '<div class="cap-icon">\U0001f4ca</div>'
-            '<div class="cap-text"><strong>Ready-to-Run Analysis Code</strong>'
-            '<span>Automatically generates scripts in R, Python, Julia, SPSS, and Stata \u2014 tailored to your '
-            'specific experimental design. Includes data loading, variable coding, condition comparisons, '
-            'and appropriate statistical tests.</span></div></div>'
+            '<div class="cap-text"><strong>Data-Prep Scripts in Five Languages</strong>'
+            '<span>Generates scripts in R, Python, Julia, SPSS and Stata for your design. They load the CSV, '
+            'code the conditions, reverse-score items, build scale composites and apply the recommended '
+            'exclusions. The instructor report adds example t-test and ANOVA code; regressions and '
+            'mediation are left to you.</span></div></div>'
 
             '<div class="capability-item">'
             '<div class="cap-icon">\U0001f393</div>'
@@ -9925,6 +9969,10 @@ if active_page == 2:
                 key="rand_level_select",
                 help="How participants are assigned to conditions.",
             )
+
+        if (not str(design_type).startswith(("Between", "Simple"))
+                or not str(rand_level).startswith("Participant")):
+            st.warning(DESIGN_STRUCTURE_NOTE)
 
         # ── Sample Size & Allocation ────────────────────────────────────
         st.markdown("#### Sample Size")
@@ -11444,6 +11492,10 @@ if active_page == 2:
                             "context_type": oe.get("context_type", "general"),
                             "min_chars": oe.get("min_chars"),
                             "block_name": oe.get("block_name", ""),
+                            # v1.2.9.1: Qualtrics validation settings (numeric text boxes)
+                            "content_type": oe.get("content_type"),
+                            "number_min": oe.get("number_min"),
+                            "number_max": oe.get("number_max"),
                         })
             else:
                 st.info("No open-ended questions detected. Add any below.")
@@ -12205,7 +12257,7 @@ if active_page == 3:
     _study_title_display = st.session_state.get('study_title', 'Untitled')
     _per_cell = _sample_n // max(len(conditions), 1) if _sample_n else 0
     st.markdown(
-        f'<div style="font-size:0.95rem;font-weight:600;color:#1F2937;margin-bottom:4px;">{_study_title_display}</div>'
+        f'<div style="font-size:0.95rem;font-weight:600;color:#1F2937;margin-bottom:4px;">{html_escape(str(_study_title_display))}</div>'
         f'<div style="display:flex;gap:24px;font-size:0.85rem;color:#6B7280;margin-bottom:8px;">'
         f'<span><strong style="color:#374151;">{_sample_n}</strong> participants ({_per_cell}/cell)</span>'
         f'<span><strong style="color:#374151;">{len(conditions)}</strong> conditions</span>'
@@ -12458,8 +12510,21 @@ if active_page == 3:
         st.markdown("#### Expected Effect Sizes *(optional)*")
         st.caption(
             "Specify the expected effect size for your main hypothesis. "
-            "This makes the simulated data reflect a directional hypothesis rather than a null effect."
+            "This makes the simulated data reflect a directional hypothesis rather than a null effect. "
+            "The Cohen's d you enter is calibrated against the scale you are measuring, so the data "
+            "show roughly that d on the scale mean (sampling variation applies)."
         )
+        _auto_effects_on = st.checkbox(
+            "Also infer small differences from the condition names",
+            value=bool(st.session_state.get("_auto_effects", True)),
+            key="_auto_effects_input",
+            help=(
+                "On (default): contrasts you did not specify get a small difference inferred from the "
+                "wording of the condition names (for example gain vs loss). Off: only the effects you "
+                "specify are built in, and every other contrast is a true null."
+            ),
+        )
+        st.session_state["_auto_effects"] = bool(_auto_effects_on)
 
         effect_sizes = []
 
@@ -13043,7 +13108,7 @@ if active_page == 3:
         # so the user always sees which method is running.
         _active_method_key = st.session_state.get("generation_method", "")
         _active_card_info = {
-            "template":     {"icon": "&#9881;",  "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)", "title": "Template Engine",              "subtitle": "225+ research domains, 58 personas, instant generation"},
+            "template":     {"icon": "&#9881;",  "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)", "title": "Template Engine",              "subtitle": "225+ research domains, 70+ personas, instant generation"},
             "experimental": {"icon": "&#9889;",  "icon_bg": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)", "title": "Adaptive Behavioral Engine",    "subtitle": "60+ participant archetypes, 30+ research paradigms, literature-calibrated effects"},
             "abe_v2":       {"icon": "&#129504;", "icon_bg": "linear-gradient(135deg, #0EA5E9 0%, #06B6D4 100%)", "title": "Adaptive Behavioral Engine 3.0", "subtitle": "225+ domains, census-weighted demographics, stylometric fingerprinting, 5 consistency layers"},
             "free_llm":     {"icon": "&#129302;", "icon_bg": "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)", "title": "Built-in AI",                   "subtitle": "Free LLM providers for AI-generated open-ended text"},
@@ -13573,6 +13638,9 @@ if active_page == 3:
                             "force_response": oe.get("force_response", False),
                             "min_chars": oe.get("min_chars"),
                             "block_name": oe.get("block_name", ""),
+                            "content_type": oe.get("content_type"),
+                            "number_min": oe.get("number_min"),
+                            "number_max": oe.get("number_max"),
                         })
                     elif isinstance(oe, str) and oe.strip():
                         # Handle legacy/fallback case where open-ended is a plain string
@@ -14120,6 +14188,7 @@ if active_page == 3:
                 use_socsim_experimental=bool(st.session_state.get("_use_socsim_experimental", False)),
                 use_abe_v2=bool(st.session_state.get("_use_abe_v2", False)),
                 free_llm_oe_cap=_free_llm_oe_cap,
+                auto_effects=bool(st.session_state.get("_auto_effects", True)) if st.session_state.get("advanced_mode", False) else True,
             )
             # v1.2.5.0: ABE 3.0 — always use EnhancedSimulationEngine (HBS merged in)
             engine = EnhancedSimulationEngine(**_engine_kwargs)
@@ -15206,7 +15275,7 @@ if active_page == 3:
                 st.session_state["_gen_quality_notes"] = _existing_qn
 
             # v1.0.0: Enhanced instructor email notification with better diagnostics
-            instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu")
+            instructor_email = _secret("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu")
             _email_gen_label = metadata.get('generation_method_label', metadata.get('generation_method', 'Unknown'))
             subject = f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) [{_email_gen_label}] - {title}"
 
@@ -15215,9 +15284,9 @@ if active_page == 3:
 
             # Check if SMTP email is configured before attempting to send
             smtp_configured = (
-                st.secrets.get("SMTP_SERVER", "") and
-                st.secrets.get("SMTP_USERNAME", "") and
-                st.secrets.get("SMTP_PASSWORD", "")
+                _secret("SMTP_SERVER", "") and
+                _secret("SMTP_USERNAME", "") and
+                _secret("SMTP_PASSWORD", "")
             )
 
             if not smtp_configured:
@@ -15785,7 +15854,7 @@ if active_page == 3:
                         st.error(msg)
 
         with colE2:
-            instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "")
+            instructor_email = _secret("INSTRUCTOR_NOTIFICATION_EMAIL", "")
             if instructor_email:
                 if st.button("Send to instructor too", key="send_to_instructor_btn"):
                     subject = f"[Behavioral Simulation] Output (team: {st.session_state.get('team_name','') or 'N/A'})"

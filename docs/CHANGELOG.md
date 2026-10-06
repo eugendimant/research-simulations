@@ -1,3 +1,61 @@
+## 2026-10-06 — v1.2.9.1
+### Effect fidelity, grammar-safe text, honest copy, hardened survey collection
+
+Built on 1.2.9.0. The free multi-provider AI chain (providers, failover, anti-hang layers, keys
+lookup) is untouched; only the text post-processing after a response is drawn changed.
+
+**Effect sizes**
+- A requested Cohen's d now holds on long scales. Measured over 12 independent seeds per cell
+  (7-point scale, N = 1,200), observed/requested was 1.00 at 1-3 items, 1.07 at 5, 1.16 at 8,
+  1.19 at 12, 1.24 at 15 and 1.25 at 20; two-point scales gave 0.71-0.75. `_explicit_effect_scale()`
+  gains a long-scale divisor and 2-/3-point factors. On fresh seeds the average observed/requested is
+  1.01 over 18 scale shapes (0.93-1.08). One seed alone moves d by about 0.1 at N = 2,400, so never
+  calibrate on a single seed.
+- Economic-game outcomes keep the requested effect. The game model overwrote it (observed d -0.02,
+  0.13 and 0.09 for a requested 0.5); it is restored afterwards (0.50, 0.50, 0.50).
+- Straight-line repair (audit and HBS validator) runs only with 5+ items and 5+ response options.
+  On binary/3-point scales it randomised honest data and erased the condition effect.
+- True-null option ("Also infer small differences from the condition names", Advanced Settings,
+  `auto_effects=False`): no inferred offsets and no name-based trait modifiers. For conditions named
+  by a specified effect, name-based trait modifiers are skipped too. Label matching uses whole words
+  ("ai" matched "wait", "low" matched "follow-up").
+- `Metadata.json` gains `effect_sizes_applied` (per contrast: user / inferred / none, intended d,
+  observed d) and `level_high` / `level_low` in `effect_sizes_configured`; `effect_sizes_observed`
+  is recomputed from the data that is actually returned. The instructor report's "Condition Effects
+  Strategy" now describes this instead of a table of hard-coded keyword magnitudes.
+
+**Open-ended text**
+- Flagged defects per 1,000 answers: 453 -> 0.9 (24 corpus files, 24k answers, same seeds). Gone:
+  fillers inside phrases, "Click to write the question text" echoed into answers, HTML entities,
+  instruction text, keyword-soup topics, foreign question fragments, "something I in favor of",
+  a/an mismatches, cut-off endings.
+- LLM answers: post-processing no longer edits random word positions or replaces substrings without
+  word boundaries; it edits only at grammatical positions (`utils/text_cleanup.py`, shared by the LLM
+  variation code, the template engine, the stylometric engine and the validator).
+- Numeric text boxes (2,698 of the 4,668 open-ended questions in the 302-file corpus) get numbers that
+  respect Qualtrics validation: ages, years, counts, amounts, percentages, ZIP codes, and
+  MTurk/Prolific/participant IDs. A text box that repeats a numeric DV is skipped.
+- Stylometric engine and validator: "it's" -> "it has", "(2)" counters on duplicates and mid-phrase
+  truncation fixed.
+
+**Interface, security, docs**
+- Design step: choosing within-subjects, mixed or cluster-level randomization shows that the data are
+  still generated between-subjects (it was silently ignored).
+- User text is HTML-escaped before raw-HTML rendering; unset Streamlit secrets no longer raise on
+  local runs.
+- QSF collection endpoint validates uploads (Qualtrics structure, size), rate-limits them (every
+  upload is a commit and a commit to the deployed branch redeploys the app) and can target another
+  branch (`GITHUB_QSF_BRANCH`).
+- Piped-text placeholders (`{e://Field/...}`) are not detected as conditions; "age" no longer matches
+  "average" in ID-box detection; landing copy no longer promises regressions/mediation or
+  "publication-ready" data.
+- New root README, `docs/guide/how-effects-work.md`, `docs/guide/limitations.md`, `LICENSE`
+  (PolyForm Noncommercial 1.0.0) and `CITATION.cff`.
+
+**Tests:** `tests/test_effect_fidelity_v1291.py` (recovery on long/binary scales, true null, game DVs,
+metadata, seeds, reverse scoring) and `tests/test_quality_v1291.py` (text safety, numeric text
+boxes, collector hardening, exported scripts).
+
 
 ## 2026-08-14 — v1.2.8.7
 ### Free-LLM model migration (Groq decommission) + decommission resilience

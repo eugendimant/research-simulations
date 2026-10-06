@@ -191,6 +191,19 @@ Runs in this order:
 
 ---
 
+## Effect Fidelity and Text Safety (v1.2.9.1) — DO NOT regress
+
+- **Calibration contract:** a configured Cohen's d is the target on the scale MEAN (single item for one-item scales). `_explicit_effect_scale()` carries the corrections: the composite factor (`_EFFECT_ITEM_RHO = 0.20`), x1.10 for scales of 50+ points, and the v1.2.9.1 empirical terms (divide by `1 + 0.14 ln(min(k, 30) / 3)` for k > 3 items; x1.30 on 2-point and x1.07 on 3-point scales). They were fitted on 12 independent seeds per cell at N = 1,200. **Never calibrate on a single seed**: one seed moves the realised d by about 0.1 at N = 2,400, which looks like a systematic bias. Guards: `tests/test_effect_size_recovery.py`, `tests/test_effect_fidelity_v1291.py`.
+- **`auto_effects=False` is a true null.** `_compute_effect_for_condition` returns 0 for conditions without a user effect, and `_compute_condition_trait_modifier` skips every name-based modifier. Name-based trait modifiers are also skipped for conditions named by a user-specified effect (`_is_explicit_condition`).
+- **Condition-name matching uses `_kw_hit` / `_word_in` (word boundaries), never substring `in`** ("ai" matched "wait", "low" matched "follow-up").
+- **Game DVs** (SocSim) overwrite item columns. `_reapply_user_effects_after_game_model` restores the user's effect afterwards (randomised rounding, so narrow integer scales are not stuck on whole-point jumps), `_reconcile_composites` keeps every `<Scale>_mean` consistent with its items, and `effect_sizes_observed` / `effect_sizes_applied` are recomputed after that, at the very end of `generate()`.
+- **Straight-line repair** (audit CHECK 3 and the HBS validator) runs only with at least five items AND five response options; on binary/3-point scales or with three items it randomised honest data and erased the condition effect.
+- **Generated text is edited only at grammatical positions**, through `utils/text_cleanup.py`. Never insert, drop or swap words at random positions, never substring-replace words without word boundaries, never append counters like "(2)". Applies to `_apply_deep_variation`, the offline tic/filler code, the stylometric engine and the validator. `tests/test_quality_v1291.py` is the guard.
+- **Numeric text boxes** (Qualtrics validation `content_type` / `number_min` / `number_max`, or the question wording) get numbers via `infer_numeric_answer_spec` / `draw_numeric_answer`; a text box that duplicates a numeric DV is dropped (`_drop_oe_duplicating_dvs`).
+- **QSF collection** is opt-in per file (`_collect_qsf_if_consented`). `utils/github_qsf_collector.py` validates the payload, caps size, rate-limits uploads and can target a branch other than the deployed one (`GITHUB_QSF_BRANCH`): every upload is a commit, and a commit to the deployed branch redeploys the app.
+
+---
+
 ## Open-Text Response Generation Architecture
 
 ### Two Separate Systems:
@@ -364,6 +377,7 @@ research-simulations/
 │   │   ├── response_library.py            # ComprehensiveResponseGenerator (non-LLM OE)
 │   │   ├── persona_library.py             # TextResponseGenerator (fallback OE)
 │   │   ├── llm_response_generator.py      # LLM-based OE generation
+│   │   ├── text_cleanup.py                # Grammar-safe helpers shared by all OE post-processing
 │   │   ├── qsf_preview.py                # QSF parsing & DV detection
 │   │   ├── survey_builder.py
 │   │   ├── instructor_report.py

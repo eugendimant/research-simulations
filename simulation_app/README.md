@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.2.9.0** — a Streamlit app that turns a Qualtrics survey export into a realistic synthetic pilot dataset.
+**Version 1.2.9.1** — a Streamlit app that turns a Qualtrics survey export into a realistic synthetic pilot dataset.
 
 ## What it does
 
@@ -29,7 +29,7 @@ The 100-participant cap on Built-in AI exists to keep shared free-tier keys from
 
 Built-in provider chain, tried in order until one responds: Google Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Gemini 2.5 Flash Lite → Groq GPT-OSS 120B → Groq Qwen3.6 27B → Cerebras GPT-OSS 120B → SambaNova Llama 3.3 70B → Mistral Small → OpenRouter Mistral Small 3.1.
 
-## The behavioral engine (v1.2.9.0)
+## The behavioral engine (v1.2.9.1)
 
 **Numeric responses.** Each participant is one person with a persistent identity: eight response-style traits and a latent attitude vector, which together drive their answers. Condition effects are applied as deterministic mean shifts; individual variance is applied separately.
 
@@ -37,7 +37,7 @@ Alongside these, census-weighted demographics are exported as seven descriptive 
 
 **Condition effects.** Forty-three effect-detection domains, each with keyword-to-effect mappings grounded in the literature but written into the engine as literals — the meta-analytic effect table is not consulted at runtime. Relational conditions are parsed before simple valence, so "matched with an outgroup member" produces discrimination rather than generic negativity (Iyengar & Westwood 2015). Economic games start from published baselines rather than a generic 50% (dictator 0.28, Engel 2011; trust 0.50, Berg et al. 1995; Johnson & Mislin 2011). The total automatically-detected effect is capped at ±0.50 before the Cohen's-*d* conversion, which bounds the shift that reaches generation at roughly ±0.12 in normalized units.
 
-**On effect magnitudes.** A configured Cohen's `d` is recovered to within roughly -8% to +12% across scale widths (5-, 7-, 11-point and 0-100) and item counts, and a null effect stays null (`tests/test_effect_size_recovery.py`). Effects the engine infers from condition wording when you configure no `d` are literature-sized and directional, not fitted to a target you chose, so configure `d` when magnitude matters. Every run writes its achieved effects to `Metadata.json` under `effect_sizes_observed`; check there rather than assuming the configured number. Known deviations are tracked in `docs/COVERAGE_ROADMAP.md`.
+**On effect magnitudes.** A configured Cohen's `d` is recovered on the scale mean to within about 8% on average across scale widths (2-point, 3-point, 5-point, 7-point, 11-point and 0-100) and item counts from 1 to 20, measured over 6 to 8 independent runs of 1,200 participants per cell; a single run varies by roughly ±0.06 in *d* from sampling alone. A null effect stays null (`tests/test_effect_size_recovery.py`, `tests/test_effect_fidelity_v1291.py`; the full table is in `docs/guide/how-effects-work.md`). Where you configure no `d`, the engine infers literature-sized, directional effects from the condition wording; they are not fitted to a target, and an Advanced Settings checkbox switches them off for a true null. When you do configure a `d` for a variable, nothing inferred from the condition names is added on top of it. Outcomes that the economic-game model rewrites keep the configured `d` as well (restored after the model runs). Every run writes what was built in and what was achieved to `Metadata.json` (`effect_sizes_applied`, `effect_sizes_observed`); check there rather than assuming the configured number. Known deviations are tracked in `docs/COVERAGE_ROADMAP.md`.
 
 **Strategic games.** Where a strategic game is detected, players reason recursively about other players via Level-k (Stahl & Wilson 1994; Nagel 1995) and Cognitive Hierarchy (Camerer, Ho & Chong 2004), with each persona's `strategic_depth` setting its recursion depth. Of the games the engine implements, **beauty contest and stag hunt** are reachable from a QSF today, alongside dictator, trust, ultimatum, public goods, prisoner's dilemma, die-roll, gift exchange, Holt-Laury, bribery and common-pool games. The engine's registry holds 24 games in all; the other twelve — money-request/11-20, minimum-effort coordination, Tullock contest, sender-receiver, public goods with punishment, the three repeated games (PD, trust, public goods), time MPL, BDM, discrete choice and survey-Likert — have no QSF detection path yet.
 
@@ -52,7 +52,7 @@ Alongside these, census-weighted demographics are exported as seven descriptive 
 | Acquiescent Responder | 0.08 | Billiet & McClendon (2000) |
 | Careless Responder | 0.05 | Meade & Craig (2012) |
 
-**Open-ended text.** Compositional assembly (opener + core + elaboration + coda) over 106 reachable domain template sets (the table holds 116 keys; 10 cannot be selected), 8 structural archetypes, and domain vocabulary banks, with per-participant stylometric fingerprinting (vocabulary richness, filler and hedge words, contractions, capitalization, typos) held constant across all of a participant's answers. Text is coherent with that participant's numeric responses: straight-liners write short, positive raters don't write negative text.
+**Open-ended text.** Compositional assembly (opener + core + elaboration + coda) over 106 reachable domain template sets (the table holds 116 keys; 10 cannot be selected), 8 structural archetypes, and domain vocabulary banks, with per-participant stylometric fingerprinting (vocabulary richness, filler and hedge words, contractions, capitalization, typos) held constant across all of a participant's answers. Text is coherent with that participant's numeric responses: straight-liners write short, positive raters don't write negative text. Text boxes that expect a number (Qualtrics numeric validation, or wording such as age, how many, amount) are answered with numbers that respect the declared range, and a text box that repeats a numeric question already in the data is skipped. All post-processing of generated text (stylometry, validation, variation) edits only at grammatical positions through `utils/text_cleanup.py`.
 
 **Realism layers.** Survey fatigue drift, reverse-item failure that is trait-like within session (Woods 2006), domain-sensitive social desirability (Nederhof 1985), typing-error rates calibrated to education, ex-Gaussian response times, inter-item α targeting and cross-DV correlation.
 
@@ -78,7 +78,9 @@ Everything detected is editable before generation, and a "Generate Preview (5 ro
 
 | File | Contents |
 |---|---|
-| `Simulated_Data.csv` | The dataset |
+| `Simulated_Data.csv` | The dataset, laid out like a Qualtrics export (metadata columns, condition, demographics, items, open-ended text) |
+| `Simulation_Diagnostics.csv` | Simulator-internal columns keyed by `ResponseId`: `<Scale>_mean` composites, quality flags, `Exclude_Recommended`, response-time summaries, `ABE3_*`, run seed, text source |
+| `Simulated_Data_Qualtrics_Raw.csv` | The same responses with Qualtrics' three header rows |
 | `Data_Codebook_Handbook.txt` | Variable and coding descriptions |
 | `R_Prepare_Data.R` | R loading/prep script |
 | `Python_Prepare_Data.py` | pandas |
@@ -148,6 +150,7 @@ research-simulations/
 │   │   ├── scientific_knowledge_base.py    # meta-analytic effects, game calibrations
 │   │   ├── persona_library.py              # 78 personas
 │   │   ├── response_library.py             # offline open-ended generation
+│   │   ├── text_cleanup.py                 # grammar-safe helpers for all generated-text post-processing
 │   │   ├── llm_response_generator.py       # LLM open-ended generation
 │   │   ├── hbs_*.py                        # participant state, stylometry, validation
 │   │   ├── socsim_adapter.py               # bridge to the ABE 3.0 / socsim engine
@@ -158,10 +161,12 @@ research-simulations/
 │   └── skills/                     # the development protocol this project follows
 ├── tests/                          # pytest suites + standalone validation harnesses
 ├── docs/
+│   ├── guide/                      # user-facing pages: how effects work, limitations
 │   ├── methods_summary.md          # methodology
 │   ├── COVERAGE_ROADMAP.md         # coverage audit + remaining gaps
 │   ├── CHANGELOG.md
 │   └── papers/, internal/
+├── README.md, LICENSE, CITATION.cff
 ├── CLAUDE.md, AGENTS.md            # contributor and agent guidelines
 └── REPLICATION_README.md           # how to reproduce the validation
 ```
@@ -172,9 +177,9 @@ Email delivery is optional. Set these Streamlit secrets to enable it: `SMTP_SERV
 
 ## Credits and license
 
-Created by Dr. Eugen Dimant. For academic and educational use.
+Created by Dr. Eugen Dimant. Licensed under the [PolyForm Noncommercial License 1.0.0](../LICENSE): noncommercial use, including research and teaching, is free; commercial use needs the author's permission.
 
 ```
-Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 1.2.9.0) [Computer software].
+Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 1.2.9.1) [Computer software].
 https://github.com/eugendimant/research-simulations
 ```

@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.2.9.0"  # v1.2.8.9: report scripts read the delivered files (report-facing version stamp)
+__version__ = "1.2.9.1"  # v1.2.9.1: report describes the effects actually built in (report-facing version stamp)
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -834,10 +834,13 @@ class InstructorReportGenerator:
         if len(conditions) > 1:
             approach_points.append(f"Assigned **{len(conditions)} experimental conditions** with balanced allocation")
 
+        _inferred_on = (metadata.get('effect_sizes_applied') or {}).get('inferred_effects_enabled', True)
         if effect_sizes:
             approach_points.append(f"Applied **{len(effect_sizes)} user-specified effect size(s)** to create systematic condition differences")
+        elif _inferred_on:
+            approach_points.append("Inferred **small condition differences from the condition names** (a heuristic; see Condition Effects Strategy)")
         else:
-            approach_points.append("Applied **automatic semantic-based effects** derived from condition label analysis")
+            approach_points.append("Built in **no condition differences** (inferred effects were switched off)")
 
         if scales:
             scale_types = set(s.get('type', 'likert') for s in scales)
@@ -855,57 +858,39 @@ class InstructorReportGenerator:
         lines.append("### Condition Effects Strategy")
         lines.append("")
 
+        applied = metadata.get('effect_sizes_applied') or {}
+        contrasts = applied.get('contrasts') or []
+        inferred_on = applied.get('inferred_effects_enabled', True)
+
         if effect_sizes:
-            lines.append("**User-Specified Effects:**")
+            lines.append("**Effects you specified** (the Cohen's d on the scale mean is calibrated to land "
+                         "near the intended value; the observed value varies with sampling):")
             lines.append("")
-            lines.append("| Variable | Factor | High Level | Low Level | Cohen's d |")
-            lines.append("|----------|--------|------------|-----------|-----------|")
+            lines.append("| Variable | Higher condition | Lower condition | Intended d | Observed d |")
+            lines.append("|----------|------------------|-----------------|------------|------------|")
+            user_rows = [r for r in contrasts if r.get('source') == 'user']
             for es in effect_sizes[:10]:
                 var = es.get('variable', 'DV')
-                factor = es.get('factor', 'Condition')
-                high = es.get('level_high', 'Treatment')
-                low = es.get('level_low', 'Control')
-                d = es.get('cohens_d', 0.5)
-                lines.append(f"| {var} | {factor} | {high} | {low} | d = {d:.2f} |")
+                high = es.get('level_high', '') or 'higher condition'
+                low = es.get('level_low', '') or 'lower condition'
+                d = _safe_float(es.get('cohens_d', 0.5))
+                observed = next((r.get('observed_d') for r in user_rows
+                                 if str(r.get('variable', '')).lower() == str(var).lower().replace(' ', '_')
+                                 and {r.get('condition_1'), r.get('condition_2')} == {high, low}), None)
+                obs_txt = f"{observed:+.2f}" if observed is not None else "n/a"
+                lines.append(f"| {var} | {high} | {low} | {d:.2f} | {obs_txt} |")
             lines.append("")
+
+        if inferred_on:
+            lines.append("**Inferred differences:** for contrasts without a specified effect, the tool infers a "
+                         "small difference from the wording of the condition names (for example, a gain vs a "
+                         "loss frame). This is a heuristic, not a calibrated effect, and it can be larger than a "
+                         "typical real effect. Specify your own effect size to override it, or turn inferred "
+                         "effects off in Advanced Settings to get a true null.")
         else:
-            lines.append("**Automatic Semantic Effects:** The system analyzed your condition labels to apply research-grounded effects.")
-            lines.append("")
-
-            # Analyze condition names for semantic content
-            semantic_effects = []
-            condition_keywords = {
-                'ai': ('AI/Algorithm', -0.12, 'Algorithm aversion effect (Dietvorst et al., 2015)'),
-                'human': ('Human agent', +0.08, 'Human preference in decision-making'),
-                'control': ('Control condition', 0.0, 'Baseline comparison'),
-                'treatment': ('Treatment', +0.15, 'Active intervention effect'),
-                'gain': ('Gain frame', +0.12, 'Positive framing effect'),
-                'loss': ('Loss frame', -0.18, 'Loss aversion (Kahneman & Tversky)'),
-                'scarcity': ('Scarcity', +0.25, 'Scarcity principle (Cialdini)'),
-                'social': ('Social proof', +0.20, 'Social influence effect'),
-                'hedonic': ('Hedonic', +0.22, 'Hedonic consumption boost'),
-                'utilitarian': ('Utilitarian', -0.08, 'Utilitarian discount'),
-                'high': ('High condition', +0.15, 'Elevated manipulation'),
-                'low': ('Low condition', -0.15, 'Reduced manipulation'),
-            }
-
-            for cond in conditions:
-                cond_lower = cond.lower()
-                for keyword, (label, effect, cite) in condition_keywords.items():
-                    if keyword in cond_lower:
-                        semantic_effects.append((cond, label, effect, cite))
-                        break
-
-            if semantic_effects:
-                lines.append("| Condition | Detected Pattern | Effect Applied | Research Basis |")
-                lines.append("|-----------|-----------------|----------------|----------------|")
-                for cond, label, effect, cite in semantic_effects[:8]:
-                    effect_str = f"+{effect:.2f}" if effect > 0 else f"{effect:.2f}"
-                    lines.append(f"| {cond} | {label} | {effect_str} | {cite} |")
-                lines.append("")
-            else:
-                lines.append("_No specific semantic patterns detected in condition labels. Equal baseline applied to all conditions._")
-                lines.append("")
+            lines.append("**Inferred effects were switched off:** contrasts you did not specify contain no "
+                         "built-in difference apart from sampling noise.")
+        lines.append("")
 
         # --- OBSERVED EFFECTS ---
         observed_effects = metadata.get('effect_sizes_observed', [])
@@ -6113,7 +6098,7 @@ class ComprehensiveInstructorReport:
 
         html_parts.append(f"<p style='color:#999;font-size:0.9em;margin-top:30px;text-align:center;'>"
                           f"Generated by Behavioral Experiment Simulation Tool v{__version__} "
-                          f"&middot; Proprietary Software by Dr. Eugen Dimant</p>")
+                          f"&middot; Software by Dr. Eugen Dimant &middot; PolyForm Noncommercial 1.0.0</p>")
         html_parts.append("</div></div></body></html>")  # close report-container + page-wrapper
 
         return "\n".join(html_parts)
