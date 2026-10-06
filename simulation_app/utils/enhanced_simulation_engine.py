@@ -13371,8 +13371,8 @@ class EnhancedSimulationEngine:
             "census_demographics_active": HAS_HBS_DEMOGRAPHICS and len(_hbs_participant_states) > 0,
             "stylometric_engine_active": HAS_HBS_STYLOMETRIC,
             "validator_active": HAS_HBS_VALIDATOR,
-            "error_calibrator_active": HAS_HBS_ERROR_CAL,
-            "question_classifier_active": HAS_HBS_CLASSIFIER,
+            "error_calibrator_active": False,  # module may import, but nothing in the generation path calls it
+            "question_classifier_active": False,  # module may import, but nothing in the generation path calls it
             "validation_report": _validation_report,
             "abe3_processing_time_seconds": round(_abe3_elapsed, 2),
             "consistency_improvements": [

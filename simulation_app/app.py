@@ -9066,7 +9066,7 @@ if active_page == -1:
             '<span class="ri-venue">Trends in Cognitive Sciences</span>'
             '<span class="ri-insight">Can AI language models replace human participants?</span></a>'
 
-            '<a class="research-item" href="https://doi.org/10.1073/pnas.2317245121" target="_blank">'
+            '<a class="research-item" href="https://doi.org/10.1073/pnas.2518075122" target="_blank">'
             '<span class="ri-authors">Westwood (2025)</span>'
             '<span class="ri-venue">PNAS</span>'
             '<span class="ri-insight">Validating LLM-generated survey responses at scale</span></a>'

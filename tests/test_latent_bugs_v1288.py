@@ -209,3 +209,14 @@ def test_composites_equal_mean_of_delivered_items_and_dropouts_match(seed):
     cols = [c for c in df.columns if c.startswith(("Trust_", "Sat_")) and not c.endswith("_mean")]
     blanked = df[cols].isna().any(axis=1).sum()
     assert md["missing_data"]["dropout_count"] <= blanked
+
+
+def test_every_domain_template_bank_is_reachable():
+    """A DOMAIN_TEMPLATES key that is neither a StudyDomain value nor aliased can never be selected."""
+    from utils.response_library import DOMAIN_TEMPLATES, StudyDomain, _DOMAIN_TEMPLATE_ALIASES
+    values = {d.value for d in StudyDomain}
+    aliased = {a for targets in _DOMAIN_TEMPLATE_ALIASES.values() for a in targets}
+    unreachable = sorted(k for k in DOMAIN_TEMPLATES if k not in values and k not in aliased)
+    assert not unreachable, unreachable
+    for alias_source in _DOMAIN_TEMPLATE_ALIASES:
+        assert alias_source in values, alias_source

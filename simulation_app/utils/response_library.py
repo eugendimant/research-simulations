@@ -388,6 +388,10 @@ class StudyDomain(Enum):
     # ========== POSITIVE PSYCHOLOGY (5 domains) ==========
     POSITIVE_PSYCHOLOGY = "positive_psychology"
     GRATITUDE = "gratitude"
+    NOSTALGIA = "nostalgia"
+    FORGIVENESS = "forgiveness"
+    SLEEP_QUALITY = "sleep_quality"
+    MORAL_CLEANSING = "moral_cleansing"
     RESILIENCE = "resilience"
     FLOURISHING = "flourishing"
     LIFE_SATISFACTION = "life_satisfaction"
@@ -4654,6 +4658,25 @@ def detect_question_type(question_text: str) -> QuestionType:
 # DOMAIN DETECTION FROM STUDY CONTEXT
 # ============================================================================
 
+# StudyDomain value -> DOMAIN_TEMPLATES keys that cover it (tried in order).
+_DOMAIN_TEMPLATE_ALIASES: Dict[str, Tuple[str, ...]] = {
+    "narrative": ("narrative_transportation",),
+    "gratitude": ("gratitude_experience", "gratitude_intervention"),
+    "moral_dilemma": ("ethical_dilemma",),
+    "ai_attitudes": ("artificial_intelligence",),
+    "human_ai_interaction": ("artificial_intelligence",),
+    "ai_alignment": ("artificial_intelligence",),
+    "ai_ethics": ("artificial_intelligence",),
+    "ai_safety": ("artificial_intelligence",),
+    "ai_governance": ("artificial_intelligence",),
+    "ai_transparency": ("artificial_intelligence",),
+    "climate_attitudes": ("climate_change",),
+    "climate_action": ("climate_change",),
+    "climate_communication": ("climate_change",),
+    "climate_adaptation": ("climate_change",),
+    "climate_justice": ("climate_change",),
+}
+
 DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     # ========== BEHAVIORAL ECONOMICS ==========
     StudyDomain.DICTATOR_GAME: [
@@ -5609,6 +5632,19 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     ],
     StudyDomain.GRATITUDE: [
         'gratitude', 'thankful', 'appreciate', 'grateful', 'blessing',
+    ],
+    StudyDomain.NOSTALGIA: [
+        'nostalgia', 'nostalgic', 'reminisce', 'good old days', 'sentimental',
+    ],
+    StudyDomain.FORGIVENESS: [
+        'forgiveness', 'forgive', 'forgiving', 'grudge', 'reconciliation',
+    ],
+    StudyDomain.SLEEP_QUALITY: [
+        'sleep quality', 'sleep deprivation', 'insomnia', 'sleepiness', 'sleep duration',
+    ],
+    StudyDomain.MORAL_CLEANSING: [
+        'moral cleansing', 'moral licensing', 'macbeth effect', 'physical cleansing',
+        'moral self-regard', 'moral purity',
     ],
     StudyDomain.RESILIENCE: [
         'resilience', 'bounce back', 'recover', 'adversity', 'overcome',
@@ -8597,6 +8633,14 @@ class ComprehensiveResponseGenerator:
             if _tk not in _seen_types:
                 _seen_types.add(_tk)
                 _type_chain.append(_tk)
+
+        # Template banks written under a topic name that is not itself a StudyDomain value
+        # are reached through this alias table (otherwise they could never be selected).
+        if domain_key not in DOMAIN_TEMPLATES:
+            for _alias in _DOMAIN_TEMPLATE_ALIASES.get(domain_key, ()):
+                if _alias in DOMAIN_TEMPLATES:
+                    domain_key = _alias
+                    break
 
         # Try to find domain-specific templates with question type routing
         if domain_key in DOMAIN_TEMPLATES:
