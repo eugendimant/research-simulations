@@ -46,6 +46,8 @@ __version__ = "1.0.0"
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+import json as _json
+import os as _os
 import random
 
 
@@ -53,6 +55,10 @@ import random
 # VERIFICATION TIERS
 # =============================================================================
 
+#: Computed by us from a dataset we hold, with the script, the file and its
+#: SHA-256 recorded. This is the ONLY tier that needs no publication behind it,
+#: because the evidence is the data itself and the derivation is reproducible.
+MEASURED = "measured"
 #: Checked against the primary source; the numbers below are the source's own.
 VERIFIED = "verified"
 #: The source exists and supports part of the entry; some fields are not sourced.
@@ -66,13 +72,14 @@ UNVERIFIED = "unverified"
 #: Checked and found to be WRONG. The corrected value is in `Provenance.corrected`.
 CORRECTED = "corrected"
 
-_TIER_ORDER = (VERIFIED, CORRECTED, PARTIAL, CITED_UNCHECKED, UNVERIFIED)
+_TIER_ORDER = (MEASURED, VERIFIED, CORRECTED, PARTIAL, CITED_UNCHECKED, UNVERIFIED)
 
 #: How much weight the engine should give an entry's numbers, by tier.
 #: Unverified entries are not discarded — they are the best prior available — but
 #: their deviation from a neutral default is damped, so an invented number can
 #: never drive a simulation as hard as a sourced one.
 TIER_WEIGHT: Dict[str, float] = {
+    MEASURED: 1.00,
     VERIFIED: 1.00,
     CORRECTED: 1.00,
     PARTIAL: 0.85,
@@ -183,8 +190,37 @@ _SHRINKAGE: Dict[str, Any] = {
 }
 
 
-def set_shrinkage(factor: float, default_tau: float, prov: Provenance) -> None:
-    """Install a verified shrinkage factor and its provenance."""
+class ProvenanceTooWeak(ValueError):
+    """Raised when a value would be installed on evidence that does not support it."""
+
+
+def set_shrinkage(factor: float, default_tau: float, prov: Provenance,
+                  tau_scale: str = "d") -> None:
+    """Install a publication-bias shrinkage factor and its provenance.
+
+    This constant multiplies EVERY literature effect the simulator produces, so it
+    is the one number in the system where a wrong value does the most damage while
+    being the hardest to notice. Three guards, all deliberate:
+
+    * the provenance must be MEASURED, VERIFIED or CORRECTED — a factor may not
+      enter on a citation nobody read, and certainly not on a search summary;
+    * a publication-derived record must carry the verbatim source sentence, so a
+      tier claim can never outrun its evidence;
+    * tau must declare its scale. tau is reported on d, on Fisher's z and on log
+      odds and is not comparable across them, and I-squared is a proportion of
+      observed variance rather than a magnitude at all. Applying one as the other
+      would silently miscalibrate every effect in the system.
+    """
+    if prov.status not in (MEASURED, VERIFIED, CORRECTED):
+        raise ProvenanceTooWeak(
+            f"shrinkage needs {MEASURED}/{VERIFIED}/{CORRECTED} provenance, "
+            f"got {prov.status!r}")
+    if prov.status in (VERIFIED, CORRECTED) and not prov.quote.strip():
+        raise ProvenanceTooWeak("a verified shrinkage factor must carry the source quote")
+    if tau_scale != "d":
+        raise ProvenanceTooWeak(
+            f"default_tau must be on the d scale, got {tau_scale!r}; convert it "
+            "at the call site rather than here, where the scale would be lost")
     _SHRINKAGE["factor"] = float(factor)
     _SHRINKAGE["default_tau"] = float(default_tau)
     register(_SHRINKAGE["provenance_key"], prov)
@@ -336,6 +372,296 @@ def honesty_notice() -> str:
         f"how hard that number may push the data. {bias} The provenance table "
         "gives the tier of every number behind a run."
     )
+
+
+# =============================================================================
+# REGISTRY STORE — applicability-guarded entries loaded from JSON
+# =============================================================================
+# The provenance machinery above annotates the EXISTING knowledge base. This part
+# is the store for new, first-class entries, each of which declares the designs it
+# is allowed to speak about.
+#
+# Why applicability is a hard guard rather than advice: nearly every misuse of a
+# published number in this codebase has the same shape — a value that is true
+# under the conditions it was measured under, applied where those conditions do
+# not hold. A pooled ultimatum rejection rate applied flat when rejection is
+# conditional on offer size. A public-goods contribution rate applied to every
+# round when contributions decay with repetition. A same-keyed block's
+# straight-lining rate (3.3%) applied to a mixed-keyed block (0.3%). The guard
+# makes those lookups DECLINE instead of returning a plausible wrong number, and
+# a declined lookup leaves the engine's existing behaviour untouched.
+
+_REGISTRY_DIR = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "registry")
+
+
+@dataclass(frozen=True)
+class Applicability:
+    """The conditions under which an entry may be consulted.
+
+    A field left as None means "this entry does not care about that dimension".
+    Anything stated must be satisfied by the design, or the entry does not fire.
+    """
+    scale_points: Optional[Tuple[int, ...]] = None
+    items_per_block: Optional[Tuple[int, int]] = None      # inclusive bounds
+    keying: Optional[str] = None                           # mixed | same | any
+    design: Optional[str] = None                           # between | within | any
+    population: Optional[str] = None
+    repetition: Optional[str] = None                       # one_shot | repeated | any
+
+    #: Number of stated conditions. Used to break ties toward the narrower entry,
+    #: so a 5-point-specific benchmark wins over an any-scale one.
+    def specificity(self) -> int:
+        return sum(1 for v in (self.scale_points, self.items_per_block, self.keying,
+                               self.design, self.population, self.repetition)
+                   if v is not None and v != "any")
+
+    def accepts(self, sig: Any) -> bool:
+        """True when `sig` (a DesignSignature, or anything with those attributes)
+        satisfies every stated condition. An unknown signature value never
+        satisfies a stated condition — silence is not agreement."""
+        def _get(name):
+            return getattr(sig, name, None) if not isinstance(sig, dict) else sig.get(name)
+
+        if self.scale_points is not None:
+            sp = _get("scale_points")
+            if sp is None or int(sp) not in self.scale_points:
+                return False
+        if self.items_per_block is not None:
+            k = _get("items_per_block")
+            lo, hi = self.items_per_block
+            if k is None or not (lo <= int(k) <= hi):
+                return False
+        for name, want in (("keying", self.keying), ("design", self.design),
+                           ("population", self.population), ("repetition", self.repetition)):
+            if want in (None, "any"):
+                continue
+            got = _get(name)
+            if got is None or str(got) == "unknown" or str(got) != want:
+                return False
+        return True
+
+    @classmethod
+    def from_dict(cls, d: Optional[Dict[str, Any]]) -> "Applicability":
+        d = d or {}
+        sp = d.get("scale_points")
+        ipb = d.get("items_per_block")
+        return cls(
+            scale_points=tuple(int(x) for x in sp) if sp else None,
+            items_per_block=(int(ipb[0]), int(ipb[1])) if ipb else None,
+            keying=d.get("keying"), design=d.get("design"),
+            population=d.get("population"), repetition=d.get("repetition"),
+        )
+
+
+#: Scales a value may be expressed on. Stated explicitly on every entry, with no
+#: default, because an effect size silently read on the wrong scale is the most
+#: expensive mistake available here.
+EFFECT_SCALES = ("d", "fisher_z", "log_odds", "proportion", "raw_points", "rate", "count")
+
+
+@dataclass(frozen=True)
+class RegistryEntry:
+    entry_id: str
+    quantity: str
+    value: float
+    effect_scale: str
+    applicability: Applicability
+    tier: str = UNVERIFIED
+    dispersion: Optional[float] = None
+    dispersion_kind: str = "none"
+    construct: str = ""
+    paradigm: Optional[str] = None
+    k_studies: Optional[int] = None
+    n_participants: Optional[int] = None
+    provenance: Dict[str, Any] = field(default_factory=dict)
+    caveats: Tuple[str, ...] = ()
+
+    def weight(self) -> float:
+        return TIER_WEIGHT.get(self.tier, TIER_WEIGHT[UNVERIFIED])
+
+    @property
+    def may_set_magnitude(self) -> bool:
+        """Only measured or primary-source-verified evidence may set a number.
+
+        Everything else supplies sign and rank order; the engine keeps whatever it
+        was already doing for the magnitude. This is what stops the 484 asserted
+        entries from quietly becoming the simulator's ground truth.
+        """
+        return self.tier in (MEASURED, VERIFIED, CORRECTED)
+
+
+def _parse_entry(d: Dict[str, Any]) -> Optional[RegistryEntry]:
+    try:
+        scale = str(d["effect_scale"])
+        if scale not in EFFECT_SCALES:
+            return None
+        tier = str(d.get("tier", UNVERIFIED)).lower().replace("t0_", "").replace(
+            "t1_", "").replace("t2_", "").replace("t3_", "")
+        if tier not in _TIER_ORDER:
+            tier = UNVERIFIED
+        prov = dict(d.get("provenance") or {})
+        # A tier claim may not outrun its evidence.
+        if tier == MEASURED and not (prov.get("script") and prov.get("sources")):
+            tier = UNVERIFIED
+        if tier in (VERIFIED, CORRECTED) and not str(prov.get("quote", "")).strip():
+            tier = CITED_UNCHECKED
+        return RegistryEntry(
+            entry_id=str(d["entry_id"]),
+            quantity=str(d["quantity"]),
+            value=float(d["value"]),
+            effect_scale=scale,
+            applicability=Applicability.from_dict(d.get("applicability")),
+            tier=tier,
+            dispersion=(float(d["dispersion"]) if d.get("dispersion") is not None else None),
+            dispersion_kind=str(d.get("dispersion_kind", "none")),
+            construct=str(d.get("construct") or ""),
+            paradigm=d.get("paradigm"),
+            k_studies=d.get("k_studies"),
+            n_participants=d.get("n_participants"),
+            provenance=prov,
+            caveats=tuple(d.get("caveats") or ()),
+        )
+    except Exception:
+        return None
+
+
+_ENTRIES: Optional[Dict[str, RegistryEntry]] = None
+
+
+def entries() -> Dict[str, RegistryEntry]:
+    """All registry entries, loaded once from `utils/registry/*.json`.
+
+    A malformed file is skipped rather than raised: a bad calibration file must
+    never take the app down (CLAUDE.md, "Import Resilience").
+    """
+    global _ENTRIES
+    if _ENTRIES is not None:
+        return _ENTRIES
+    loaded: Dict[str, RegistryEntry] = {}
+    try:
+        names = sorted(n for n in _os.listdir(_REGISTRY_DIR) if n.endswith(".json"))
+    except Exception:
+        names = []
+    for name in names:
+        try:
+            with open(_os.path.join(_REGISTRY_DIR, name), "r", encoding="utf-8") as fh:
+                payload = _json.load(fh)
+        except Exception:
+            continue
+        for raw in (payload.get("entries") or []):
+            ent = _parse_entry(raw)
+            if ent is not None:
+                loaded[ent.entry_id] = ent
+    _ENTRIES = loaded
+    return _ENTRIES
+
+
+def reload_entries() -> None:
+    """Drop the cache; for tests and for a hot calibration edit."""
+    global _ENTRIES
+    _ENTRIES = None
+
+
+@dataclass(frozen=True)
+class Lookup:
+    """A registry hit, with everything the caller needs to decide and to log."""
+    entry: RegistryEntry
+    value: float
+
+    @property
+    def entry_id(self) -> str:
+        return self.entry.entry_id
+
+    @property
+    def tier(self) -> str:
+        return self.entry.tier
+
+
+def lookup(entry_id: str, signature: Any = None,
+           require_magnitude: bool = True) -> Optional[Lookup]:
+    """Return the entry for `entry_id` if the design satisfies its applicability.
+
+    Returns None — never a guess — when the entry is absent, when the design does
+    not satisfy its conditions, or when `require_magnitude` is set and the entry's
+    tier is not allowed to set a number. The caller then keeps whatever it was
+    already doing.
+    """
+    ent = entries().get(str(entry_id))
+    if ent is None:
+        return None
+    if require_magnitude and not ent.may_set_magnitude:
+        return None
+    if signature is not None and not ent.applicability.accepts(signature):
+        return None
+    return Lookup(entry=ent, value=ent.value)
+
+
+def lookup_best(prefix: str, metric: str, signature: Any = None,
+                require_magnitude: bool = True) -> Optional[Lookup]:
+    """Highest-tier entry matching `<prefix>*.<metric>` that the design satisfies.
+
+    Ties break toward the NARROWER applicability, so a 5-point-specific benchmark
+    beats an any-scale one rather than the other way round.
+    """
+    cands = []
+    for ent in entries().values():
+        if not ent.entry_id.startswith(prefix) or not ent.entry_id.endswith("." + metric):
+            continue
+        if require_magnitude and not ent.may_set_magnitude:
+            continue
+        if signature is not None and not ent.applicability.accepts(signature):
+            continue
+        cands.append(ent)
+    if not cands:
+        return None
+    cands.sort(key=lambda e: (_TIER_ORDER.index(e.tier) if e.tier in _TIER_ORDER else 99,
+                              -e.applicability.specificity()))
+    return Lookup(entry=cands[0], value=cands[0].value)
+
+
+# =============================================================================
+# RUN LEDGER
+# =============================================================================
+# Every registry value that actually changed a number is recorded here, so the
+# honesty notice can report the real mix for THIS run rather than the mix across
+# the whole table, and so the export metadata can carry it.
+
+@dataclass
+class RunLedger:
+    rows: List[Dict[str, Any]] = field(default_factory=list)
+
+    def record(self, entry_id: str, tier: str, value: float, applied_to: str,
+               note: str = "") -> None:
+        self.rows.append({"entry_id": entry_id, "tier": tier, "value": float(value),
+                          "applied_to": applied_to, "note": note})
+
+    def record_lookup(self, hit: "Lookup", applied_to: str, note: str = "") -> None:
+        self.record(hit.entry_id, hit.tier, hit.value, applied_to, note)
+
+    def summary(self) -> Dict[str, Any]:
+        by_tier: Dict[str, int] = {}
+        for r in self.rows:
+            by_tier[r["tier"]] = by_tier.get(r["tier"], 0) + 1
+        evidenced = sum(by_tier.get(t, 0) for t in (MEASURED, VERIFIED, CORRECTED))
+        return {
+            "applied": len(self.rows),
+            "by_tier": by_tier,
+            "evidenced": evidenced,
+            "asserted": len(self.rows) - evidenced,
+            "entry_ids": [r["entry_id"] for r in self.rows],
+        }
+
+    def notice(self) -> str:
+        """One line the app can show about THIS run. Empty when nothing applied."""
+        s = self.summary()
+        if not s["applied"]:
+            return ""
+        if s["asserted"] == 0:
+            return (f"All {s['applied']} calibration(s) used in this run come from "
+                    "measured data or a checked primary source.")
+        return (f"{s['evidenced']} of {s['applied']} calibration(s) used in this run "
+                f"come from measured data or a checked source; {s['asserted']} rest on "
+                "literature assertions that have not been verified.")
 
 
 # Import the verified records. Kept in a separate module so the verification pass

@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.9.1 - Empirical realism layer. Benchmarking against real human item-level responses showed simulated multi-item blocks were far too internally consistent (mean inter-item r 0.60 and alpha 0.88 against 0.36 and 0.73 in real 5-item blocks, within-person SD 0.72 against 1.02, identical-answer respondents 0.2% against 5.2%). Reliability is now verified after generation and corrected by scaling item-specific variance, preserving every participant rank and the observed treatment effect; the identical-answer share is restored after the consistency audit. Adds a provenance layer that reports which knowledge-base numbers have actually been checked against a source, a content-based construct matcher that reaches all 201 published norms instead of ~40, and a realism benchmark with a real-data reference profile
+Version: 1.2.9.2 - Applicability-guarded empirical registry. Response-process benchmarks (item SD, floor/ceiling occupancy, skew, kurtosis, within-person SD, straight-lining share, long-string shape) derived from 48,431 real respondents across four published instruments, each entry recording the script, the data file and its SHA-256 so the number is reproducible rather than asserted. Every entry declares the designs it applies to and declines outside them: straight-lining measured at 3.3% in a same-keyed block does not fire on a mixed-keyed block where it is 0.3%, and a 5-point benchmark does not fire on a 7-point scale. Publication-bias shrinkage refuses to install on unverified provenance or a tau reported on another scale, and a per-run ledger reports how much of a given dataset rests on measured evidence versus unverified literature
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.9.1"
+__version__ = "1.2.9.2"
 
 
 # =============================================================================
