@@ -1,351 +1,180 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.2.8.7** | A Streamlit application for generating realistic synthetic behavioral experiment data using theory-grounded persona-driven simulation.
+**Version 1.2.9.0** — a Streamlit app that turns a Qualtrics survey export into a realistic synthetic pilot dataset.
 
-## What This Tool Does
+## What it does
 
-**Generate realistic pilot datasets from your Qualtrics survey** — Upload your QSF file and receive a complete data package with:
-- Simulated participant responses that reflect actual human survey behavior
-- Automatic detection of conditions, factors, and scales
-- Open-ended text responses that align with numeric ratings
-- Attention check failures and exclusion flags
-- Analysis scripts ready for immediate use in your preferred statistical software
+Upload a `.qsf` (or describe your study) and get a complete data package: numeric DV responses, open-ended text, demographics, attention/manipulation/comprehension checks, timing paradata, exclusion flags, and ready-to-run analysis scripts in R, Python, Julia, SPSS and Stata.
 
-### Why Use Simulated Pilot Data?
+Conditions, factors and scales are detected from the QSF automatically; you confirm or edit them before generating.
 
-- **Test your analysis pipeline** before collecting real data
-- **Practice data cleaning** with realistic quality issues
-- **Verify survey logic** and variable coding
-- **Develop analysis scripts** on properly structured data
-- **Check pre-registration consistency** before data collection
+### Why simulated pilot data
 
-## Features (v1.2.8.7)
+- Test an analysis pipeline before collecting real data
+- Practice data cleaning against realistic quality problems
+- Verify survey logic and variable coding
+- Check pre-registration consistency before launch
 
-### Generation Method Chooser
-- **3 simulation methods** — all use the ABE 3.0 behavioral engine for numeric data; methods differ in open-ended text source:
-  - **Adaptive Behavioral Engine 3.0** (Quick Data Generation) — fully offline, non-LLM open-ended text, census-weighted demographics, stylometric fingerprinting, 5 individual-level consistency layers, calibrated error rates
-  - **Built-in AI** — ABE 3.0 behavioral engine + free LLM-powered open-ended text (Groq, Google AI, Cerebras, Mistral, SambaNova, OpenRouter)
-  - **Your API Key** — ABE 3.0 behavioral engine + your own LLM key for open-ended text
-- LLM stall detection with method-switch recommendations (v1.0.8.2)
+## Generation methods
 
-### Real-Time Progress Counter
-- **Live participant counter** replaces static time estimates
-- Phase-specific updates: persona assignment, scales, open-ended, participant simulation
-- Shows: current/total count, percentage, progress bar, elapsed time, ETA
+All three use the same behavioral engine for numeric data. They differ only in where open-ended text comes from.
 
-### Adaptive Behavioral Engine 3.0
-- **Primary offline generation method** — runs entirely without API calls
-- Wraps the 225+ domain template engine with dedicated **narrative intent builders** for creative beliefs, personal disclosure, creative narratives, personal stories, and hypothetical scenarios (Brotherton 2013, Pennebaker 1997, Green & Brock 2000)
-- **200+ narrative position templates** stratified by sentiment for natural, intent-specific openers
-- **Cross-participant sentence dedup** ensures unique output across large samples
-- **Condition-aware modulation** — political/identity conditions amplify extremity (Iyengar & Westwood 2015)
-- **8 structural archetypes** with narrative-specific weighting (story_first, emotional_burst, stream, etc.)
-- **Behavioral coherence** — disengaged/straight-lined participants produce appropriately brief responses
-- Economic game modeling (Fehr-Schmidt, Engel meta-analysis) via integrated behavioral adapter
-- **Recursive strategic reasoning** — for strategic games (beauty contest, money-request/11-20, stag hunt, minimum-effort coordination, Tullock contest, etc.), simulated players reason *recursively* about other players' reasoning via two literature-grounded models: **Level-k** (Level-0 random → Level-1 best-responds to Level-0 → Level-k best-responds to Level-(k-1); Stahl & Wilson 1994, Nagel 1995, Costa-Gomes & Crawford 2006) and **Cognitive Hierarchy** (Poisson-distributed thinking levels τ, each best-responding to the full distribution of lower levels; Camerer, Ho & Chong 2004). Each persona's `strategic_depth` parameter sets how deep its recursion goes.
-- LIWC-informed linguistic profiling and cross-response voice consistency
+| Method | Open-ended text | Sample size |
+|---|---|---|
+| **Adaptive Behavioral Engine 3.0** (listed first; no method is pre-selected) | Offline template engine — no API calls | up to 10,000 |
+| **Built-in AI** | Free LLM providers, built-in keys, no setup | **LLM text for the first 100 participants; ABE 3.0 for the rest** |
+| **Your API Key** | Your own provider key | up to 10,000 |
 
-### ABE 3.0 Advanced Realism Layers (integrated)
-- **Census-weighted demographics** — each simulated participant carries a persistent identity with census-weighted demographics (age, education, income, party ID, ideology, state, region)
-- **Calibrated error rates** — typing errors, reading-speed variation, and response-quality lapses calibrated to education level (Frederick 2005)
-- **Stylometric voice fingerprinting** — vocabulary richness, sentence length, punctuation rate, filler words, and capitalization style remain consistent across all of a participant's open-ended responses
-- **Adversarial self-validation** — checks completion time plausibility, OE uniqueness, straight-lining prevalence, OE length distributions, and rating-text coherence against human-realism benchmarks; auto-corrects failures
-- **5 individual-level consistency improvements** — survey fatigue drift, demographic-style coupling, 3D latent attitude vector, response pattern inertia, post-generation audit & repair
-- **Question classification** — detects item types (Likert, open-ended, attention check, economic game, demographic) for domain-aware processing
+The 100-participant cap on Built-in AI exists to keep shared free-tier keys from being exhausted. The app warns before generating and tells you the split afterwards. Use your own key for larger runs with AI text throughout.
 
-### AI-Powered Open-Ended Responses with multi-provider failover
-- **Zero-config AI**: open-ended responses are automatically AI-generated using built-in API keys — no setup needed
-- **Prioritized failover chain**: Google AI (Gemini Flash) → Groq → Cerebras → SambaNova → Mistral AI → OpenRouter — if one provider rate-limits, the next is tried automatically
-- **Bring your own key**: optionally enter a personal API key from any supported provider for dedicated capacity (auto-detected from key prefix)
-- **Large batch architecture**: 20 persona-guided responses per API call for maximum efficiency
-- **Smart pool scaling**: pool size auto-calculated from sample_size (works for 50–5,000+ participants)
-- **Draw-with-replacement + 7-layer deep variation**: persona-driven transformations ensure 90%+ uniqueness even at 2,000 participants from a pool of 30 base responses
-- **Graceful fallback**: falls back to ABE 3.0 non-LLM text generation if all LLM providers are exhausted
-- **Generate tab status**: clear indicator shows whether AI responses are active, which provider is in use, and an option to enter your own free key if built-in capacity is reached
+Built-in provider chain, tried in order until one responds: Google Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Gemini 2.5 Flash Lite → Groq GPT-OSS 120B → Groq Qwen3.6 27B → Cerebras GPT-OSS 120B → SambaNova Llama 3.3 70B → Mistral Small → OpenRouter Mistral Small 3.1.
 
-### NEW: Tab Navigation & UI Fixes (v1.4.7)
-- **Tab jumping fix**: widgets no longer reset view to Setup tab on changes
-- **Scroll-to-top**: each tab opens at the top instead of middle
-- **Collapsed open-ended section**: open-ended questions in Design tab now use an expander
+## The behavioral engine (v1.2.9.0)
 
-### NEW: Enhanced Scale/Matrix Detection
-- **Semantic scale type detection** (satisfaction, trust, intention, risk, etc.)
-- **Well-known scale recognition** (Big Five, PANAS, SWLS, PSS, RSE, etc.)
-- **Reverse-coded item detection** with automatic flagging
-- **Scale quality scoring** with warnings and recommendations
-- **10+ scale types supported**: Matrix, Likert, slider, numeric, constant sum, rank order, best-worst, paired comparison, and more
+**Numeric responses.** Each participant is one person with a persistent identity: eight response-style traits and a latent attitude vector, which together drive their answers. Condition effects are applied as deterministic mean shifts; individual variance is applied separately.
 
-### NEW: Live Data Preview (5 Rows)
-- **Preview before generation**: See 5 rows of sample data before full simulation
-- **Format verification**: Preview shows exact column structure and data types
-- **Difficulty-aware preview**: Preview reflects selected difficulty level
+Alongside these, census-weighted demographics are exported as seven descriptive `ABE3_*` columns (education, income, party ID, ideology, state, region, response style). These are drawn from census margins but are **descriptive only as far as the numeric DVs go** — they do not shift any DV. Two of them, education and response style, do feed the open-ended text's stylometric fingerprint. The `Age` column is a separate normal draw from the mean and SD you set, not a census weighting. `docs/COVERAGE_ROADMAP.md` tracks wiring them into generation.
 
-### NEW: Conditional/Skip Logic Awareness
-- **Full DisplayLogic parsing** from QSF structure
-- **SkipLogic destination tracking** for conditional questions
-- **Question dependency graph** showing which questions depend on others
-- **Conditional branching detection** for complex survey flows
+**Condition effects.** Forty-three effect-detection domains, each with keyword-to-effect mappings grounded in the literature but written into the engine as literals — the meta-analytic effect table is not consulted at runtime. Relational conditions are parsed before simple valence, so "matched with an outgroup member" produces discrimination rather than generic negativity (Iyengar & Westwood 2015). Economic games start from published baselines rather than a generic 50% (dictator 0.28, Engel 2011; trust 0.50, Berg et al. 1995; Johnson & Mislin 2011). The total automatically-detected effect is capped at ±0.50 before the Cohen's-*d* conversion, which bounds the shift that reaches generation at roughly ±0.12 in normalized units.
 
-### NEW: Difficulty Levels for Data Quality
-- **4 difficulty levels**: Easy, Medium, Hard, Expert
-- **Impacts numeric data**: Noise levels, straight-lining, careless responding
-- **Impacts open-text responses**: Response length, effort, coherence, typos
-- **Training-focused**: Practice data cleaning at your skill level
+**On effect magnitudes.** A configured Cohen's `d` is recovered to within roughly -8% to +12% across scale widths (5-, 7-, 11-point and 0-100) and item counts, and a null effect stays null (`tests/test_effect_size_recovery.py`). Effects the engine infers from condition wording when you configure no `d` are literature-sized and directional, not fitted to a target you chose, so configure `d` when magnitude matters. Every run writes its achieved effects to `Metadata.json` under `effect_sizes_observed`; check there rather than assuming the configured number. Known deviations are tracked in `docs/COVERAGE_ROADMAP.md`.
 
-### NEW: Mediation Variable Support
-- **Automatic mediator detection** based on position and keywords
-- **Mediator hints** suggesting likely mechanism variables
-- **Path coefficient simulation** for mediation models
-- **Support for moderation** and moderated mediation
+**Strategic games.** Where a strategic game is detected, players reason recursively about other players via Level-k (Stahl & Wilson 1994; Nagel 1995) and Cognitive Hierarchy (Camerer, Ho & Chong 2004), with each persona's `strategic_depth` setting its recursion depth. Of the games the engine implements, **beauty contest and stag hunt** are reachable from a QSF today, alongside dictator, trust, ultimatum, public goods, prisoner's dilemma, die-roll, gift exchange, Holt-Laury, bribery and common-pool games. The engine's registry holds 24 games in all; the other twelve — money-request/11-20, minimum-effort coordination, Tullock contest, sender-receiver, public goods with punishment, the three repeated games (PD, trust, public goods), time MPL, BDM, discrete choice and survey-Likert — have no QSF detection path yet.
 
-### NEW: Pre-registration Consistency Checker
-- **OSF format parsing** with section extraction
-- **AEA Registry format parsing** for RCT pre-registrations
-- **AsPredicted format parsing** with all 7 standard sections
-- **Pre-reg number extraction** from uploaded documents
-- **Consistency warnings** comparing pre-reg to current design
-- **Only appears when pre-registration uploaded** - no clutter otherwise
+**Response styles** (78 personas: 6 response-style, 72 domain-specific across 24 categories). Weights:
 
-### Comprehensive DV Detection
-- **Automatic DV identification** from QSF survey structure
-- **10+ DV types supported**: Matrix scales, Likert scales, sliders, single-item DVs, numeric inputs, constant sum, rank order, best-worst, paired comparison, hot spot
-- **Question text display** for easy verification of detected DVs
-- **Easy add/remove** with one-click removal buttons
-- **Type badges** showing DV category (Matrix, Slider, Single Item, etc.)
+| Persona | Weight | Basis |
+|---|---|---|
+| Engaged Responder | 0.35 | Krosnick (1991) optimizers |
+| Satisficer | 0.22 | Krosnick (1991) |
+| Socially Desirable Responder | 0.12 | Paulhus (2002) |
+| Extreme Responder | 0.10 | Greenleaf (1992) |
+| Acquiescent Responder | 0.08 | Billiet & McClendon (2000) |
+| Careless Responder | 0.05 | Meade & Craig (2012) |
 
-### Automatic Survey Parsing
-- Extracts conditions, factors, and scales from Qualtrics QSF
-- **Enhanced scale detection**: Matrix, numbered items, Likert-type, slider, and numeric input
-- **225+ research domains** for context-aware response generation
-- **40 question type handlers** for open-ended responses
-- **200+ trash/unused block exclusion patterns** for clean condition detection
+**Open-ended text.** Compositional assembly (opener + core + elaboration + coda) over 106 reachable domain template sets (the table holds 116 keys; 10 cannot be selected), 8 structural archetypes, and domain vocabulary banks, with per-participant stylometric fingerprinting (vocabulary richness, filler and hedge words, contractions, capitalization, typos) held constant across all of a participant's answers. Text is coherent with that participant's numeric responses: straight-liners write short, positive raters don't write negative text.
 
-### Enhanced Condition Detection
-- **Comprehensive filtering** of non-condition blocks (trash, admin, structural)
-- **Pattern-based exclusion** prevents false positives from unused blocks
-- **Embedded data extraction** for randomization-based conditions
-- **Smart deduplication** preserves condition order
+**Realism layers.** Survey fatigue drift, reverse-item failure that is trait-like within session (Woods 2006), domain-sensitive social desirability (Nederhof 1985), typing-error rates calibrated to education, ex-Gaussian response times, inter-item α targeting and cross-DV correlation.
 
-### State Persistence
-- **Cross-step state saving** ensures selections persist when navigating
-- **Automatic state restoration** when returning to previous steps
-- **Session-based persistence** for complete workflow continuity
+A post-generation audit then checks completion-time plausibility, open-ended uniqueness, straight-lining prevalence, open-ended length distribution and rating–text coherence. The first four are repaired automatically; coherence failures are reported for review rather than corrected, since rewriting text to match a rating risks introducing artifacts.
 
-### Visual Factorial Design Table
-For factorial experiments (2×2, 2×3, 3×3, etc.):
-- **Enhanced table interface** with design type selector and examples
-- **Visual crossing display** showing all condition combinations
-- **Numbered cell display** in design table for easy reference
-- **Expandable condition list** showing all crossed combinations
-- Supports 2-factor and 3-factor designs with clear visual feedback
+Item-level missingness and dropout are available under advanced settings and are **off by default** (DVs are forced-response). The advanced panel sets the rates; the mechanism itself is not exposed in the UI and defaults to `realistic` — trait- and position-dependent (MAR-like), so inattentive participants and later items go missing more often. A plain `mcar` mechanism exists in the engine for callers that ask for it.
 
-### Theory-Grounded Personas
-Response styles based on survey methodology literature:
-- **Engaged Responder** (30%) - High attention, full scale use
-- **Satisficer** (20%) - Midpoint tendency, minimal text
-- **Extreme Responder** (8%) - Endpoint use, emphatic responses
-- **Acquiescent Responder** (7%) - Agreement bias
-- **Careless Responder** (5%) - Low attention, fails checks
+**Difficulty levels** (easy / medium / hard / expert) scale noise, straight-lining, careless responding and text effort together, so you can practice cleaning at a chosen difficulty.
 
-### Behavioral Realism
-- Attention check patterns with realistic pass/fail rates
-- Satisficing and extreme responding patterns
-- Individual trait-based variation
-- Open-ended responses matching numeric sentiment
-- Rating–text behavioral coherence — numeric patterns drive text generation tone
-- Cross-item reverse-failure tracking (Woods 2006)
-- Domain-sensitive social desirability (10 construct categories)
-- Response validation layer (longstring, IRV, endpoint utilization checks)
-- **NEW v1.0.8.0**: Compositional OE templates — intent-driven assembly (opener + core + elaboration + coda)
-- **NEW v1.0.8.0**: 40+ domain vocabulary sets for field-appropriate terminology
-- **NEW v1.0.8.0**: 8 domain-gated condition modifiers (cognitive, sports, clinical, relationship, etc.)
-- **NEW v1.0.8.0**: 25 topic-aware careless response templates
-- **NEW v1.0.8.0**: Intent-aware preview system synced with main engine
+## What the QSF parser detects
 
-### 23 Research Paradigm Domains (v1.0.4.9)
-The simulation engine includes dedicated effect models for 23 well-established research paradigms:
-- **Behavioral Economics**: Framing, anchoring, endowment, loss aversion, sunk cost, choice overload, hyperbolic discounting
-- **Social**: Bystander effect, stereotype threat, reactance, social comparison, contact hypothesis, minimal group
-- **Persuasion**: Source credibility, narrative transportation, inoculation, elaboration likelihood
-- **Motivation**: Implementation intentions, growth mindset, regulatory focus, goal gradient, moral licensing
-- **New in v1.0.4.9**: Gratitude interventions, moral cleansing/sacred values, digital attention economy
-- Each with published effect sizes and meta-analytic references
+- Conditions and factors, including embedded-data randomization, with 644 block-name exclusions and 77 regex patterns filtering trash/admin/structural blocks
+- DVs by type: matrix, single-item, numbered items, slider, numeric input, constant sum, rank order, and more
+Generation then respects those types: constant-sum items are renormalized to sum exactly to the total (largest-remainder), and rank-order DVs are valid 1..k permutations rather than independent integers.
 
-### 58+ Behavioral Personas (v1.0.4.9)
-- 7 universal response style personas (Krosnick, Greenleaf, Paulhus)
-- 51+ domain-specific personas across 17 research domains
-- **6 new in v1.0.4.9**: Narrative Thinker, Social Comparer, Grateful Optimist, Moral Absolutist, Digital Native, Financial Deliberator
+**Not detected from the QSF, despite tables existing for it.** Validated instruments (`WELL_KNOWN_SCALES`, 10 entries) and reverse-coded items each have a detector in `qsf_preview.py` with no callers, so no parsed scale comes back carrying an instrument name or a `reverse_items` list — verified across 427 scales in 40 corpus QSFs. Reverse-keyed items still work when you mark them yourself on the Design page or describe them to the builder, whose own `KNOWN_SCALES` table (84 entries, including BFI-10, GAD-7 and PHQ-9) does recognize instruments. Branching logic is the third: a question gets a `has_display_logic` / `has_skip_logic` boolean, but nothing in the repo reads either one, the two logic-parse maps come back empty, and the dependency-graph builder is uncalled — so DisplayLogic and SkipLogic do not reach generation at all. All three are tracked in `docs/COVERAGE_ROADMAP.md`.
 
-### Complete Output Package
-| File | Description |
-|------|-------------|
-| `Simulated.csv` | Generated dataset |
-| `Metadata.json` | All simulation parameters |
+Separately from the parser, the app reads pre-registration documents in OSF, AEA Registry and AsPredicted formats and checks them against the current design (shown only when one is uploaded).
+
+Everything detected is editable before generation, and a "Generate Preview (5 rows)" button gives a rough 5-row sample of the DV and open-ended columns beforehand. It is an approximation, not the real layout: it covers the first five scales only and omits the run metadata, timing, quality-flag and `ABE3_*` columns the full export carries.
+
+## Output package
+
+| File | Contents |
+|---|---|
+| `Simulated_Data.csv` | The dataset |
+| `Data_Codebook_Handbook.txt` | Variable and coding descriptions |
+| `R_Prepare_Data.R` | R loading/prep script |
+| `Python_Prepare_Data.py` | pandas |
+| `Julia_Prepare_Data.jl` | DataFrames.jl |
+| `SPSS_Prepare_Data.sps` | SPSS syntax |
+| `Stata_Prepare_Data.do` | Stata do-file |
+| `Metadata.json` | Every simulation parameter |
 | `Schema_Validation.json` | Data quality checks |
-| `R_Prepare_Data.R` | Ready-to-use R script |
-| `Column_Explainer.txt` | Variable descriptions |
-| `Instructor_Report.md` | Documentation for verification |
+| `User_Study_Summary.md` / `.html` | Summary report |
+| `Source_Files/` | Your uploaded QSF and PDF |
 
-## Quick Start
-
-### Local Development
+## Quick start
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the app
-streamlit run app.py
-
-# Open browser to http://localhost:8501
+pip install -r simulation_app/requirements.txt
+streamlit run simulation_app/app.py     # http://localhost:8501
 ```
 
-### Streamlit Community Cloud
+Optional dependencies (plotly, scipy, matplotlib, pdfplumber, PyMuPDF, requests, openpyxl, jsonschema) are in `requirements-optional.txt`. All are lazy imports with fallbacks — the core app runs without them.
 
-1. Fork this repository
-2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Click "New app" and select this repository
-4. Set main file path to `simulation_app/app.py`
-5. Deploy
+**Streamlit Community Cloud:** fork, then point a new app at `simulation_app/app.py`.
+
+**Headless, no Streamlit UI:** see `REPLICATION_README.md`.
 
 ## Usage
 
-### Step 1: Quick Setup
-- Enter team name and members
-- Provide study title and description
-- Set target sample size (N)
+1. **Setup** — team, study title and description, target N
+2. **Upload** — the QSF (required); the survey PDF (optional) improves domain detection by supplying question wording
+3. **Design** — confirm detected conditions, factors and DVs; build a factorial crossing if needed; set condition allocation
+4. **Generate** — pick a method, generate, download the ZIP
 
-### Step 2: Upload QSF
-- Upload your Qualtrics QSF file (required)
-- Optionally upload survey PDF for better domain detection
-- Fill in pre-registration style checklist
+Export both files from Qualtrics under Survey → Tools → Import/Export (Export Survey for the QSF, Print Survey for the PDF).
 
-### Step 3: Design Setup
-- **Conditions**: Select from auto-detected conditions or add manually
-- **Factorial Design**: Use the visual table to create crossed conditions
-- **Scales**: Review and verify detected dependent variables
-- **Sample Size**: Set target N and condition allocation
+### Factorial designs
 
-### Step 4: Generate
-- Click Generate to create your simulation package
-- Download ZIP with all outputs
-- Optional: Send via email
+Pick row and column factors and the app crosses them. A 2×3 — {Dictator game, PGG} × {Matched with Hater, Matched with Lover, Matched with Unknown} — produces 6 properly crossed conditions. 2- and 3-factor designs are supported.
 
-## Factorial Design Table
+## Research domains
 
-For experiments with multiple factors (e.g., 2×3 design):
+**273 research domains** are keyword-detectable, via 3,452 keyword patterns. 189 of them are grouped into the 23 categories below; the remaining 84 are detectable but ungrouped. 104 of them carry a reachable open-ended template set, 68 of which fall inside the 23 categories (`DOMAIN_TEMPLATES` holds 116 keys, but 10 are not `StudyDomain` values and can never be selected — `docs/COVERAGE_ROADMAP.md` item 12d lists them). The categories, as named in `DOMAIN_CATEGORIES`: behavioral economics, social psychology, political science, consumer & marketing, organizational behavior, technology & AI, AI alignment & ethics, ethics & moral psychology, clinical psychology, personality psychology, health psychology, health disparities, education, environmental, financial psychology, decision science, trust & credibility, gaming & entertainment, social media research, innovation & creativity, risk & safety, future of work, digital society.
 
-1. **Factor 1 (Rows)**: Select conditions like "Dictator game", "PGG"
-2. **Factor 2 (Columns)**: Select conditions like "Match with Hater", "Match with Lover", "Match with Unknown"
-3. **View the table**: See the visual crossing of all combinations
-4. **Result**: 6 conditions automatically generated and properly crossed
+Calibration knowledge base: 187 meta-analytic effect entries, 68 economic-game calibrations, 201 construct norms, 12 cultural adjustments. Of these the game calibrations, construct norms and response-time norms are queried during generation; the meta-analytic effect entries and the cultural adjustments are tables that nothing calls yet (tracked in `docs/COVERAGE_ROADMAP.md`).
 
-| Factor 1 | Match with Hater | Match with Lover | Match with Unknown |
-|----------|------------------|------------------|-------------------|
-| **Dictator game** | ✓ | ✓ | ✓ |
-| **PGG** | ✓ | ✓ | ✓ |
+## Research foundations
 
-## Uploading Qualtrics Files
+- **Argyle et al. (2023)** "Out of One, Many", *Political Analysis* — [10.1017/pan.2023.2](https://doi.org/10.1017/pan.2023.2)
+- **Horton (2023)** "Homo Silicus", *NBER WP* — [10.3386/w31122](https://doi.org/10.3386/w31122)
+- **Aher, Arriaga & Kalai (2023)** *ICML* — [paper](https://proceedings.mlr.press/v202/aher23a.html)
+- **Binz & Schulz (2023)** *PNAS* — [10.1073/pnas.2218523120](https://doi.org/10.1073/pnas.2218523120)
+- **Park et al. (2023)** "Generative Agents", *ACM UIST* — [10.1145/3586183.3606763](https://doi.org/10.1145/3586183.3606763)
+- **Dillion et al. (2023)** *Trends in Cognitive Sciences* — [10.1016/j.tics.2023.04.008](https://doi.org/10.1016/j.tics.2023.04.008)
+- **Westwood (2025)** "Existential threat of LLMs to survey research", *PNAS* — [10.1073/pnas.2518075122](https://doi.org/10.1073/pnas.2518075122)
 
-### QSF File (Required)
-**Export from Qualtrics**: Survey → Tools → Import/Export → Export Survey
+Full methodology and citations: `docs/methods_summary.md` and `docs/papers/methods_summary.pdf`. Known limitations and the remaining roadmap: `docs/COVERAGE_ROADMAP.md`.
 
-### Survey PDF (Optional but Recommended)
-**Export from Qualtrics**: Survey → Tools → Import/Export → Print Survey → Save as PDF
-
-The PDF improves domain detection and persona selection by providing question wording context.
-
-## Research Domains (225+)
-
-The tool supports 225+ research domains across 27 categories:
-
-- **Behavioral Economics**: Dictator game, ultimatum, trust, public goods, risk, time preferences, sunk cost, anchoring
-- **Social Psychology**: Intergroup relations, identity, norms, conformity, prosocial behavior, social comparison
-- **Political Science**: Polarization, partisanship, voting, media effects, policy attitudes, sacred values
-- **Consumer/Marketing**: Brand attitudes, advertising, pricing, purchase decisions, choice architecture
-- **Organizational Behavior**: Leadership, teamwork, motivation, job satisfaction, power dynamics
-- **Technology/AI**: AI attitudes, automation, human-robot interaction, privacy, digital wellbeing
-- **Health Psychology**: Risk perception, health behaviors, medical decisions, gratitude interventions
-- **Education**: Learning, motivation, feedback, assessment, testing effect, spacing
-- **Narrative & Communication**: Narrative transportation, inoculation, elaboration likelihood, source credibility
-- **Moral Psychology**: Moral judgment, sacred values, moral cleansing, moral licensing, ethical identity
-- **Positive Psychology**: Gratitude, savoring, acts of kindness, best possible self, flourishing
-- And many more...
-
-## Research Foundations
-
-This tool implements simulation approaches from recent LLM research:
-
-- **Argyle et al. (2023)** - "Out of One, Many" *Political Analysis* — [DOI: 10.1017/pan.2023.2](https://doi.org/10.1017/pan.2023.2)
-- **Horton (2023)** - "Homo Silicus" *NBER Working Paper* — [DOI: 10.3386/w31122](https://doi.org/10.3386/w31122)
-- **Aher, Arriaga & Kalai (2023)** - *ICML* — [Paper](https://proceedings.mlr.press/v202/aher23a.html)
-- **Binz & Schulz (2023)** - *PNAS* — [DOI: 10.1073/pnas.2218523120](https://doi.org/10.1073/pnas.2218523120)
-- **Park et al. (2023)** - "Generative Agents" *ACM UIST* — [DOI: 10.1145/3586183.3606763](https://doi.org/10.1145/3586183.3606763)
-- **Dillion et al. (2023)** - *Trends in Cognitive Sciences* — [DOI: 10.1016/j.tics.2023.04.008](https://doi.org/10.1016/j.tics.2023.04.008)
-- **Westwood (2025)** - "Existential threat of LLMs to survey research" *PNAS* — [DOI: 10.1073/pnas.2518075122](https://doi.org/10.1073/pnas.2518075122)
-
-See `docs/methods_summary.md` and `docs/papers/methods_summary.pdf` for complete methodology documentation with full citations.
-
-## Directory Structure
+## Layout
 
 ```
 research-simulations/
 ├── simulation_app/
-│   ├── app.py                      # Main Streamlit application
-│   ├── requirements.txt            # Python dependencies
-│   ├── README.md                   # This file
-│   ├── example_files/              # QSF training data & examples
-│   └── utils/
-│       ├── __init__.py
-│       ├── enhanced_simulation_engine.py  # Core simulation logic
-│       ├── persona_library.py      # Behavioral personas
-│       ├── qsf_preview.py          # QSF parsing & scale detection
-│       ├── response_library.py     # 225+ domains, 40 question types
-│       ├── survey_builder.py       # Conversational study builder
-│       ├── text_generator.py       # Open-ended response generation
-│       ├── condition_identifier.py # Condition & factor detection
-│       ├── schema_validator.py     # Data validation
-│       ├── instructor_report.py    # Report generation
-│       └── group_management.py     # Team/API management
-├── tests/                          # All test files
-│   ├── conftest.py                 # Shared fixtures & path setup
-│   ├── test_e2e.py                 # Main E2E test suite
-│   ├── test_all_methods.py         # All 4 generation methods
-│   ├── test_edge_cases.py          # Edge case stress tests
-│   └── test_progress_callbacks.py  # Progress callback validation
-├── docs/                           # Documentation
-│   ├── papers/                     # Research papers & methods PDF
-│   ├── methods_summary.md          # Detailed methodology
-│   └── internal/                   # Internal dev docs & benchmarks
-│       ├── technical_methods.md    # Technical documentation
-│       ├── DEVELOPMENT_REFERENCE.md
-│       └── software_10x_improvements.md
-└── CLAUDE.md                       # Development guidelines
+│   ├── app.py                      # Streamlit entry point + QSF→engine bridge
+│   ├── requirements.txt
+│   ├── utils/                      # 31 modules, including:
+│   │   ├── enhanced_simulation_engine.py   # the simulation pipeline
+│   │   ├── adaptive_behavioral_engine_v2.py
+│   │   ├── qsf_preview.py                  # QSF parsing, DV/condition detection
+│   │   ├── scientific_knowledge_base.py    # meta-analytic effects, game calibrations
+│   │   ├── persona_library.py              # 78 personas
+│   │   ├── response_library.py             # offline open-ended generation
+│   │   ├── llm_response_generator.py       # LLM open-ended generation
+│   │   ├── hbs_*.py                        # participant state, stylometry, validation
+│   │   ├── socsim_adapter.py               # bridge to the ABE 3.0 / socsim engine
+│   │   └── schema_validator.py, instructor_report.py, group_management.py, …
+│   ├── experimental_features/
+│   │   └── self-learning simulator/        # socsim: ABE 3.0 engine, Level-k / CH strategies
+│   ├── example_files/              # real Qualtrics QSFs used for end-to-end testing
+│   └── skills/                     # the development protocol this project follows
+├── tests/                          # pytest suites + standalone validation harnesses
+├── docs/
+│   ├── methods_summary.md          # methodology
+│   ├── COVERAGE_ROADMAP.md         # coverage audit + remaining gaps
+│   ├── CHANGELOG.md
+│   └── papers/, internal/
+├── CLAUDE.md, AGENTS.md            # contributor and agent guidelines
+└── REPLICATION_README.md           # how to reproduce the validation
 ```
 
 ## Configuration
 
-### Email Delivery (Optional)
+Email delivery is optional. Set these Streamlit secrets to enable it: `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `INSTRUCTOR_NOTIFICATION_EMAIL`.
 
-Set these Streamlit secrets for email functionality:
-- `SMTP_SERVER` (e.g., "smtp.gmail.com")
-- `SMTP_PORT` (e.g., 587)
-- `SMTP_USERNAME` (your email address)
-- `SMTP_PASSWORD` (app password)
-- `SMTP_FROM_EMAIL` (sender email)
-- `INSTRUCTOR_NOTIFICATION_EMAIL` (where to send reports)
+## Credits and license
 
-## Credits
-
-- **Created by**: Dr. Eugen Dimant
-
-## License
-
-For academic and educational use.
-
-## Citation
+Created by Dr. Eugen Dimant. For academic and educational use.
 
 ```
-Dimant, E. (2025). Behavioral Experiment Simulation Tool (Version 2.2).
-https://github.com/edimant/research-simulations
+Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 1.2.9.0) [Computer software].
+https://github.com/eugendimant/research-simulations
 ```

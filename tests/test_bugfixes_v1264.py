@@ -289,7 +289,7 @@ def test_scale_items_list_sets_num_items_and_names():
 
 def test_hbs_stable_hash_is_process_stable():
     """Audit 3.4: seeded hashing must not use Python's salted hash()."""
-    from utils.hbs_engine import _stable_int_hash
+    from utils.enhanced_simulation_engine import _stable_int_hash
     assert _stable_int_hash("col") == _stable_int_hash("col")
     assert isinstance(_stable_int_hash("col"), int)
 
@@ -761,9 +761,9 @@ def test_v1287_no_retired_provider_models():
     chain_bad = [(p.name, p.model) for p in gen._providers if p.model in RETIRED]
     assert not chain_bad, f"retired model(s) in failover chain: {chain_bad}"
     # Groq must keep two independent model lines so one retirement can't kill it.
-    groq = [p for p in gen._providers if p.name.startswith("groq")]
-    assert len({p.model for p in groq}) >= 2, \
-        f"expected >=2 distinct Groq models for resilience, got {[p.model for p in groq]}"
+    # (Checked on the configured constants: the provider chain is empty when no
+    # deployment keys are set, which is the normal state in CI.)
+    assert L.GROQ_MODEL != L.GROQ_MODEL_FALLBACK, "Groq primary and fallback must be distinct models"
 
 
 def test_v1287_reasoning_models_get_low_effort():

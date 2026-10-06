@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 
 
-class TestQSFParser:
+class QSFParserSuite:
     """Test suite for QSF parsing functionality."""
 
     def __init__(self):
@@ -412,9 +412,18 @@ class TestQSFParser:
             return True
 
 
+def test_qsf_parser_suite():
+    """Run the whole QSF parser suite; fail listing every failed case."""
+    tester = QSFParserSuite()
+    ok = tester.run_all_tests()
+    failed = [(n, e) for n, success, e in tester.test_results if not success]
+    assert tester.test_results, "no QSF parser cases executed"
+    assert ok and not failed, f"QSF parser failures: {failed}"
+
+
 def main():
     """Run all tests."""
-    tester = TestQSFParser()
+    tester = QSFParserSuite()
     success = tester.run_all_tests()
     return 0 if success else 1
 

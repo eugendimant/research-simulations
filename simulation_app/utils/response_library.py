@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.2.8.7"
+__version__ = "1.2.9.0"
 
 import random
 import re
@@ -388,6 +388,10 @@ class StudyDomain(Enum):
     # ========== POSITIVE PSYCHOLOGY (5 domains) ==========
     POSITIVE_PSYCHOLOGY = "positive_psychology"
     GRATITUDE = "gratitude"
+    NOSTALGIA = "nostalgia"
+    FORGIVENESS = "forgiveness"
+    SLEEP_QUALITY = "sleep_quality"
+    MORAL_CLEANSING = "moral_cleansing"
     RESILIENCE = "resilience"
     FLOURISHING = "flourishing"
     LIFE_SATISFACTION = "life_satisfaction"
@@ -1281,43 +1285,14 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
 
     # ========== ETHICS/MORAL ==========
 
+    # v1.2.8.8: merged two duplicate "moral_judgment" entries (union of both template sets; the second used to silently replace the first).
     "moral_judgment": {
         "explanation": {
-            "very_positive": [
-                "This action is clearly morally right.",
-                "I strongly support this from an ethical standpoint.",
-                "This represents good moral values.",
-                "This is the ethical thing to do.",
-                "I find this morally admirable.",
-            ],
-            "positive": [
-                "I think this is morally acceptable.",
-                "This seems like the right thing to do.",
-                "I have no moral objections to this.",
-                "This aligns with my values.",
-                "This is ethically sound in my view.",
-            ],
-            "neutral": [
-                "I'm not sure about the morality of this.",
-                "This is a gray area ethically.",
-                "I can see moral arguments both ways.",
-                "I don't have a strong moral stance on this.",
-                "This isn't clearly right or wrong to me.",
-            ],
-            "negative": [
-                "I have moral concerns about this.",
-                "This doesn't seem quite right.",
-                "This raises ethical questions.",
-                "I'm uncomfortable with this morally.",
-                "This conflicts with some of my values.",
-            ],
-            "very_negative": [
-                "This is morally wrong in my view.",
-                "I strongly object to this ethically.",
-                "This goes against my moral principles.",
-                "I find this ethically unacceptable.",
-                "This represents poor moral values.",
-            ],
+            "very_positive": ['This action is clearly morally right.', 'I strongly support this from an ethical standpoint.', 'This represents good moral values.', 'This is the ethical thing to do.', 'I find this morally admirable.', 'The ethical choice here is obvious.', 'I strongly support this moral stance.', 'This aligns with my core values.', 'Morally, this is the correct path.'],
+            "positive": ['I think this is morally acceptable.', 'This seems like the right thing to do.', 'I have no moral objections to this.', 'This aligns with my values.', 'This is ethically sound in my view.', 'This seems like the ethical choice.', 'This action appears justified.', 'The moral reasoning here is sound.', 'I can support this ethically.'],
+            "neutral": ["I'm not sure about the morality of this.", 'This is a gray area ethically.', 'I can see moral arguments both ways.', "I don't have a strong moral stance on this.", "This isn't clearly right or wrong to me.", 'Morally, this is a gray area.', 'I can see ethical arguments both ways.', 'This is a difficult moral question.', 'The ethics here are complex.', "I'm torn on the morality of this."],
+            "negative": ['I have moral concerns about this.', "This doesn't seem quite right.", 'This raises ethical questions.', "I'm uncomfortable with this morally.", 'This conflicts with some of my values.', "This doesn't seem entirely ethical.", 'There are ethical issues here.', 'This raises moral red flags.'],
+            "very_negative": ['This is morally wrong in my view.', 'I strongly object to this ethically.', 'This goes against my moral principles.', 'I find this ethically unacceptable.', 'This represents poor moral values.', 'This is morally wrong.', 'I strongly oppose this on ethical grounds.', 'This violates fundamental moral principles.', 'This is clearly unethical.', 'I cannot support this morally.'],
         },
     },
 
@@ -3587,13 +3562,14 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
         },
     },
 
+    # v1.2.8.8: merged two duplicate "life_satisfaction" entries (union of both template sets; the second used to silently replace the first).
     "life_satisfaction": {
         "explanation": {
-            "very_positive": ["I'm extremely satisfied with my life.", "Life is wonderful.", "I have everything I need.", "I couldn't ask for more.", "I'm very happy with how things are."],
-            "positive": ["I'm satisfied with my life.", "Life is good.", "I have what I need.", "Things are going well.", "I'm happy with my situation."],
-            "neutral": ["I'm neither satisfied nor dissatisfied.", "Life is okay.", "I have some of what I need.", "Things are average.", "I have mixed feelings about my life."],
-            "negative": ["I'm somewhat dissatisfied with my life.", "Life could be better.", "I'm missing things I need.", "Things aren't going well.", "I'm unhappy with some aspects of my life."],
-            "very_negative": ["I'm very dissatisfied with my life.", "Life is difficult.", "I don't have what I need.", "Things are going poorly.", "I'm unhappy with my life."],
+            "very_positive": ["I'm extremely satisfied with my life.", 'Life is wonderful.', 'I have everything I need.', "I couldn't ask for more.", "I'm very happy with how things are.", "I'm very satisfied with my life overall.", 'Life is going extremely well.', 'I feel fulfilled and content.', 'I have few regrets.', 'My life is close to ideal.'],
+            "positive": ["I'm satisfied with my life.", 'Life is good.', 'I have what I need.', 'Things are going well.', "I'm happy with my situation.", "I'm generally satisfied with my life.", 'Things are going pretty well.', "I'm content for the most part.", 'Life is good overall.', 'I have much to be grateful for.'],
+            "neutral": ["I'm neither satisfied nor dissatisfied.", 'Life is okay.', 'I have some of what I need.', 'Things are average.', 'I have mixed feelings about my life.', 'My life satisfaction is average.', "Some things are good, some aren't.", 'It could be better, could be worse.'],
+            "negative": ["I'm somewhat dissatisfied with my life.", 'Life could be better.', "I'm missing things I need.", "Things aren't going well.", "I'm unhappy with some aspects of my life.", 'Things could be going better.', 'I have significant concerns.', "My life isn't what I hoped.", "I'm not very satisfied overall."],
+            "very_negative": ["I'm very dissatisfied with my life.", 'Life is difficult.', "I don't have what I need.", 'Things are going poorly.', "I'm unhappy with my life.", 'Things are not going well at all.', 'I have many regrets.', 'My life is far from ideal.', "I'm deeply unsatisfied."],
         },
     },
 
@@ -3811,15 +3787,6 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
     # ========== ADDITIONAL SOCIAL SCIENCE DOMAINS (v1.1.0) ==========
 
     # MORAL PSYCHOLOGY
-    "moral_judgment": {
-        "explanation": {
-            "very_positive": ["This action is clearly morally right.", "The ethical choice here is obvious.", "I strongly support this moral stance.", "This aligns with my core values.", "Morally, this is the correct path."],
-            "positive": ["This seems like the ethical choice.", "I think this is morally acceptable.", "This action appears justified.", "The moral reasoning here is sound.", "I can support this ethically."],
-            "neutral": ["Morally, this is a gray area.", "I can see ethical arguments both ways.", "This is a difficult moral question.", "The ethics here are complex.", "I'm torn on the morality of this."],
-            "negative": ["I have moral concerns about this.", "This doesn't seem entirely ethical.", "I'm uncomfortable with this morally.", "There are ethical issues here.", "This raises moral red flags."],
-            "very_negative": ["This is morally wrong.", "I strongly oppose this on ethical grounds.", "This violates fundamental moral principles.", "This is clearly unethical.", "I cannot support this morally."],
-        },
-    },
 
     "ethical_dilemma": {
         "explanation": {
@@ -3921,15 +3888,6 @@ DOMAIN_TEMPLATES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
     },
 
     # WELLBEING & LIFE SATISFACTION
-    "life_satisfaction": {
-        "explanation": {
-            "very_positive": ["I'm very satisfied with my life overall.", "Life is going extremely well.", "I feel fulfilled and content.", "I have few regrets.", "My life is close to ideal."],
-            "positive": ["I'm generally satisfied with my life.", "Things are going pretty well.", "I'm content for the most part.", "Life is good overall.", "I have much to be grateful for."],
-            "neutral": ["My life satisfaction is average.", "Some things are good, some aren't.", "I have mixed feelings about my life.", "It could be better, could be worse.", "I'm neither satisfied nor dissatisfied."],
-            "negative": ["I'm somewhat dissatisfied with my life.", "Things could be going better.", "I have significant concerns.", "My life isn't what I hoped.", "I'm not very satisfied overall."],
-            "very_negative": ["I'm very dissatisfied with my life.", "Things are not going well at all.", "I have many regrets.", "My life is far from ideal.", "I'm deeply unsatisfied."],
-        },
-    },
 
     # EMOTION REGULATION
     "emotion_regulation": {
@@ -4699,6 +4657,25 @@ def detect_question_type(question_text: str) -> QuestionType:
 # ============================================================================
 # DOMAIN DETECTION FROM STUDY CONTEXT
 # ============================================================================
+
+# StudyDomain value -> DOMAIN_TEMPLATES keys that cover it (tried in order).
+_DOMAIN_TEMPLATE_ALIASES: Dict[str, Tuple[str, ...]] = {
+    "narrative": ("narrative_transportation",),
+    "gratitude": ("gratitude_experience", "gratitude_intervention"),
+    "moral_dilemma": ("ethical_dilemma",),
+    "ai_attitudes": ("artificial_intelligence",),
+    "human_ai_interaction": ("artificial_intelligence",),
+    "ai_alignment": ("artificial_intelligence",),
+    "ai_ethics": ("artificial_intelligence",),
+    "ai_safety": ("artificial_intelligence",),
+    "ai_governance": ("artificial_intelligence",),
+    "ai_transparency": ("artificial_intelligence",),
+    "climate_attitudes": ("climate_change",),
+    "climate_action": ("climate_change",),
+    "climate_communication": ("climate_change",),
+    "climate_adaptation": ("climate_change",),
+    "climate_justice": ("climate_change",),
+}
 
 DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     # ========== BEHAVIORAL ECONOMICS ==========
@@ -5655,6 +5632,19 @@ DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     ],
     StudyDomain.GRATITUDE: [
         'gratitude', 'thankful', 'appreciate', 'grateful', 'blessing',
+    ],
+    StudyDomain.NOSTALGIA: [
+        'nostalgia', 'nostalgic', 'reminisce', 'good old days', 'sentimental',
+    ],
+    StudyDomain.FORGIVENESS: [
+        'forgiveness', 'forgive', 'forgiving', 'grudge', 'reconciliation',
+    ],
+    StudyDomain.SLEEP_QUALITY: [
+        'sleep quality', 'sleep deprivation', 'insomnia', 'sleepiness', 'sleep duration',
+    ],
+    StudyDomain.MORAL_CLEANSING: [
+        'moral cleansing', 'moral licensing', 'macbeth effect', 'physical cleansing',
+        'moral self-regard', 'moral purity',
     ],
     StudyDomain.RESILIENCE: [
         'resilience', 'bounce back', 'recover', 'adversity', 'overcome',
@@ -7710,11 +7700,12 @@ class ComprehensiveResponseGenerator:
                 if pattern.search(varied):
                     replacement = local_rng.choice(synonyms)
                     # Preserve original capitalization of first char
-                    def _replace_preserving_case(match: re.Match) -> str:
+                    # v1.2.8.8: bind loop variable via default arg (ruff B023)
+                    def _replace_preserving_case(match: re.Match, _repl: str = replacement) -> str:
                         original = match.group(0)
-                        if original[0].isupper() and len(replacement) >= 2:
-                            return replacement[0].upper() + replacement[1:]
-                        return replacement
+                        if original[0].isupper() and len(_repl) >= 2:
+                            return _repl[0].upper() + _repl[1:]
+                        return _repl
                     varied = pattern.sub(_replace_preserving_case, varied, count=1)
             return varied
 
@@ -7863,7 +7854,7 @@ class ComprehensiveResponseGenerator:
                            'do', 'does', 'rate', 'rated', 'rating', 'describe',
                            'explain', 'question', 'context', 'study', 'topic',
                            'the', 'and', 'for', 'any', 'have', 'has', 'feel',
-                           'think', 'way', 'that', 'with', 'are', 'was', 'were'}
+                           'think', 'way', 'with', 'are', 'was', 'were'}
                 _qw = [w for w in re.findall(r'\b[a-zA-Z]{3,}\b', question_text.lower())
                        if w not in _q_stop][:4]
                 _cand = ' '.join(_qw)
@@ -8028,7 +8019,9 @@ class ComprehensiveResponseGenerator:
             'service': ['about the service', 'regarding the service quality', 'in terms of service', 'evaluating the service provided'],
             'brand': ['about the brand', 'regarding this brand', 'in terms of perception', 'considering the attributes'],
             'quality': ['in terms of quality', 'regarding quality aspects', 'considering the quality', 'evaluating quality'],
-            'value': ['in terms of value', 'considering what matters', 'regarding perceived value'],
+            # v1.2.8.8: merged duplicate 'value' key (product-value + personal-values phrasings).
+            'value': ['in terms of value', 'considering what matters', 'regarding perceived value',
+                      'regarding my values', 'concerning what I value', 'in terms of personal principles'],
             'price': ['considering the cost', 'given the cost', 'in terms of pricing', 'regarding the price point'],
             'purchase': ['regarding this choice', 'in terms of choosing', 'considering this', 'when thinking about this'],
 
@@ -8111,7 +8104,6 @@ class ComprehensiveResponseGenerator:
             'self': ['regarding myself', 'concerning personal aspects', 'in terms of self-perception'],
             'personal': ['on a personal level', 'regarding personal matters', 'in terms of individual experience'],
             'belief': ['regarding my beliefs', 'concerning what I believe', 'in terms of my convictions'],
-            'value': ['regarding my values', 'concerning what I value', 'in terms of personal principles'],
         }
 
         # Find matching topic phrase
@@ -8641,6 +8633,14 @@ class ComprehensiveResponseGenerator:
             if _tk not in _seen_types:
                 _seen_types.add(_tk)
                 _type_chain.append(_tk)
+
+        # Template banks written under a topic name that is not itself a StudyDomain value
+        # are reached through this alias table (otherwise they could never be selected).
+        if domain_key not in DOMAIN_TEMPLATES:
+            for _alias in _DOMAIN_TEMPLATE_ALIASES.get(domain_key, ()):
+                if _alias in DOMAIN_TEMPLATES:
+                    domain_key = _alias
+                    break
 
         # Try to find domain-specific templates with question type routing
         if domain_key in DOMAIN_TEMPLATES:

@@ -1,4 +1,4 @@
-# Replication Package — Behavioral Experiment Simulation Tool (v1.2.7.4)
+# Replication Package — Behavioral Experiment Simulation Tool (v1.2.8.7)
 
 This archive contains everything needed to run, inspect, and evaluate the
 behavioral-experiment simulation tool in its entirety.
@@ -17,7 +17,7 @@ paradata, and exclusion flags — grounded in published behavioral-science norms
   - `utils/response_library.py`, `persona_library.py`, `llm_response_generator.py` — open-ended text generation
   - `utils/scientific_knowledge_base.py` — meta-analytic effects, game calibrations, construct norms
   - `utils/instructor_report.py`, `schema_validator.py`, `svg_charts.py` — analysis/reporting/validation
-  - `example_files/` — 291 real Qualtrics `.qsf` files used for end-to-end testing
+  - `example_files/` — real Qualtrics `.qsf` files used for end-to-end testing (the corpus grows as surveys are collected; count with `ls simulation_app/example_files/*.qsf | wc -l`)
   - `requirements.txt` — Python dependencies
   - `skills/` — the development protocol the project follows
 - `tests/` — pytest suites + standalone validation harnesses
@@ -39,15 +39,15 @@ streamlit run simulation_app/app.py
 ## Reproduce the validation
 ```bash
 # Unit / regression suite (includes the v1.2.6.x–v1.2.7.x bug-fix regressions)
-python3 -m pytest tests/test_bugfixes_v1264.py -q
+python3 -m pytest tests/test_bugfixes_v1264.py -q   # 38 tests
 
-# Parse all 291 example QSFs — expect 0 crashes
+# Parse every example QSF — expect 0 crashes
 python3 tests/qsf_robustness.py
 
 # End-to-end simulate a diverse QSF sample — expect "ALL CHECKS PASSED"
 python3 tests/qsf_e2e_sim.py 25
 
-# Effect-direction fuzz over 2,592 condition×variable combos
+# Crash/scoping fuzz over 2,592 context×condition×variable combos
 python3 tests/effect_fuzz.py
 
 # Deep output-data inspection of the 10 most-recent student QSFs
@@ -55,11 +55,11 @@ python3 tests/student_qsf_inspect.py 30
 ```
 (The standalone harnesses are scripts, not pytest files; run them directly.)
 
-## Headless simulation in code (no Streamlit/network)
+## Headless simulation in code (no Streamlit UI, no network)
 ```python
 import sys; sys.path.insert(0, "simulation_app")
 from utils.qsf_preview import QSFPreviewParser
-import app
+import app          # needs streamlit installed; no server is started
 from utils.enhanced_simulation_engine import EnhancedSimulationEngine
 
 preview = QSFPreviewParser().parse(open("simulation_app/example_files/Coffee_Shop_Loyalty_Programs.qsf", "rb").read())
@@ -79,8 +79,8 @@ print(df.shape); print(df.head())
   to force the offline (non-LLM) open-ended generator; otherwise the tool tries
   free LLM providers for open-ended text and falls back to templates.
 - **Version sync:** the app checks `REQUIRED_UTILS_VERSION == utils.__version__`
-  at startup; all 9 version locations are kept in sync (currently `1.2.7.4`).
+  at startup; all 10 version locations are kept in sync (currently `1.2.8.7`). The
+  canonical list of those locations is in `CLAUDE.md`.
 - **Known remaining roadmap** (not bugs) is documented in
   `docs/COVERAGE_ROADMAP.md` — e.g. within-subjects repeated-measures done as a
   proper long format, dyadic/per-trial output modes, population-source profiles.
-- This package was exported from branch `claude/coverage-expansion`.

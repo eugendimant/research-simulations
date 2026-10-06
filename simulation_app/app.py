@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.8.7"
-BUILD_ID = "20260814-v12087-groq-cerebras-model-migration"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.9.0"
+BUILD_ID = "20261006-v12900-serve-howto-pdf-in-app"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.8.7"  # v1.2.8.7: Free-LLM model migration — Groq off decommissioned llama-3.3-70b-versatile (2026-08-16) to GPT-OSS 120B + Qwen3.6 27B; Cerebras off retired llama-3.3-70b; auto-retire providers whose model 404s
+APP_VERSION = "1.2.9.0"  # v1.2.9.0: Serve the student-facing how-to guide PDF from the app so its link survives the repository being made private
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1253,6 +1253,14 @@ def _generate_preview_data(
     """
     preview_data = {}
     difficulty_settings = _get_difficulty_settings(difficulty)
+    # Local RNG: the preview must not touch (or depend on) the process-global NumPy
+    # RNG that other Streamlit sessions share. Seeded from the study + chosen seed so
+    # the same inputs give the same preview.
+    _prng = np.random.RandomState(
+        int(hashlib.sha256(
+            f"{study_title}|{study_description}|{st.session_state.get('_user_seed_value', 0)}".encode("utf-8")
+        ).hexdigest()[:8], 16)
+    )
 
     # Add participant ID (matches actual engine output column name)
     preview_data['PARTICIPANT_ID'] = [f"P{i+1:03d}" for i in range(n_rows)]
@@ -1320,21 +1328,21 @@ def _generate_preview_data(
                 if _is_bipolar_preview and _is_econ_preview:
                     # v1.0.8.6: Realistic bipolar economic game preview
                     # Show diverse subpopulations: some give, some keep, some take
-                    _preview_roll = np.random.random()
+                    _preview_roll = _prng.random()
                     if _preview_roll < 0.35:
-                        val = int(np.random.uniform(_s_max * 0.3, _s_max * 0.6))  # Giver
+                        val = int(_prng.uniform(_s_max * 0.3, _s_max * 0.6))  # Giver
                     elif _preview_roll < 0.55:
-                        val = int(np.random.uniform(-2, 2))  # Zero/selfish
+                        val = int(_prng.uniform(-2, 2))  # Zero/selfish
                     elif _preview_roll < 0.75:
-                        val = int(np.random.uniform(_s_min * 0.4, _s_min * 0.1))  # Taker
+                        val = int(_prng.uniform(_s_min * 0.4, _s_min * 0.1))  # Taker
                     else:
-                        val = int(np.random.uniform(_s_max * 0.05, _s_max * 0.25))  # Moderate giver
+                        val = int(_prng.uniform(_s_max * 0.05, _s_max * 0.25))  # Moderate giver
                 elif _is_bipolar_preview:
                     # General bipolar: center near zero with full range spread
-                    val = int(np.random.normal(0, (_s_max - _s_min) / 4))
+                    val = int(_prng.normal(0, (_s_max - _s_min) / 4))
                     val = max(_s_min, min(_s_max, val))
                 else:
-                    val = np.random.randint(_s_min, _s_max + 1)
+                    val = _prng.randint(_s_min, _s_max + 1)
                 # v1.0.1.3: Apply condition-aware shifts to preview data
                 # so researchers see realistic between-condition differences
                 if conditions:
@@ -1357,13 +1365,13 @@ def _generate_preview_data(
             mean_values = []
             for row_idx in range(n_rows):
                 if _is_bipolar_preview:
-                    val1 = int(np.random.normal(0, (_s_max - _s_min) / 4))
+                    val1 = int(_prng.normal(0, (_s_max - _s_min) / 4))
                     val1 = max(_s_min, min(_s_max, val1))
-                    val_mean = float(np.random.normal(0, (_s_max - _s_min) / 5))
+                    val_mean = float(_prng.normal(0, (_s_max - _s_min) / 5))
                     val_mean = max(float(_s_min), min(float(_s_max), val_mean))
                 else:
-                    val1 = np.random.randint(_s_min, _s_max + 1)
-                    val_mean = np.random.uniform(_s_min, _s_max)
+                    val1 = _prng.randint(_s_min, _s_max + 1)
+                    val_mean = _prng.uniform(_s_min, _s_max)
                 # v1.0.1.3: Apply condition-aware shifts to preview data
                 # so researchers see realistic between-condition differences
                 if conditions:
@@ -1420,12 +1428,12 @@ def _generate_preview_data(
             preview_data[_var] = _oe_responses
 
     # Add demographics
-    preview_data['age'] = [np.random.randint(18, 65) for _ in range(n_rows)]
-    preview_data['gender'] = [np.random.choice(['Male', 'Female', 'Other']) for _ in range(n_rows)]
+    preview_data['age'] = [_prng.randint(18, 65) for _ in range(n_rows)]
+    preview_data['gender'] = [_prng.choice(['Male', 'Female', 'Other']) for _ in range(n_rows)]
 
     # Add attention check
     preview_data['attention_check_pass'] = [
-        1 if np.random.random() < difficulty_settings['attention_rate'] else 0
+        1 if _prng.random() < difficulty_settings['attention_rate'] else 0
         for _ in range(n_rows)
     ]
 
@@ -2683,9 +2691,10 @@ def _render_analytics_dashboard(
         '<h3 style="color:#e8e8e8;margin:0 0 4px 0;font-weight:700;letter-spacing:0.02em;">'
         'Analytics Dashboard</h3>'
         '<p style="color:#8896ab;margin:0;font-size:0.82rem;">'
-        'Professional statistical analysis of your simulated dataset</p></div>',
+        'Descriptive and test summaries of your simulated dataset</p></div>',
         unsafe_allow_html=True,
     )
+    _render_validity_notice()
 
     if not _has_plotly:
         st.warning("Plotly is required for the analytics dashboard. Install with: `pip install plotly`")
@@ -3015,10 +3024,14 @@ def _render_analytics_dashboard(
     # v1.8.9: SECTION 4b: Post-Hoc Power Analysis Summary
     # ──────────────────────────────────────────────────────────────
     if _composite_cols and n_conditions >= 2 and _es_rows:
-        with st.expander("Post-Hoc Power Estimates", expanded=False):
+        with st.expander("Observed-effect power (descriptive only)", expanded=False):
             st.caption(
-                "Approximate power for detecting the observed effect sizes at α = .05 (two-tailed). "
-                "These are post-hoc estimates — interpret with caution."
+                "Approximate power to detect the effect sizes observed in THIS synthetic "
+                "sample at α = .05 (two-tailed). Observed-effect power is a function of the "
+                "p-value, and here the effects were set by the simulation, so this table "
+                "describes the generator and is not a sample-size recommendation. For "
+                "planning, use an a-priori power analysis with an effect size from the "
+                "literature."
             )
             _power_rows = []
             for row in _es_rows:
@@ -3037,7 +3050,7 @@ def _render_analytics_dashboard(
                     "|d|": round(_d_obs, 3),
                     "n/group": _n_per_group,
                     "Est. Power": f"{_power:.0%}",
-                    "Adequacy": _power_label,
+                    "Level": _power_label,
                 })
             if _power_rows:
                 _pwr_df = pd.DataFrame(_power_rows)
@@ -3046,16 +3059,10 @@ def _render_analytics_dashboard(
                         lambda v: "background-color: #dcfce7" if v == "High"
                         else "background-color: #fef9c3" if v == "Moderate"
                         else "background-color: #fee2e2" if v in ("Low",) else "",
-                        subset=["Adequacy"],
+                        subset=["Level"],
                     ),
                     use_container_width=True,
                 )
-                _underpowered = sum(1 for r in _power_rows if r["Adequacy"] == "Low")
-                if _underpowered > 0:
-                    st.info(
-                        f"{_underpowered} comparison(s) appear underpowered (< 50%). "
-                        "Consider increasing sample size or targeting larger effects."
-                    )
 
     # ──────────────────────────────────────────────────────────────
     # SECTION 5: Normality Assessment
@@ -4799,24 +4806,8 @@ def _finalize_builder_design(
     if _feedback:
         st.session_state["_builder_feedback"] = _feedback
 
-    # Collect synthetic QSF training data (never block user on failure)
-    try:
-        _ri = raw_inputs or {
-            "conditions_text": _cond_text,
-            "scales_text": _scale_text,
-            "open_ended_text": " | ".join(q.question_text for q in parsed_oe) if parsed_oe else "",
-            "study_title": title,
-            "study_description": description,
-            "participant_desc": participant_desc,
-            "design_type": design_type,
-            "sample_size": sample_size,
-        }
-        synthetic_qsf = generate_qsf_from_design(parsed_design, raw_inputs=_ri)
-        safe_title = re.sub(r'[^a-zA-Z0-9_\- ]', '', title or 'untitled')[:60].strip().replace(' ', '_')
-        _date_prefix = datetime.now().strftime("%Y_%m_%d")
-        collect_qsf_async(f"{_date_prefix}_{safe_title}.qsf", synthetic_qsf)
-    except Exception:
-        pass  # Never let collection errors affect the user workflow
+    # Generated designs are never shared with researchers: the consent checkbox exists only on
+    # the QSF upload page, so nothing is collected here.
 
     return True
 
@@ -7439,7 +7430,64 @@ div[data-testid="stAlert"] {
 # Access: Add ?admin=1 to the URL. Password required.
 # Shows: LLM stats, simulation history, system diagnostics, session state.
 # =====================================================================
-_ADMIN_PASSWORD_HASH = "19465e8fc94da7f22aec392a5514a6494a3e090ce0ba3bd1773c1c9e339dcfac"  # SHA-256 of "Dimant_Admin"
+def _access_code_matches(supplied: str, secret_name: str) -> bool:
+    """Check an access code against a deployment secret (never stored in source).
+
+    The secret is read from the environment or ``st.secrets`` under ``secret_name``
+    (plaintext) or ``<secret_name>_SHA256`` (hex digest). When neither is
+    configured the gate stays closed, so a deployment without the secret simply
+    has no admin/dashboard access instead of a publicly known password.
+    """
+    import hmac
+    if not supplied:
+        return False
+    plain, digest = "", ""
+    for key, target in ((secret_name, "plain"), (secret_name + "_SHA256", "digest")):
+        value = os.environ.get(key, "")
+        if not value:
+            try:
+                value = str(st.secrets.get(key, "") or "")
+            except Exception:  # no secrets.toml configured
+                value = ""
+        if target == "plain":
+            plain = value
+        else:
+            digest = value.strip().lower()
+    if plain and hmac.compare_digest(supplied.encode(), plain.encode()):
+        return True
+    if digest and hmac.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(), digest):
+        return True
+    return False
+
+
+VALIDITY_NOTICE = (
+    "**Synthetic data, not evidence.** The effects in this dataset are the ones the "
+    "simulation was configured to produce, so significance tests and effect sizes computed "
+    "on it describe the generator's settings, not real participants or the real world. "
+    "Use it for teaching, building and testing analysis pipelines, and pre-registration "
+    "dry runs. Do not report it as empirical data."
+)
+
+
+def _render_validity_notice() -> None:
+    """Show the standing caveat that simulated results are not empirical evidence."""
+    st.info(VALIDITY_NOTICE)
+
+
+def _collect_qsf_if_consented(filename: str, content: bytes) -> None:
+    """Forward an UPLOADED survey file to the research collection repo ONLY with explicit consent.
+
+    Collection is opt-in per file: the consent checkbox is keyed by a nonce that is
+    advanced as soon as one file has been shared (or the consent is consumed), so a single
+    tick can never authorize a later upload, a different study, or a generated design.
+    """
+    try:
+        _nonce = st.session_state.get("_share_consent_nonce", 0)
+        if st.session_state.get(f"share_survey_consent_{_nonce}", False):
+            st.session_state["_share_consent_nonce"] = _nonce + 1  # consume this consent
+            collect_qsf_async(filename, content)
+    except Exception as _e:  # collection must never affect the workflow
+        _app_logging.getLogger(__name__).debug("QSF collection skipped: %s", _e)
 
 
 # v1.0.6.3: File-based admin persistence so simulation history survives browser refresh
@@ -7624,8 +7672,7 @@ def _render_admin_dashboard() -> None:
             st.markdown("### Authentication Required")
             _pw = st.text_input("Admin Password", type="password", key="_admin_pw_input")
             if st.button("Authenticate", type="primary", use_container_width=True, key="_admin_auth_btn"):
-                _hash = hashlib.sha256(_pw.encode()).hexdigest()
-                if _hash == _ADMIN_PASSWORD_HASH:
+                if _access_code_matches(_pw, "ADMIN_PASSWORD"):
                     st.session_state["_admin_authenticated"] = True
                     st.rerun()
                 else:
@@ -8850,6 +8897,32 @@ if active_page == -1:
                 key="landing_methods_pdf",
             )
 
+    # v1.2.9.0: Serve the student-facing "how to simulate your data" guide from the
+    # app itself. Previously this PDF was only reachable through its GitHub URL, so
+    # making the repository private would have broken every shared link to it.
+    guide_pdf_path = (
+        Path(__file__).resolve().parent.parent
+        / "docs" / "papers" / "Simulating_Behavioral_Experiments_with_ChatGPT.pdf"
+    )
+    if guide_pdf_path.exists():
+        st.markdown(
+            '<div style="text-align:center;margin:12px 0 8px 0;">'
+            '<span style="font-size:0.88rem;color:#4B5563;">'
+            '\U0001F4D8 New here? Read the step-by-step guide to simulating your data'
+            '</span></div>',
+            unsafe_allow_html=True,
+        )
+        _guide_dl1, _guide_dl2, _guide_dl3 = st.columns([1, 2, 1])
+        with _guide_dl2:
+            st.download_button(
+                "\u2B07 Download How-To Guide (PDF)",
+                data=guide_pdf_path.read_bytes(),
+                file_name="How_to_simulate_your_data_using_AI.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="landing_howto_pdf",
+            )
+
     # v1.9.0: Professional tabbed info sections (replacing generic expanders)
     st.markdown('<div class="landing-tabs-container">', unsafe_allow_html=True)
 
@@ -8906,7 +8979,7 @@ if active_page == -1:
             '<div class="capability-item">'
             '<div class="cap-icon">\U0001f9ea</div>'
             '<div class="cap-text"><strong>Test Before You Collect</strong>'
-            '<span>Generate a publication-ready CSV with realistic Likert-scale responses, attention check '
+            '<span>Generate a realistic Likert-scale CSV (synthetic, for teaching and pipeline testing), attention check '
             'failures, individual differences, and demographic distributions. The data mirrors real Qualtrics '
             'output format so your analysis scripts work identically on both simulated and real data.</span></div></div>'
 
@@ -9006,7 +9079,7 @@ if active_page == -1:
             '<span class="ri-venue">Trends in Cognitive Sciences</span>'
             '<span class="ri-insight">Can AI language models replace human participants?</span></a>'
 
-            '<a class="research-item" href="https://doi.org/10.1073/pnas.2317245121" target="_blank">'
+            '<a class="research-item" href="https://doi.org/10.1073/pnas.2518075122" target="_blank">'
             '<span class="ri-authors">Westwood (2025)</span>'
             '<span class="ri-venue">PNAS</span>'
             '<span class="ri-insight">Validating LLM-generated survey responses at scale</span></a>'
@@ -9165,6 +9238,13 @@ if active_page == 1:
                 change_qsf = True
 
             if change_qsf or not existing_qsf_content:
+                if is_collection_enabled():
+                    st.checkbox(
+                        "Share this survey file with the tool's researchers to help improve it "
+                        "(optional; remove participant or personal details first)",
+                        value=False,
+                        key=f"share_survey_consent_{st.session_state.get('_share_consent_nonce', 0)}",
+                    )
                 qsf_file = st.file_uploader(
                     "QSF file",
                     type=["qsf", "zip", "json"],
@@ -9210,7 +9290,7 @@ if active_page == 1:
                     # Naming: YYYY_MM_DD_OriginalFilename.qsf
                     _upload_date = datetime.now().strftime("%Y_%m_%d")
                     _upload_name = re.sub(r'[^a-zA-Z0-9_\-.]', '_', qsf_file.name)
-                    collect_qsf_async(f"{_upload_date}_{_upload_name}", payload)
+                    _collect_qsf_if_consented(f"{_upload_date}_{_upload_name}", payload)
                     with st.spinner("Analyzing experimental design..."):
                         enhanced_analysis = _perform_enhanced_analysis(
                             qsf_content=payload,
@@ -13195,6 +13275,23 @@ if active_page == 3:
                     _reset_generation_state()
                     _navigate_to(3)
         else:
+            _seed_c1, _seed_c2 = st.columns([2, 2])
+            with _seed_c1:
+                st.number_input(
+                    "Random seed (optional)",
+                    min_value=0, max_value=2**31 - 1,
+                    value=int(st.session_state.get("_user_seed_value", 0) or 0), step=1,
+                    key="user_random_seed",
+                    on_change=lambda: st.session_state.__setitem__(
+                        "_user_seed_value", int(st.session_state.get("user_random_seed", 0) or 0)),
+                    help=(
+                        "0 draws a fresh random seed each run. Enter any other number to make "
+                        "the run exactly repeatable: the same seed with the same design and "
+                        "settings reproduces the same dataset. The seed actually used is always "
+                        "written to the SIMULATION_SEED column and to Metadata.json. The quick preview "
+                        "is illustrative only and does not contain the rows of the final dataset."
+                    ),
+                )
             _gen_c1, _gen_c2 = st.columns([2, 2])
             with _gen_c1:
                 if st.button("Generate simulated dataset", type="primary", disabled=not can_generate, use_container_width=True, key="generate_dataset_btn"):
@@ -13643,6 +13740,12 @@ if active_page == 3:
             # v1.0.7.1: Clear previous exhaustion note
             st.session_state.pop("_gen_llm_exhaustion_note", None)
 
+            # User-chosen seed (0 / unset = fresh random seed, recorded in the output)
+            try:
+                _user_seed = int(st.session_state.get("_user_seed_value", 0) or 0) or None
+            except (TypeError, ValueError):
+                _user_seed = None
+
             # v1.8.8.0: Retrieve correlation matrix and missing data settings
             _engine_corr_matrix = None
             _raw_corr = inferred.get("correlation_matrix")
@@ -14006,7 +14109,7 @@ if active_page == 3:
                 open_ended_questions=open_ended_questions_for_engine,
                 study_context=_engine_study_context,
                 condition_allocation=condition_allocation,
-                seed=None,
+                seed=_user_seed,
                 mode="pilot" if not st.session_state.get("advanced_mode", False) else "final",
                 precomputed_visibility=inferred.get("condition_visibility_map", {}),
                 correlation_matrix=_engine_corr_matrix,
@@ -14893,7 +14996,26 @@ if active_page == 3:
                 _log(f"Schema validation error: {_schema_err}", level="warning")
                 schema_results = {"passed": True, "checks": [], "warnings": [f"Schema validation encountered an error: {_schema_err}"], "errors": []}
 
+            # Delivered data looks like a real Qualtrics export; simulator-internal columns go to a
+            # diagnostics sidecar. Analysis/reporting keeps using the engine df. Any failure here
+            # falls back to the plain engine CSV so a bug can never block the download.
             csv_bytes = df.to_csv(index=False).encode("utf-8")
+            diagnostics_bytes = None
+            qualtrics_raw_bytes = None
+            try:
+                from utils.qualtrics_export import (
+                    build_qualtrics_export as _build_qx,
+                    export_to_csv_bytes as _qx_csv_bytes,
+                    to_qualtrics_raw_csv as _qx_raw_csv,
+                )
+                _qx_df, _qx_diag_df = _build_qx(df, metadata)
+                _qx_labels = metadata.get("column_descriptions", {}) if isinstance(metadata, dict) else {}
+                _qx_main = _qx_csv_bytes(_qx_df)
+                _qx_diag = _qx_diag_df.to_csv(index=False).encode("utf-8")
+                _qx_raw = _qx_raw_csv(_qx_df, _qx_labels)
+                csv_bytes, diagnostics_bytes, qualtrics_raw_bytes = _qx_main, _qx_diag, _qx_raw
+            except Exception as _qx_err:
+                _log(f"Qualtrics-style export failed, delivering plain engine CSV: {_qx_err}", level="error")
             meta_bytes = _safe_json(metadata).encode("utf-8")
             explainer_bytes = explainer.encode("utf-8")
             r_bytes = r_script.encode("utf-8")
@@ -14978,6 +15100,11 @@ if active_page == 3:
                 "User_Study_Summary.html": instructor_html_bytes,  # Same summary in HTML (easy to view in browser)
             }
 
+            if diagnostics_bytes is not None:
+                files["Simulation_Diagnostics.csv"] = diagnostics_bytes
+            if qualtrics_raw_bytes is not None:
+                files["Simulated_Data_Qualtrics_Raw.csv"] = qualtrics_raw_bytes
+
             # Include uploaded source files in "Source_Files" subfolder
             qsf_content = st.session_state.get("qsf_raw_content")
             if qsf_content:
@@ -15053,7 +15180,10 @@ if active_page == 3:
                 _log(f"ZIP creation failed: {_zip_exc}", level="warning")
                 # Create minimal ZIP with just the CSV
                 try:
-                    zip_bytes = _bytes_to_zip({"Simulated_Data.csv": csv_bytes})
+                    _min_files = {"Simulated_Data.csv": csv_bytes}
+                    if diagnostics_bytes is not None:
+                        _min_files["Simulation_Diagnostics.csv"] = diagnostics_bytes
+                    zip_bytes = _bytes_to_zip(_min_files)
                 except Exception:
                     zip_bytes = csv_bytes  # Last resort: raw CSV as download
 
@@ -15116,7 +15246,9 @@ if active_page == 3:
                     + (f"OE Data Sources: {', '.join(metadata.get('oe_data_sources', []))}\n" if metadata.get('oe_data_sources') else "")
                     + "\n"
                     "Files in ZIP (what students see):\n"
-                    "- Simulated_Data.csv (the data)\n"
+                    "- Simulated_Data.csv (the data, Qualtrics export layout)\n"
+                    "- Simulated_Data_Qualtrics_Raw.csv (same data with the 3-row Qualtrics header)\n"
+                    "- Simulation_Diagnostics.csv (simulator-internal columns, keyed by ResponseId)\n"
                     "- Data_Codebook_Handbook.txt (variable coding)\n"
                     "- User_Study_Summary.md (study summary in Markdown)\n"
                     "- User_Study_Summary.html (same summary - opens in any browser)\n"
@@ -15381,7 +15513,17 @@ if active_page == 3:
                     unsafe_allow_html=True,
                 )
                 try:
-                    _recovery_csv = _recovery_df.to_csv(index=False)
+                    try:
+                        from utils.qualtrics_export import (
+                            build_qualtrics_export as _build_qx_rec,
+                            export_to_csv_bytes as _qx_csv_rec,
+                        )
+                        _recovery_csv = _qx_csv_rec(
+                            _build_qx_rec(_recovery_df, st.session_state.get("last_metadata") or {})[0]
+                        ).decode("utf-8")
+                    except Exception as _qx_rec_err:
+                        _log(f"Recovery export fell back to plain CSV: {_qx_rec_err}", level="error")
+                        _recovery_csv = _recovery_df.to_csv(index=False)
                     st.download_button(
                         label="Download recovered data (CSV)",
                         data=_recovery_csv,
@@ -15485,6 +15627,8 @@ if active_page == 3:
             unsafe_allow_html=True,
         )
 
+        _render_validity_notice()
+
         # v1.1.0.4: Generation method badge — show which engine was used
         _gen_meta = st.session_state.get("last_metadata", {}) or {}
         _gen_method_label = _gen_meta.get('generation_method_label', '')
@@ -15559,7 +15703,8 @@ if active_page == 3:
 
         # v1.4.16: ZIP contents list
         st.caption(
-            "Includes: Simulated_Data.csv, Data_Codebook_Handbook.txt, "
+            "Includes: Simulated_Data.csv, Simulated_Data_Qualtrics_Raw.csv, "
+            "Simulation_Diagnostics.csv, Data_Codebook_Handbook.txt, "
             "User_Study_Summary.html, R/Python/Julia/SPSS/Stata scripts, "
             "Metadata.json, Schema_Validation.json"
         )
@@ -15603,11 +15748,7 @@ if active_page == 3:
                 key="analytics_dashboard_pw",
                 help="Enter the access code to unlock the professional analytics dashboard.",
             )
-            _DASHBOARD_PW_HASH = "f35234aa5d24"  # MD5[:12] of "Dimant_Simulation"
-            _pw_valid = (
-                _dashboard_pw == "Dimant_Simulation"
-                or hashlib.md5(_dashboard_pw.encode()).hexdigest()[:12] == _DASHBOARD_PW_HASH
-            )
+            _pw_valid = _access_code_matches(_dashboard_pw, "ANALYTICS_DASHBOARD_PASSWORD")
             if _dashboard_pw and not _pw_valid:
                 st.warning("Incorrect access code.")
             elif _pw_valid:
@@ -15629,7 +15770,7 @@ if active_page == 3:
                     _track_user_email(to_email, source="zip_download")
                     subject = f"[Behavioral Simulation] Output: {st.session_state.get('study_title','Untitled Study')}"
                     body = (
-                        "Attached is the simulation output ZIP (Simulated.csv, metadata, analysis scripts).\n\n"
+                        "Attached is the simulation output ZIP (Simulated_Data.csv, Simulation_Diagnostics.csv, metadata, analysis scripts).\n\n"
                         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
                     )
                     ok, msg = _send_email(

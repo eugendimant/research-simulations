@@ -24,3 +24,10 @@ build/
 # Python bytecode anywhere (never commit)
 **/*.pyc
 **/__pycache__/
+
+# Agent worktrees
+.claude/
+
+# Streamlit secrets (never commit)
+.streamlit/secrets.toml
+secrets.toml

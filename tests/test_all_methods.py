@@ -7,8 +7,10 @@ import sys
 import os
 import traceback
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "simulation_app"))
-os.chdir(os.path.join(os.path.dirname(__file__), "..", "simulation_app"))
+_APP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "simulation_app")
 
 from utils.enhanced_simulation_engine import EnhancedSimulationEngine, EffectSizeSpec
 
@@ -208,5 +210,27 @@ def main():
     return 0 if total - passed == 0 else 1
 
 
+@pytest.fixture
+def app_cwd(monkeypatch):
+    monkeypatch.chdir(_APP_DIR)
+
+
+_METHODS = [
+    pytest.param("Template Engine", True, False, id="template"),
+    pytest.param("Adaptive Behavioral Engine", True, True, id="adaptive"),
+    # AI paths wait on unreachable LLM providers (minutes each) -> slow
+    pytest.param("Built-in AI (free_llm)", False, False, id="free_llm", marks=pytest.mark.slow),
+    pytest.param("Own API Key", False, False, id="own_api", marks=pytest.mark.slow),
+]
+
+
+@pytest.mark.parametrize("n", [10, 50])
+@pytest.mark.parametrize("method_name,allow_fallback,use_socsim", _METHODS)
+def test_generation_method(app_cwd, method_name, allow_fallback, use_socsim, n):
+    success, msg, _df, _meta = run_method(method_name, allow_fallback, use_socsim, n)
+    assert success, f"{method_name} N={n} failed:\n{msg}"
+
+
 if __name__ == "__main__":
+    os.chdir(_APP_DIR)
     sys.exit(main())

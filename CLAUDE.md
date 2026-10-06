@@ -34,27 +34,28 @@ Always present the classification to the user for confirmation before proceeding
 The full system for generating realistic participant behavior: domain detection → persona filtering → weight adjustment → assignment → trait generation → response generation. Refers to the complete chain from `detected_domains` through persona selection (`_CONDITION_PERSONA_AFFINITIES`, `_ADJACENT_DOMAINS`) to the 10-step simulation pipeline in `enhanced_simulation_engine.py`.
 
 ### Admin Dashboard
-Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider stats, simulation history, session state explorer, system info. Password: "Dimant_Admin" (SHA-256 hashed, updated v1.0.4.8).
+Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider stats, simulation history, session state explorer, system info. Password comes from the `ADMIN_PASSWORD` (or `ADMIN_PASSWORD_SHA256`) secret/env var; with none configured the page stays locked. The analytics dashboard uses `ANALYTICS_DASHBOARD_PASSWORD` the same way.
 
 ---
 
-## ABSOLUTE RULE: Version Synchronization — ALL 9 Locations, EVERY Commit
+## ABSOLUTE RULE: Version Synchronization — ALL 10 Locations, EVERY Commit
 
 **A version mismatch causes a VISIBLE ERROR BANNER for all users.** The app checks `REQUIRED_UTILS_VERSION == utils.__version__` at startup. If they differ by even one digit, users see a yellow warning bar. **It MUST NEVER happen again.**
 
-### The 9 version locations — ALL must contain the EXACT SAME version string:
+### The 10 version locations — ALL must contain the EXACT SAME version string:
 
 | # | File | Location |
 |---|------|----------|
-| 1 | `simulation_app/app.py` | `REQUIRED_UTILS_VERSION = "X.X.X.X"` (line ~56) |
-| 2 | `simulation_app/app.py` | `APP_VERSION = "X.X.X.X"` (line ~122) |
-| 3 | `simulation_app/app.py` | `BUILD_ID = "YYYYMMDD-vXXXXX-description"` (line ~57) |
+| 1 | `simulation_app/app.py` | `REQUIRED_UTILS_VERSION = "X.X.X.X"` (line ~57) |
+| 2 | `simulation_app/app.py` | `APP_VERSION = "X.X.X.X"` (line ~149) |
+| 3 | `simulation_app/app.py` | `BUILD_ID = "YYYYMMDD-vXXXXX-description"` (line ~58) |
 | 4 | `simulation_app/utils/__init__.py` | `__version__ = "X.X.X.X"` (line ~68) |
 | 5 | `simulation_app/utils/__init__.py` | `Version: X.X.X.X` in docstring (line ~5) |
 | 6 | `simulation_app/utils/qsf_preview.py` | `__version__ = "X.X.X.X"` (line ~36) |
 | 7 | `simulation_app/utils/response_library.py` | `__version__ = "X.X.X.X"` (line ~66) |
 | 8 | `simulation_app/README.md` | `**Version X.X.X.X**` in header (line ~3) |
-| 9 | `simulation_app/README.md` | `## Features (vX.X.X.X)` section header (line ~22) |
+| 9 | `simulation_app/README.md` | `## The behavioral engine (vX.X.X.X)` section header |
+| 10 | `simulation_app/README.md` | `(Version X.X.X.X)` in the citation block at the bottom |
 
 ### MANDATORY WORKFLOW — Do this BEFORE every commit:
 
@@ -63,7 +64,7 @@ Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider sta
 - Examples: `1.0.7.3` → `1.0.7.4`, `1.0.7.9` → `1.0.8.0`, `1.0.9.9` → `1.1.0.0`
 - **NEVER use two-digit segments** like `.10`, `.11`. Each segment is a single digit 0-9.
 
-**Step 2: Update ALL 9 locations with the SAME version string.** Never touch one file without the other. The #1 failure mode is updating `utils/__init__.py` without updating `REQUIRED_UTILS_VERSION` in `app.py` (or vice versa). Treat them as a single atomic operation.
+**Step 2: Update ALL 10 locations with the SAME version string.** Never touch one file without the other. The #1 failure mode is updating `utils/__init__.py` without updating `REQUIRED_UTILS_VERSION` in `app.py` (or vice versa). Treat them as a single atomic operation.
 
 **Step 3: Update BUILD_ID** to force Streamlit cache invalidation. Format: `"YYYYMMDD-vXXXXX-short-description"`
 
@@ -148,7 +149,7 @@ Never leave changes uncommitted. Never forget the PR link.
 
 ### Before Every Commit:
 1. Run `python3 -m py_compile <file>` on ALL modified Python files
-2. Verify version numbers are synchronized (all 9 locations)
+2. Verify version numbers are synchronized (all 10 locations)
 3. Run tests: `python3 -m pytest tests/test_e2e.py -v --tb=short`
 4. Test the app loads without version mismatch warning
 5. Ensure no syntax errors or import failures
@@ -171,8 +172,8 @@ Never leave changes uncommitted. Never forget the PR link.
 Runs in this order:
 1. **STEP 0 — Relational/Matching Condition Parsing** (fires FIRST): Detects WHO is matched with WHOM. Political identity detection, ingroup (+0.30) vs outgroup (-0.35 to -0.40). Sets `_handled_by_relational = True` to skip Step 1. Economic game DVs amplify by 1.3×.
 2. **STEP 1 — Simple valence keywords** (ONLY if STEP 0 didn't handle): "positive", "negative", "reward", "punishment". Note: 'lover' and 'hater' are EXCLUDED (identity markers, not valence).
-3. **STEP 2 — Domain-specific semantic effects** (14+ domains): Each domain has keyword→effect mappings grounded in literature.
-4. **STEP 3 — Condition trait modifiers**: Political identity → increased extremity/consistency. Outgroup → negative acquiescence bias.
+3. **STEP 2 — Domain-specific semantic effects** (43 domains): Each domain has keyword→effect mappings grounded in literature.
+4. **STEP 3 — Stable-hash jitter**: an MD5-derived nudge of ±0.04 so same-meaning condition labels still differ slightly (never positional). Condition trait modifiers — political identity → extremity/consistency, outgroup → negative acquiescence — are a *separate* method, `_get_condition_trait_modifier()` (`enhanced_simulation_engine.py:6415`), applied as STEP 1 of `_generate_scale_response()`.
 5. **STEP 4 — Domain-aware effect magnitude scaling**: Political + economic game: 1.6×. Political only: 1.3×. Economic game only: 1.2×.
 
 ### Economic Game DV Calibration
@@ -197,8 +198,8 @@ Runs in this order:
 2. **Full generation** (`_generate_open_response()` in enhanced_simulation_engine.py): Three-level cascade
 
 ### Three-Level Cascade:
-1. **LLM Generator** (llm_response_generator.py): Free LLM APIs (Google AI Flash → Lite → Groq → Cerebras → SambaNova → Mistral → OpenRouter)
-2. **ComprehensiveResponseGenerator** (response_library.py): Template-based + Markov chain
+1. **LLM Generator** (llm_response_generator.py): 9 free provider entries, in order — Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Gemini 2.5 Flash Lite → Groq GPT-OSS 120B → Groq Qwen3.6 27B → Cerebras GPT-OSS 120B → SambaNova Llama 3.3 70B → Mistral Small → OpenRouter Mistral Small 3.1. `_builtin_providers` in that file is authoritative
+2. **ComprehensiveResponseGenerator** (response_library.py): compositional template engine (opener + intent core + domain elaboration + coda). No Markov chain (the unused `text_generator.py` module that held one was removed in v1.2.8.9)
 3. **TextResponseGenerator** (persona_library.py): Basic template fallback
 
 ### Key Principle: NO response should EVER be off-topic
@@ -241,7 +242,7 @@ Every simulated participant is ONE person. Their numeric responses and open-text
 | 1. **Permanent disable** | `llm_response_generator.py` | `_force_disabled` flag + `disable_permanently()` — auto-recovery CANNOT undo | N/A |
 | 2. **Cumulative failures** | `llm_response_generator.py` | `_cumulative_failure_count` (never resets on success) | 15 total |
 | 3. **Per-participant timeout** | `enhanced_simulation_engine.py` | Tracks wall-clock time per OE response | 3 consecutive > 45s |
-| 4. **OE generation budget** | `enhanced_simulation_engine.py` | Uses `disable_permanently()` | 180s total |
+| 4. **OE generation budget** | `enhanced_simulation_engine.py` | Uses `disable_permanently()` | 180s per open-ended question |
 | 5. **Global watchdog thread** | `app.py` | Daemon thread checks every 30s — **progress-aware** (v1.2.6.4) | 120s stall (primary); 30 min absolute backstop fires ONLY if also stalled |
 
 > **v1.2.6.4 — Progress-aware watchdog:** Generation is NEVER killed while it is
@@ -266,7 +267,7 @@ Every simulated participant is ONE person. Their numeric responses and open-text
 Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests one provider. If it fails, the user sees 3 choices IMMEDIATELY (retry / own API key / template). The user is NEVER left waiting for a dead API.
 
 ### Progress Callback Architecture
-- `_report_progress("generating", i, n)` fires EVERY participant (not every 5%)
+- `_report_progress("generating", i, n)` fires EVERY participant **during OE generation** (`enhanced_simulation_engine.py:12367`). The scale-generation loop still fires on an interval — `max(1, min(20, n // 20))`, i.e. every ~5% capped at every 20 (`:11808`)
 - `_report_progress("open_ended_question", idx, total)` fires per-OE-question
 - UI shows: elapsed time, participant count, live LLM stats (AI count vs template count)
 - Post-generation: data source breakdown shown when template fallback was used
@@ -275,7 +276,7 @@ Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests 
 
 | Bug | What Happened | Where | Fix |
 |-----|---------------|-------|-----|
-| Auto-recovery cycle | `is_llm_available` re-enabled dead providers every 20s | `llm_response_generator.py:2296` | `_force_disabled` checked first |
+| Auto-recovery cycle | `is_llm_available` re-enabled dead providers every 20s | `llm_response_generator.py` — `is_llm_available` (~:2557) | `_force_disabled` checked first |
 | Quality filter too strict | Topic keyword matching rejected valid LLM responses silently | `_is_low_quality_response()` | 3-char prefix matching + accept-on-full-rejection |
 | Rate limiter timestamp | `wait_if_needed()` returned without appending timestamp when sleep > 15s | `_RateLimiter.wait_if_needed()` | Returns bool; caller checks |
 | Prefill budget too short | 30s filled only 2/15 pool buckets → 500+ on-demand calls | `enhanced_simulation_engine.py` | Increased to 90s |
@@ -311,15 +312,15 @@ Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests 
 
 ## Trash/Unused Block Handling
 
-- `EXCLUDED_BLOCK_NAMES` contains 200+ patterns
-- `EXCLUDED_BLOCK_PATTERNS` contains regex patterns
+- `QSFPreviewParser.EXCLUDED_BLOCK_NAMES` contains 644 literal block names
+- `QSFPreviewParser.EXCLUDED_BLOCK_PATTERNS` contains 77 regex patterns
 - `_is_excluded_block_name()` checks both
 - **Be aggressive with exclusions** — better to exclude too much than pollute conditions
 - Common patterns to exclude: `trash_`, `unused_`, `old_`, `test_`, `copy_`, consent, demographics, debrief, attention_check
 
 ---
 
-## DV Detection: `_detect_scales()` (6 types)
+## DV Detection: `_detect_scales()` (11 types)
 
 1. Matrix scales (multi-item Likert)
 2. Numbered items (Scale_1, Scale_2)
@@ -327,16 +328,26 @@ Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests 
 4. Sliders (visual analog)
 5. Single-item DVs (standalone ratings)
 6. Numeric inputs (WTP, quantities)
+7. Constant sum (budget allocation; renormalized to the total)
+8. Rank order (valid 1..k permutations)
+9. Best-worst — **detected only**, no generation
+10. Paired comparison — **detected only**, no generation
+11. Hot spot / heatmap — **detected only**, `_generate_heatmap_response` has no callers
 
-Always include `detected_from_qsf: True` flag.
+`single_choice` is NOT one of them: single-choice items are grouped into
+`likert`/`single_item`. Always include `detected_from_qsf: True` flag.
 
 ---
 
 ## State Persistence
 
-- `_save_step_state()` before navigation
-- `_restore_step_state()` at step start
-- `persist_keys` defines what survives navigation
+- Page-based rendering keeps state in `st.session_state` directly. The
+  `_save_step_state()` / `_restore_step_state()` snapshot pair was **removed in
+  v1.4.14** (see the note at `app.py:6531`) — do not reintroduce calls to them.
+- `_navigate_to()` mirrors `_widget_persist_keys` to `_p_<key>` so the values of
+  widgets that are no longer rendered survive a page switch. That list currently
+  holds four keys: `study_title`, `study_description`, `team_name`,
+  `team_members_raw` (`app.py:6575`).
 - Must persist: conditions, factors, confirmed scales/DVs, factorial config, sample/effect size
 
 ---
@@ -387,7 +398,7 @@ research-simulations/
 
 ### Code & Architecture
 1. Big-bang rewrites → break into iterations
-2. Forgetting version sync → always use the 9-location checklist
+2. Forgetting version sync → always use the 10-location checklist
 3. Assuming state persists → explicitly save and restore
 4. Skipping validation → users find edge cases you missed
 5. Suppressing exceptions silently (`except Exception: pass`) → always log at minimum
@@ -477,10 +488,15 @@ https://claude.ai/code/[session-id]
 - **Non-LLM max N = 10,000** (`MAX_SIMULATED_N`). Verified to complete in ~60s. LLM max stays at `MAX_FREE_LLM_N`.
 
 ### Next Targets (v1.0.6.x)
-1. Narrative transportation domain (Green & Brock 2000)
-2. Scale type detection expansion (matrix, forced choice, semantic differential)
-3. LLM response validation layer (off-topic detection, meta-commentary screening)
-4. Authority/NFC persona-level interaction in STEP 3
+1. Scale type detection expansion (forced choice, semantic differential — neither is detected today)
+2. LLM response validation layer (off-topic detection, meta-commentary screening)
+3. Authority/NFC persona-level interaction in STEP 3
+
+(Narrative transportation's STEP 2 domain shipped in v1.0.4.9, and matrix
+detection already exists. Note its `narrative_transportation` template set is
+unreachable: template lookup goes through `domain.value`
+(`response_library.py:8622`) and that key is not a `StudyDomain` value — one of
+ten such orphaned keys.)
 
 ### Business Roadmap
 Phase 1 (Foundation): User accounts + persistent workspaces + billing infrastructure

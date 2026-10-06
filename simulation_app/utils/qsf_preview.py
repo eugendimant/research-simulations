@@ -33,7 +33,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.2.8.7"  # v1.2.8.6: document recursive strategic reasoning
+__version__ = "1.2.9.0"
 
 
 # ============================================================================
@@ -284,7 +284,7 @@ class QSFPreviewParser:
         'opening', 'opening screen', 'opening page', 'initial', 'initial screen',
         'preamble', 'preface', 'preliminary', 'pre-survey', 'pre survey',
         'opening pages', 'intro block', 'introduction block',  # v1.0.0: From QSF training
-        'b1_intro', 'survey intro', 'begin study: information sheet and directions',
+        'b1_intro', 'begin study: information sheet and directions',
         'bds 5010: start', 'intro & consent', 'intro questions', 'start (everyone)',
         'intake', 'pre-experiment',  # v1.0.0: From QSF training
 
@@ -320,7 +320,7 @@ class QSFPreviewParser:
         'data quality', 'response quality', 'validity check', 'validity',
         'attention check 1', 'attention check 2', 'captcha 1', 'captcha 2',  # v1.0.0
         'captcha verification', 'captcha + attention check', 'final attention check',
-        'attention/comprehension check', 'attention checks', 'attention check 2 + quality',
+        'attention/comprehension check', 'attention check 2 + quality',
         'attention check with current solution', 'attention question',
         'attention_check_1_block', 'comprehension_check_block', 'manipulation_check_block',
         'comprehension 1', 'comprehension 2', 'comprehension questions', 'comprehension checks',
@@ -373,7 +373,7 @@ class QSFPreviewParser:
 
         # ========== PRACTICE / TRAINING ==========
         'practice', 'practice trial', 'practice trials', 'practice round',
-        'training', 'training trial', 'tutorial', 'warmup', 'warm up',
+        'training', 'training trial', 'warmup', 'warm up',
         'example', 'sample', 'demo', 'demonstration', 'dry run',
         'practice questions', 'practice block', 'training block',
         'trial run', 'test run', 'familiarization', 'practice session',
@@ -383,7 +383,7 @@ class QSFPreviewParser:
         'game', 'task', 'main task', 'primary task', 'core task',
         'pairing', 'pairing prompt', 'pair', 'matching', 'match',
         'question', 'questions', 'items', 'measures', 'scales',
-        'survey', 'questionnaire', 'assessment', 'test', 'exam',
+        'survey', 'questionnaire', 'assessment', 'exam',
         'section', 'part', 'module', 'component', 'segment',
         'questionaire', 'questionnaire ',  # v1.0.0: From QSF training (with typo)
         'b3_experiment', 'experiment', 'pilot',  # v1.0.0
@@ -405,7 +405,7 @@ class QSFPreviewParser:
         'random id', 'random id generation', 'randomid', 'romdom id',
         'respondent id generation', 'survey and mturk id', 'mturk participant',
         'bonus pay', 'payout1', 'payout2', 'payment/verification',
-        'completion', 'id', 'survey id',  # v1.0.0: From QSF training
+        'id', 'survey id',  # v1.0.0: From QSF training
 
         # ========== RANDOMIZATION ARTIFACTS ==========
         'randomizer', 'randomization', 'random', 'assignment',
@@ -591,7 +591,7 @@ class QSFPreviewParser:
         'priming', 'prime', 'primed',
         'frame', 'framing', 'framed',
         'message', 'nudge', 'default',
-        'ingroup', 'outgroup', 'ingroup', 'minimal group',
+        'ingroup', 'outgroup', 'minimal group',
         'prosocial', 'antisocial', 'altruistic', 'selfish',
         'cooperative', 'competitive',
         'punishment', 'reward',

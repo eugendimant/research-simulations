@@ -1,0 +1,47 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: long-running stress / full-matrix tests (deselect with -m 'not slow'; run with -m slow)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+extend-exclude = ["simulation_app/experimental_features"]
+
+[tool.ruff.lint]
+# Correctness-focused rules only: pyflakes (F), bugbear (B), bandit (S).
+select = ["F", "B", "S"]
+ignore = [
+    "S101",  # assert is the whole point of tests
+    "S311",  # random is used for simulation, not cryptography
+    "S324",  # hashlib md5/sha1 used for non-security ids
+    "B008",  # function calls in defaults (streamlit/dataclass idioms)
+    # ---- Baseline of pre-existing, low-severity findings (counts at time of adding;
+    # ---- paying them down is tracked separately, new code should not add to them):
+    "F541",  # f-string without placeholders          (178, cosmetic)
+    "F401",  # unused import                          (74; many are intentional re-exports / availability probes)
+    "F841",  # unused local variable                  (35)
+    "S110",  # try/except/pass                        (70; CLAUDE.md asks for logging - tracked separately)
+    "S112",  # try/except/continue                    (5)
+    "B007",  # unused loop control variable           (43)
+    "B905",  # zip() without strict=                  (27)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S102", "S603", "S607"]  # tests exec generated scripts and shell out to ruff
+# ---- Explicit baseline for the REAL-looking findings that remain (37 at time of adding).
+# ---- Each entry is a known issue to fix in source, NOT a judgement that it is fine.
+"simulation_app/app.py" = [
+    "S105",  # _ADMIN_PASSWORD_HASH is a SHA-256 hash, not a plaintext password
+    "S108",  # "/tmp/.sim_admin" state file
+]
+"simulation_app/utils/hbs_error_calibrator.py" = ["S105"]       # "token" is a language token, not a secret (3)
+"simulation_app/utils/llm_response_generator.py" = [
+    "S310",  # urlopen on https provider URLs (2)
+]
+"simulation_app/utils/socsim_adapter.py" = ["F821"]  # `pd` only used in string annotations (3): false positive

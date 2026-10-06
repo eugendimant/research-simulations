@@ -1,5 +1,8 @@
 # Response to the Code Audit (v1.2.7.5)
 
+> **Historical record.** This document describes the state of the code at v1.2.7.5 and v1.2.7.9. Line numbers, version
+> strings and counts in it are correct as of those releases and are **not** updated for later versions.
+
 This document records how each item in `research_simulations_code_audit.md` was
 handled. Each item was **verified against the actual code before any change**;
 several "potential" issues turned out to be already-safe and are marked as such.

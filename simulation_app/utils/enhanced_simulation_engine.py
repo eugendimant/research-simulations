@@ -119,8 +119,9 @@ approach combines:
 
 2. PERSONA-BASED RESPONSE GENERATION
 ------------------------------------
-Participants are assigned to behavioral personas based on empirically-derived
-population weights:
+Participants are assigned to behavioral personas. Base weights are listed below;
+study-specific reweighting then spreads them across domain personas, so the
+realised mix differs per study:
 
 CORE RESPONSE STYLE PERSONAS (Universal):
 - Engaged Responder (35%): Krosnick's "optimizers" - high attention, full scale use
@@ -199,14 +200,18 @@ STEP 10: Social Desirability Bias (Paulhus, 1991)
 - Inflation = (SD - 0.5) × range × 0.12
 - ~0.5-1.0 point inflation for high IM
 
-4. VALIDATION BENCHMARKS
-------------------------
-The simulation produces data matching empirical benchmarks:
-- Mean responses: 4.0-5.2 on 7-point scales (with positivity bias)
-- Within-condition SD: 1.2-1.8
-- Between-condition Cohen's d: As configured or 0.4-0.6 auto-generated
-- Attention check pass rate: 85-95% (after careless exclusion)
-- Cronbach's α for multi-item scales: 0.70-0.90
+4. VALIDATION STATUS
+--------------------
+The generator has NOT been validated against real participant data. What the test
+suite checks today:
+- Responses stay inside each scale's bounds; the same seed reproduces the same data.
+- A configured Cohen's d is recovered on the scale mean within roughly +/-12%
+  (tests/test_effect_size_recovery.py), including 0/null effects.
+- Reverse-keyed items correlate negatively with their scale before recoding.
+Distributional realism (marginals, scale reliability, cross-scale correlations,
+timing) is a design goal that is still being measured, not an established property.
+Effects that are not configured explicitly are inferred from condition labels and
+are exploratory only.
 
 5. KEY CITATIONS
 ----------------
@@ -1386,8 +1391,15 @@ def _inject_inter_item_correlation(
     scale_min: int,
     scale_max: int,
     seed: Optional[int] = None,
+    reverse_items: Optional[Any] = None,
 ) -> np.ndarray:
     """Inject inter-item correlation into independently generated scale items.
+
+    Reverse-keyed items (``reverse_items``, 1-indexed) are recoded to the
+    construct's direction before blending and flipped back afterwards. Without
+    this, blending toward the RAW row mean forced reverse-keyed items to correlate
+    POSITIVELY with the rest of the scale, so a researcher who recodes them (as
+    anyone would) got a negative Cronbach's alpha.
 
     Uses a mixing approach: blend each item with a common factor (the
     participant's row mean) to achieve the target Cronbach's alpha, then
@@ -1410,6 +1422,17 @@ def _inject_inter_item_correlation(
     n, k = item_matrix.shape
     if k <= 1 or n <= 1:
         return item_matrix
+
+    _rev_idx = sorted({int(r) - 1 for r in (reverse_items or [])
+                       if str(r).lstrip("-").isdigit() and 1 <= int(r) <= k})
+    if _rev_idx:
+        _flip = float(scale_min) + float(scale_max)
+        _recoded = np.asarray(item_matrix, dtype=float).copy()
+        _recoded[:, _rev_idx] = _flip - _recoded[:, _rev_idx]
+        _out = _inject_inter_item_correlation(_recoded, target_alpha, scale_min, scale_max, seed=seed)
+        _out = np.asarray(_out, dtype=float).copy()
+        _out[:, _rev_idx] = _flip - _out[:, _rev_idx]
+        return np.clip(np.round(_out), scale_min, scale_max).astype(int)
 
     # Target average inter-item correlation from Spearman-Brown
     denom = k - target_alpha * (k - 1)
@@ -2855,6 +2878,300 @@ class ExclusionCriteria:
     exclude_careless_responders: bool = False  # If True, flags but doesn't exclude
 
 
+def _attenuate_inter_item_correlation(
+    item_matrix: np.ndarray,
+    current_alpha: float,
+    target_alpha: float,
+    scale_min: int,
+    scale_max: int,
+    seed: int,
+) -> np.ndarray:
+    """Lower an implausibly high Cronbach's alpha by adding item-specific noise.
+
+    Items generated from a strong shared person tendency can reach alpha ~0.95+,
+    above what real multi-item attitude scales show (typically 0.80-0.92) and a
+    "too clean" tell. Classical test theory: adding independent noise with
+    variance lam * var(item) scales the inter-item correlation by 1/(1+lam), so
+    lam = r_now / r_target - 1. Each item is then rescaled by 1/sqrt(1+lam) around
+    its own mean, which preserves per-item means and SDs. ``item_matrix`` must be in
+    the CONSTRUCT direction (reverse items already recoded).
+    """
+    n, k = item_matrix.shape
+    if k < 3 or n < 10 or current_alpha <= target_alpha:
+        return item_matrix
+
+    def _r_bar(alpha: float) -> float:
+        return alpha / (k - alpha * (k - 1))
+
+    r_now, r_tgt = _r_bar(min(current_alpha, 0.995)), _r_bar(target_alpha)
+    if r_tgt <= 0 or r_now <= r_tgt:
+        return item_matrix
+    lam = r_now / r_tgt - 1.0
+    rng = np.random.RandomState(int(seed) & 0x7FFFFFFF)
+    X = np.asarray(item_matrix, dtype=float)
+    mu = X.mean(axis=0, keepdims=True)
+    C = X - mu
+    noise = rng.normal(0.0, 1.0, size=X.shape) * np.sqrt(lam) * C.std(axis=0, keepdims=True)
+    out = mu + (C + noise) / np.sqrt(1.0 + lam)
+    return np.clip(np.round(out), scale_min, scale_max).astype(int)
+
+
+# ---------------------------------------------------------------------------
+# Economic-game outcome distributions (knowledge-base driven)
+# ---------------------------------------------------------------------------
+_GAME_QFN_CACHE: Dict[Any, Any] = {}
+
+
+def _parse_subpop_band(name: str) -> Optional[Tuple[float, float]]:
+    """Map a knowledge-base subpopulation name to an allocation band (proportions).
+
+    Understands the numeric naming used for dictator/ultimatum types:
+    'pure_selfish_zero' -> (0, 0); 'low_giver_1_20' -> (.01, .20);
+    'fair_split_50' -> (.5, .5); 'generous_51_plus' -> (.51, .75);
+    'low_offer_below_25' -> (0, .25); 'hyper_fair_above_50' -> (.5, .65).
+    Returns None when the name carries no parseable range.
+    """
+    n = str(name).lower()
+    if "zero" in n or n.endswith("selfish"):
+        return (0.0, 0.0)
+    m = re.search(r"(\d+)_(\d+)$", n)
+    if m:
+        return (int(m.group(1)) / 100.0, int(m.group(2)) / 100.0)
+    m = re.search(r"(\d+)_plus$", n)
+    if m:
+        lo = int(m.group(1)) / 100.0
+        return (lo, min(1.0, lo + 0.30))
+    m = re.search(r"above_(\d+)$", n)
+    if m:
+        lo = int(m.group(1)) / 100.0
+        return (lo, min(1.0, lo + 0.15))
+    m = re.search(r"below_(\d+)$", n)
+    if m:
+        return (0.0, int(m.group(1)) / 100.0)
+    m = re.search(r"_(\d+)$", n)
+    if m:
+        v = int(m.group(1)) / 100.0
+        return (v, v)
+    return None
+
+
+def _game_quantile_fn(dist: Dict[str, Any]):
+    """Return q in (0,1) -> allocation proportion in [0,1] for a game distribution.
+
+    Subpopulation mixtures (zero spike / fair-split spike / bands) are used when
+    every subpopulation name is parseable; otherwise a Beta matched to the
+    published mean/SD (shape-agnostic). Returns None if neither is feasible.
+    Deterministic (seeded empirical grid), numpy-only.
+    """
+    key = (str(dist.get("game")), str(dist.get("variant")))
+    if key in _GAME_QFN_CACHE:
+        return _GAME_QFN_CACHE[key]
+    fn = None
+    subpops = dist.get("subpops") or {}
+    bands = []
+    if subpops:
+        for name, w in subpops.items():
+            b = _parse_subpop_band(name)
+            if b is None or w <= 0:
+                bands = []
+                break
+            bands.append((b[0], b[1], float(w)))
+    if bands:
+        bands.sort(key=lambda t: (t[0], t[1]))
+        total = sum(b[2] for b in bands)
+        cum, edges = 0.0, []
+        for lo, hi, w in bands:
+            edges.append((cum / total, (cum + w) / total, lo, hi))
+            cum += w
+
+        _edges = tuple(edges)
+
+        def _eval(q: float, gamma: float) -> float:
+            q = min(max(q, 0.0), 1.0 - 1e-12)
+            for c0, c1, lo, hi in _edges:
+                if q < c1:
+                    if hi <= lo:
+                        return lo
+                    t = (q - c0) / max(c1 - c0, 1e-12)
+                    return lo + (t ** gamma) * (hi - lo)
+            return _edges[-1][3]
+
+        # The published mean and the subpopulation shares are not always mutually
+        # consistent (dictator: shares imply ~0.23, Engel's mean is 0.28). Tilt mass
+        # inside the continuous bands (one exponent, solved by bisection) so the
+        # mixture hits the published mean while spikes and shares stay intact.
+        _target = float(dist.get("mean", 0.0))
+        _grid = np.linspace(0.0005, 0.9995, 2000)
+        _lo_g, _hi_g = 0.25, 1.0
+        gamma = 1.0
+        if _target > 0:
+            if np.mean([_eval(q, 1.0) for q in _grid]) < _target:
+                for _ in range(30):
+                    gamma = 0.5 * (_lo_g + _hi_g)
+                    if np.mean([_eval(q, gamma) for q in _grid]) < _target:
+                        _hi_g = gamma
+                    else:
+                        _lo_g = gamma
+                gamma = 0.5 * (_lo_g + _hi_g)
+
+        def fn(q: float, _g=gamma) -> float:
+            return _eval(q, _g)
+    else:
+        m, sd = float(dist.get("mean", 0.5)), float(dist.get("sd", 0.2))
+        if 0.04 < m < 0.96 and sd > 0.01:
+            sd = min(sd, 0.95 * float(np.sqrt(m * (1.0 - m))))
+            nu = m * (1.0 - m) / (sd * sd) - 1.0
+            if nu > 0.2:
+                grid = np.sort(np.random.RandomState(12345).beta(m * nu, (1.0 - m) * nu, 20001))
+                qs = np.linspace(0.0, 1.0, grid.size)
+
+                def fn(q: float, _g=grid, _q=qs) -> float:
+                    return float(np.interp(q, _q, _g))
+    _GAME_QFN_CACHE[key] = fn
+    return fn
+
+
+# Population mean of the persona x condition interaction multiplier in
+# _generate_scale_response (measured empirically; see tests/test_effect_size_recovery.py).
+_INTERACTION_MULTIPLIER_POP_MEAN = 1.12
+# Latent-shift gain for game DVs (calibrated so recovered d on bounded, zero-inflated
+# allocations tracks the configured d; see tests/test_effect_size_recovery.py).
+_GAME_Z_GAIN = 0.9
+# Observed scale-score correlation produced by the pipeline for a latent correlation t:
+#   r_obs ~= _XCORR_FLOOR + _XCORR_SLOPE * t
+# The floor is common-method variance between unrelated scales (Podsakoff et al. 2003:
+# r ~0.10-0.20); the slope is attenuation from imperfect scale reliability (alpha ~0.85)
+# plus within-person noise. Fitted on a grid of targets (-0.6..+0.8, 4-item scales).
+_XCORR_FLOOR = 0.045
+_XCORR_SLOPE = 0.76
+_XCORR_SLOPE_NEG = 0.68   # damped on the negative side (shared tendency/g-factor add positive covariance)
+
+
+def _calibrate_latent_correlation(corr: Any) -> Any:
+    """Invert the pipeline's attenuation so configured correlations are reproduced.
+
+    Configured/inferred cross-DV correlations are treated as the OBSERVED correlation
+    between scale scores. The latent matrix handed to the generator is
+    t = (r - floor) / slope for every off-diagonal, clipped, then repaired to the
+    nearest positive-definite correlation matrix (eigenvalue floor + rescale).
+    """
+    C = np.asarray(corr, dtype=float).copy()
+    k = C.shape[0]
+    if C.ndim != 2 or C.shape[0] != C.shape[1] or k < 2:
+        return corr
+    T = np.clip(np.where(C >= _XCORR_FLOOR, (C - _XCORR_FLOOR) / _XCORR_SLOPE,
+                        (C - _XCORR_FLOOR) / _XCORR_SLOPE_NEG), -0.95, 0.95)
+    np.fill_diagonal(T, 1.0)
+    T = (T + T.T) / 2.0
+    w, V = np.linalg.eigh(T)
+    if w.min() < 1e-3:
+        w = np.clip(w, 1e-3, None)
+        T = V @ np.diag(w) @ V.T
+        d = np.sqrt(np.diag(T))
+        T = T / np.outer(d, d)
+        np.fill_diagonal(T, 1.0)
+    return T
+
+
+# Cross-scale coupling knobs (calibrated against a grid of target correlations;
+# see tests/test_effect_size_recovery.py::test_cross_scale_correlation_*).
+_SHARED_TENDENCY_WEIGHT = 0.10   # weight of the persona-wide response tendency in each scale's base
+_INDEP_TENDENCY_SD = 0.06        # SD of the per-scale independent tendency draw
+_LATENT_WEIGHT_MULT = 1.6        # multiplier on the correlated-latent weight
+_G_FACTOR_MULT = 0.5             # multiplier on the common-method g-factor strength
+_COHERENCE_MULT = 0.3            # multiplier on the running-mean cross-DV coherence pull
+_INERTIA_MULT = 0.2              # multiplier on the recent-item anchoring pull (Schwarz & Strack)
+
+# Literature anchoring of automatic effects ---------------------------------------
+# When the study text names a paradigm that has a meta-analytic estimate in
+# META_ANALYTIC_DB (anchoring, default effects, scarcity, ...), the coarse domain
+# multiplier is replaced by one derived from that estimate, so an uncalibrated
+# design gets the published magnitude rather than a generic domain guess.
+_META_GENERIC_TOKENS = frozenset({
+    "meta", "effect", "effects", "general", "expanded", "extended", "and", "the", "for", "vs",
+    "in", "of", "to",
+})
+# Reference nominal d produced by a multiplier of 1.0 (measured on the valence
+# contrast, see tests/test_effect_size_recovery.py::test_meta_anchored_effect_magnitude).
+_META_REFERENCE_D = 0.6
+_META_INDEX_CACHE: Optional[List[Tuple[str, float, Tuple[str, ...]]]] = None
+
+
+# Single-word paradigm names distinctive enough to trigger on their own; every other
+# single-token key needs one of its explicit phrase aliases below.
+_META_SINGLE_TOKEN_OK = frozenset({
+    "anchoring", "bystander", "inoculation", "endowment", "deindividuation", "spotlight",
+    "placebo", "interleaving", "retargeting", "representativeness", "decoy", "denomination",
+    "psychotherapy", "scarcity",
+})
+_META_ALIASES: Dict[str, Tuple[str, ...]] = {
+    "default_effect": ("default effect", "default option", "opt out", "opt-out", "opt in", "opt-in",
+                       "default enrollment"),
+    "framing_general_meta": ("framing effect", "message framing", "gain frame", "loss frame",
+                             "gain framing", "loss framing"),
+    "testing_effect_meta": ("testing effect", "retrieval practice"),
+}
+
+
+def _meta_index() -> List[Tuple[str, float, Tuple[Any, ...]]]:
+    """Build (key, effect_d, patterns) for contrast-type META_ANALYTIC_DB entries.
+
+    Multi-token names must occur in order within a short window (adjacent-ish), so
+    unrelated words scattered through a study text cannot assemble a paradigm.
+    """
+    global _META_INDEX_CACHE
+    if _META_INDEX_CACHE is not None:
+        return _META_INDEX_CACHE
+    out: List[Tuple[str, float, Tuple[Any, ...]]] = []
+    if HAS_KNOWLEDGE_BASE:
+        for key, entry in META_ANALYTIC_DB.items():
+            d = abs(float(getattr(entry, "effect_d", 0.0) or 0.0))
+            if d < 0.05 or "game" in key or "auction" in key or "taking" in key:
+                continue  # baselines/games are handled by GAME_CALIBRATIONS
+            toks = [t for t in re.split(r"[^a-z]+", key.lower()) if t and t not in _META_GENERIC_TOKENS]
+            if not toks or not any(len(t) >= 5 for t in toks):
+                continue
+            pats: List[Any] = []
+            if len(toks) == 1:
+                if toks[0] in _META_SINGLE_TOKEN_OK:
+                    pats.append(re.compile(r"\b" + re.escape(toks[0][:max(5, len(toks[0]) - 2)]) + r"\w*"))
+            else:
+                gap = r"[\W_]+(?:\w+[\W_]+){0,2}"
+                pats.append(re.compile(gap.join(r"\b" + re.escape(t[:max(5, len(t) - 2)]) + r"\w*" for t in toks)))
+            for al in _META_ALIASES.get(key, ()):
+                pats.append(re.compile(r"\b" + re.escape(al) + r"\b"))
+            if pats:
+                out.append((key, d, tuple(pats)))
+    _META_INDEX_CACHE = out
+    return out
+
+
+def _match_meta_effect(text: str) -> Optional[float]:
+    """Return the meta-analytic |d| for the paradigm named in ``text``, or None.
+
+    The paradigm with the most specific (longest) match wins. When several
+    different paradigms match equally well and disagree by more than 0.15 the
+    text is ambiguous and no anchoring is applied.
+    """
+    text = str(text).lower()
+    hits: List[Tuple[int, float]] = []
+    for _key, d, pats in _meta_index():
+        best = 0
+        for pat in pats:
+            m = pat.search(text)
+            if m:
+                best = max(best, len(m.group(0)))
+        if best:
+            hits.append((best, d))
+    if not hits:
+        return None
+    top = max(h[0] for h in hits)
+    ds = [d for n, d in hits if n >= top * 0.999]
+    if max(ds) - min(ds) > 0.15:
+        return None
+    return float(sum(ds) / len(ds))
+
+
 class EnhancedSimulationEngine:
     """
     Advanced simulation engine for generating synthetic behavioral experiment data.
@@ -2998,7 +3315,9 @@ class EnhancedSimulationEngine:
         else:
             self.seed = int(seed) % (2**31)
 
-        self.run_id = f"{self.mode.upper()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{self.seed % 10000:04d}"
+        # Deterministic run id: the same seed must give a byte-identical dataset, so the
+        # id carries no wall-clock time. The generation timestamp lives in metadata only.
+        self.run_id = f"{self.mode.upper()}_S{self.seed:010d}"
 
         # v1.2.7.5: Do NOT seed the GLOBAL np.random / random here. All generation
         # uses per-call seeded RandomState/random.Random(self.seed + ...) instances,
@@ -3020,13 +3339,13 @@ class EnhancedSimulationEngine:
             condition_text, ""
         )
         # Merge detected domains
-        all_domains = list(set(self.detected_domains + condition_domains))
+        all_domains = list(dict.fromkeys(self.detected_domains + condition_domains))
         self.detected_domains = all_domains if all_domains else self.detected_domains
 
         # v1.3.6: Also merge in explicitly provided persona_domains from builder
         _explicit_persona_domains = self.study_context.get("persona_domains", [])
         if _explicit_persona_domains and isinstance(_explicit_persona_domains, list):
-            _merged = list(set(self.detected_domains + _explicit_persona_domains))
+            _merged = list(dict.fromkeys(self.detected_domains + _explicit_persona_domains))
             self.detected_domains = _merged if _merged else self.detected_domains
 
         self.available_personas = self.persona_library.get_personas_for_domains(
@@ -3426,6 +3745,8 @@ class EnhancedSimulationEngine:
             dropout_frac = self._should_dropout(i, all_traits[i])
             if dropout_frac is not None:
                 dropout_item = max(1, int(float(dropout_frac) * total_items))
+                if dropout_item >= total_items:
+                    continue  # would blank nothing: the participant finishes, so it is not a dropout
                 dropout_points[i] = dropout_item
                 dropout_count += 1
 
@@ -3456,12 +3777,23 @@ class EnhancedSimulationEngine:
                 prefix = col[:-5]  # Remove "_mean"
                 item_cols = [c for c in eligible_cols if c.startswith(prefix + "_") and c != col]
                 if item_cols:
+                    # Keep composites consistent with generate(): recode reverse-coded
+                    # items before averaging (see composite construction there).
+                    _rev, _flip = set(), 0.0
+                    for _le in (getattr(self, "_scale_generation_log", None) or []):
+                        _cols = _le.get("columns_generated") or []
+                        if _cols and _cols[0].rsplit("_", 1)[0] == prefix:
+                            _rev = set(_le.get("reverse_items") or [])
+                            _flip = float(_le.get("scale_min", 0)) + float(_le.get("scale_max", 0))
+                            break
                     for i in range(n):
                         item_vals = []
                         for ic in item_cols:
                             v = data[ic][i]
                             if v is not None and not (isinstance(v, float) and np.isnan(v)):
-                                item_vals.append(float(v))
+                                _idx = ic.rsplit("_", 1)[-1]
+                                _is_rev = _idx.isdigit() and int(_idx) in _rev
+                                item_vals.append(_flip - float(v) if _is_rev else float(v))
                         if item_vals:
                             data[col][i] = round(float(np.nanmean(item_vals)), 2)
                         else:
@@ -3796,25 +4128,57 @@ class EnhancedSimulationEngine:
         if _cache is None:
             _cache = {}
             self._effect_cache = _cache
-        _cache_key = (str(condition), str(variable))
+        _cache_key = (str(condition), str(variable), getattr(self, "_scale_effect_meta", {}).get(str(variable)))
         if _cache_key in _cache:
             return _cache[_cache_key]
         _result = self._compute_effect_for_condition(condition, variable)
         _cache[_cache_key] = _result
         return _result
 
+    # Effective between-item correlation of the simulated response pipeline used
+    # to relate single-item d to scale-mean d (fitted on a 5/7/11-pt, k=1..8 grid).
+    _EFFECT_ITEM_RHO = 0.20
+
+    def _explicit_effect_scale(self, variable: str) -> float:
+        """Multiplier that makes a configured Cohen's d refer to the scale MEAN.
+
+        Averaging k items shrinks the within-condition SD by sqrt((1+(k-1)rho)/k)
+        while the condition gap is unchanged, so composite d exceeds item d by
+        sqrt(k/(1+(k-1)rho)). Dividing the shift by that factor keeps the
+        recovered composite d on target. Very wide numeric scales (>= 50 points,
+        e.g. 0-100 sliders) recover ~10% low, so they get a 1.10 boost.
+        Returns 1.0 when the scale geometry is unknown (e.g. direct callers).
+        """
+        meta = getattr(self, "_scale_effect_meta", {}).get(str(variable))
+        if not meta:
+            return 1.0
+        k, smin, smax = meta
+        k = max(1, int(k))
+        rho = self._EFFECT_ITEM_RHO
+        factor = 1.0 / float(np.sqrt(k / (1.0 + (k - 1) * rho)))
+        if (smax - smin) >= 50:
+            factor *= 1.10
+        return factor
+
     def _compute_effect_for_condition(self, condition: str, variable: str) -> float:
         """v1.2.6.4: Uncached implementation of effect computation (see
         _get_effect_for_condition for memoization wrapper and docs)."""
-        # v1.4.11: Recalibrated effect multiplier for accuracy
-        # Converts Cohen's d to a 0-1 normalized shift
-        # d=0.5 -> 0.15 shift -> ~0.9 points on 7-point scale (observed d ≈ 0.5-0.7)
-        # Previous value of 0.40 produced observed d ~1.6x the specified d
-        COHENS_D_TO_NORMALIZED = 0.30
+        # Cohen's d is defined on the GAP between the two levels, in units of the
+        # within-condition SD. The gap is applied symmetrically (+d/2 / -d/2), and
+        # the empirical end-to-end gain of the response pipeline is calibrated so
+        # that the recovered d on a SINGLE ITEM equals the configured d:
+        #   0.125 = (per-side shift in scale-range units) / d, fitted on 7pt/5pt/11pt
+        #   single-item scales (recovered/target = 1.00 +/- 0.05, tests/
+        #   test_effect_size_recovery.py). Multi-item scales are then corrected by
+        #   _explicit_effect_scale() so d refers to the scale MEAN.
+        # Earlier values (0.30-0.40 per side) ignored the two-sided application and
+        # the real SD, inflating observed d ~4x (d=0.5 -> ~2.1).
+        COHENS_D_TO_NORMALIZED = 0.109
 
         # Check explicit effect size specifications -- accumulate ALL matching effects
         # for factorial designs where multiple effect specs may apply to one condition
         matched_effects: list = []
+        _variable_has_spec = False  # any explicit effect spec targets this variable
         condition_lower = str(condition).lower().strip()
         variable_lower = str(variable).lower().strip()
 
@@ -3840,14 +4204,20 @@ class EnhancedSimulationEngine:
             cohens_d = float(np.clip(abs(cohens_d), 0.0, 3.0))
 
             # Check if this effect spec matches the current variable
-            effect_var = str(_eget(effect, 'variable', '')).lower().strip()
+            # Variable names reach the generator in their column form ("Perceived_Quality")
+            # while users type display names ("Perceived Quality"); compare on a
+            # separator-insensitive form so an explicit effect is never silently
+            # dropped (it would be replaced by keyword-derived automatic effects).
+            effect_var = re.sub(r"[\s_\-]+", " ", str(_eget(effect, 'variable', '')).lower()).strip()
+            _var_norm = re.sub(r"[\s_\-]+", " ", variable_lower).strip()
             variable_matches = (
-                effect_var == variable_lower
-                or variable_lower.startswith(effect_var)
-                or effect_var in variable_lower
+                effect_var == _var_norm
+                or _var_norm.startswith(effect_var)
+                or effect_var in _var_norm
             )
 
             if variable_matches:
+                _variable_has_spec = True
                 # v1.4.0: Improved level matching with false-positive prevention
                 level_high = str(_eget(effect, 'level_high', '')).lower().strip()
                 level_low = str(_eget(effect, 'level_low', '')).lower().strip()
@@ -3875,13 +4245,23 @@ class EnhancedSimulationEngine:
 
         if matched_effects:
             # Average matched effects so they don't stack unreasonably
-            return sum(matched_effects) / len(matched_effects)
+            return (sum(matched_effects) / len(matched_effects)) * self._explicit_effect_scale(variable)
+
+        # The user configured effects for this variable but none involves this
+        # condition (e.g. a Control group): it is the reference level. Do not add
+        # keyword-derived automatic effects on top of an explicit design.
+        if _variable_has_spec:
+            return 0.0
 
         # AUTO-GENERATE effect if no explicit specification
-        # This ensures conditions ALWAYS produce different means
-        return self._get_automatic_condition_effect(condition, variable)
+        # This ensures conditions ALWAYS produce different means.
+        # Automatic effects are expressed in the same normalised-shift currency as
+        # explicit ones (nominal d = gap / 0.25 of range), so they get the same
+        # item-count correction: otherwise a 4+ item composite shows d ~1.3-2x the
+        # literature value the keyword rule encodes (valence 1.3 vs ~0.6).
+        return self._get_automatic_condition_effect(condition, variable) * self._explicit_effect_scale(variable)
 
-    def _get_automatic_condition_effect(self, condition: str, variable: str) -> float:
+    def _get_automatic_condition_effect(self, condition: str, variable: str, _raw: bool = False) -> float:
         """
         Generate automatic condition effects based on SEMANTIC CONTENT, not position.
 
@@ -4209,7 +4589,7 @@ class EnhancedSimulationEngine:
         #   1. Track cumulative effect contributions per domain
         #   2. Attenuate effects from NON-detected domains by 0.5×
         #      (they may still be relevant, but less likely)
-        #   3. Cap total STEP 2 effect to ±0.45 to prevent runaway stacking
+        #   3. Cap total STEP 2 effect to ±0.50 to prevent runaway stacking
         #
         # This prevents a consumer study's "premium brand" condition from
         # also triggering social psychology (+authority), behavioral economics
@@ -4251,12 +4631,6 @@ class EnhancedSimulationEngine:
             42: {'behavioral_economics', 'organizational_behavior'},             # negotiation/bargaining
             43: {'behavioral_economics', 'moral_psychology', 'social_psychology'},  # charitable giving
         }
-
-        def _domain_is_relevant(domain_num: int) -> bool:
-            """Check if a STEP 2 domain is relevant to the detected study domains."""
-            if not _detected:
-                return True  # No detection → all domains equally relevant
-            return bool(_detected & _DOMAIN_RELEVANCE.get(domain_num, set()))
 
         # =====================================================================
         # DOMAIN 1: AI/TECHNOLOGY MANIPULATIONS
@@ -6063,7 +6437,7 @@ class EnhancedSimulationEngine:
         # After all STEP 2 domains have been checked, apply two safeguards:
         # 1. If total STEP 2 contribution is large AND came from domains not
         #    in self.detected_domains, attenuate by 0.5× (less likely relevant)
-        # 2. Cap total STEP 2 semantic_effect to ±0.45 to prevent runaway stacking
+        # 2. Cap total STEP 2 semantic_effect to ±0.50 to prevent runaway stacking
         # =====================================================================
         _step2_contribution = semantic_effect - _effect_before_step2
         if abs(_step2_contribution) > 0.30 and _detected:
@@ -6409,8 +6783,75 @@ class EnhancedSimulationEngine:
                      'retribution', 'deterrence']):
                 _domain_d_multiplier = 1.25
 
+        # Literature anchoring: a named paradigm with a meta-analytic estimate fixes the
+        # size of the design's main contrast (relational/economic-game designs keep their
+        # own calibrated scaling).
+        if not _raw and not _handled_by_relational and not _is_economic_game_dv:
+            _meta_d = _match_meta_effect(_study_text + " " + _all_conds_text + " " + _cond_desc_text)
+            if _meta_d is not None:
+                return self._meta_anchored_effect(condition, variable, _meta_d)
+
         # Apply Cohen's d scaling with domain-aware multiplier
         return semantic_effect * default_d * COHENS_D_TO_NORMALIZED * _domain_d_multiplier
+
+    # Tokens marking the reference arm of a control-vs-treatment design.
+    _CONTROL_ARM_WORDS = ("control", "baseline", "placebo", "waitlist", "wait-list", "wait list",
+                          "no treatment", "no intervention", "neutral", "comparison", "usual",
+                          "standard", "untreated", "none")
+    # DV-name tokens for constructs a beneficial treatment REDUCES.
+    _NEGATIVE_DV_RE = re.compile(
+        r"\b(distress|anxi|depress|stress|symptom|pain\b|burnout|prejudice|biased?\b|aggress|conflict|"
+        r"exhaust|bully|turnover|lonel|fear\b|risk behavio|misinformation|false belief|cheat|dishonest|"
+        r"use\b|usage|consumption|waste|smok|emission|intake|absentee|errors?\b|craving|relapse|"
+        r"discrimination|stigma|hostil|rumination|worry|guilt|shame)"
+    )
+
+    def _meta_anchored_effect(self, condition: str, variable: str, meta_d: float) -> float:
+        """Effect for ``condition`` when the study names a paradigm with a published estimate.
+
+        The semantic keyword machinery decides WHO is higher; the literature decides
+        HOW MUCH: the largest between-condition contrast is rescaled to ``meta_d``.
+        When the keywords carry no usable contrast (e.g. "Self-affirmation" vs
+        "Control"), the reference arm is the zero point and every other arm moves by
+        the published effect, in the direction implied by the DV (benefit raises
+        positive constructs and lowers symptom-type constructs).
+        """
+        cache = getattr(self, "_meta_anchor_cache", None)
+        if cache is None:
+            cache = self._meta_anchor_cache = {}
+        key = (str(variable), round(float(meta_d), 4), tuple(str(c) for c in (self.conditions or [])))
+        table = cache.get(key)
+        if table is None:
+            unit = 2.0 * 0.109 * float(meta_d)  # same currency as explicit specs: gap = 2*0.109*d
+            conds = [str(c) for c in (self.conditions or [])]
+            raw = {c: self._get_automatic_condition_effect(c, variable, _raw=True) for c in conds}
+            is_ctrl = {c: (any(w in c.lower() for w in self._CONTROL_ARM_WORDS)
+                           or bool(re.search(r"\b(no|without|absent|not)\b", c.lower()))) for c in conds}
+            gap = (max(raw.values()) - min(raw.values())) if raw else 0.0
+            table = {c: 0.0 for c in conds}
+            # keyword valence is a weak signal against a reference arm: require a larger
+            # semantic contrast there before trusting it over the DV-polarity rule
+            if gap >= (0.06 if any(is_ctrl.values()) else 0.03):
+                ctrl = [c for c in conds if is_ctrl[c]]
+                centre = float(np.mean([raw[c] for c in ctrl])) if ctrl else (max(raw.values()) + min(raw.values())) / 2.0
+                table = {c: (raw[c] - centre) / gap * unit for c in conds}
+            elif any(is_ctrl.values()) and not all(is_ctrl.values()):
+                _dv = (str(variable).replace("_", " ") + " " + str(self._dv_descriptions.get(str(variable).lower(), ""))).lower()
+                sign = -1.0 if bool(self._NEGATIVE_DV_RE.search(_dv)) else 1.0
+                table = {c: (0.0 if is_ctrl[c] else sign * unit) for c in conds}
+            else:
+                # No reference arm: order the arms by dose words (many/few, high/low, ...).
+                hi = {c: bool(re.search(r"\b(many|more|high|higher|large|strong|major|most|numerous|majority)\b", c.lower())) for c in conds}
+                lo = {c: bool(re.search(r"\b(few|fewer|less|low|lower|small|weak|minor|least|minority)\b", c.lower())) for c in conds}
+                if any(hi.values()) and any(lo.values()):
+                    _dv = (str(variable).replace("_", " ") + " " + str(self._dv_descriptions.get(str(variable).lower(), ""))).lower()
+                    sign = -1.0 if bool(self._NEGATIVE_DV_RE.search(_dv)) else 1.0
+                    table = {c: sign * unit / 2.0 * (1.0 if hi[c] and not lo[c] else -1.0 if lo[c] and not hi[c] else 0.0)
+                             for c in conds}
+                else:
+                    table = dict(raw)  # nothing orders the arms: keep the generic (unanchored) effects
+            cache[key] = table
+        return float(table.get(str(condition), 0.0))
 
     def _get_condition_trait_modifier(self, condition: str) -> Dict[str, float]:
         """
@@ -7118,6 +7559,14 @@ class EnhancedSimulationEngine:
                     calibration['positivity_bias'] = -0.05 if _kb_game.mean_proportion < 0.40 else 0.0
                     calibration['_game_variant'] = f"{_kb_game.game_type}_{_kb_game.variant}"
                     calibration['_kb_source'] = _kb_game.source
+                    # Full empirical distribution (shape, subpopulation shares) so the
+                    # generator can reproduce the real outcome distribution, not just
+                    # shift a tendency toward the published mean.
+                    calibration['_kb_dist'] = {
+                        'game': _kb_game.game_type, 'variant': _kb_game.variant,
+                        'mean': _kb_game.mean_proportion, 'sd': _kb_game.sd_proportion,
+                        'subpops': dict(_kb_game.subpopulations or {}),
+                    }
                     return calibration
             # v1.0.8.6: Detect game VARIANTS (taking, punishment, etc.)
             _has_taking = any(kw in _full_ctx for kw in [
@@ -7640,18 +8089,14 @@ class EnhancedSimulationEngine:
             calibration['positivity_bias'] = 0.10
             calibration['variance_adjustment'] = -0.02
 
-        # ===== CONDITION-BASED ADJUSTMENTS =====
-        # Adjust based on experimental condition keywords
-        if 'positive' in condition_lower or 'high' in condition_lower:
-            calibration['mean_adjustment'] += 0.03
-        elif 'negative' in condition_lower or 'low' in condition_lower:
-            calibration['mean_adjustment'] -= 0.03
-        elif 'control' in condition_lower or 'neutral' in condition_lower:
-            pass  # No adjustment for control/neutral conditions
-
-        # Longoni et al. (2019): AI-related conditions produce slightly negative shift
-        if any(kw in condition_lower for kw in ['ai', 'algorithm', 'robot', 'automat', 'machine']):
-            calibration['mean_adjustment'] -= 0.02
+        # ===== CONDITION-BASED ADJUSTMENTS: intentionally NONE =====
+        # Condition effects belong exclusively to the effect pipeline
+        # (_get_effect_for_condition: user-specified d, or the literature-grounded
+        # automatic rules). This calibration used to add +/-0.03 (and -0.02 for any
+        # condition containing the substring 'ai') from bare substring checks on the
+        # condition name, a second, uncontrolled condition effect: d=0 between
+        # "High" and "Low" conditions still showed d ~0.24, a configured d got an
+        # unrequested boost, and names like "Paid"/"Fair"/"Maintain" matched 'ai'.
 
         return calibration
 
@@ -7955,8 +8400,8 @@ class EnhancedSimulationEngine:
         # behavior). At w=0.0 they are fully independent. Target: w ≈ 0.35
         # to match real human data where demographics/traits explain ~15-25%
         # of cross-scale variance.
-        _SHARED_WEIGHT = 0.35
-        _independent_tendency = _scale_noise_rng.normal(0.58, 0.15)
+        _SHARED_WEIGHT = _SHARED_TENDENCY_WEIGHT
+        _independent_tendency = _scale_noise_rng.normal(0.58, _INDEP_TENDENCY_SD)
         _independent_tendency = float(np.clip(_independent_tendency, 0.10, 0.90))
         _secondary_z = traits.get('_secondary_diversity_z', 0.0)
         _independent_tendency += _secondary_z * 0.06
@@ -8234,8 +8679,39 @@ class EnhancedSimulationEngine:
             )
             # Clamp to prevent extreme distortions
             _interaction_multiplier = float(np.clip(_interaction_multiplier, 0.25, 1.80))
+            # The persona factors above are NOT mean-1 in the simulated population
+            # (measured mean ~1.12 with default persona mix: processing depth alone
+            # averages ~1.1). Dividing by the population mean keeps the heterogeneity
+            # (SD ~0.13) but stops it from inflating the average effect.
+            _interaction_multiplier /= _INTERACTION_MULTIPLIER_POP_MEAN
 
             condition_effect *= _interaction_multiplier
+
+        # =====================================================================
+        # STEP 4-GAME: Economic-game DVs are drawn from the published outcome
+        # distribution (zero spike, 50/50 spike, bands; Engel 2011 etc.) instead
+        # of a Likert-style normal around a shifted tendency. A person-level latent
+        # (prosociality traits + noise) fixes WHERE in that distribution this
+        # participant sits; the condition effect shifts that latent, so group
+        # differences and discrimination effects still operate. Gated to
+        # allocation-sized, unipolar scales with a recognised KB game.
+        # =====================================================================
+        _kb_dist = domain_calibration.get('_kb_dist')
+        if (_kb_dist and not is_reverse and scale_range >= 10 and not _scale_geom['is_bipolar']
+                and domain_calibration.get('_game_variant') not in ('dictator_taking', 'dictator_third_party')):
+            _qfn = _game_quantile_fn(_kb_dist)
+            if _qfn is not None:
+                import math
+                _grng = np.random.RandomState((participant_seed * 7919 + 13) % (2**31))
+                _coop = _safe_trait_value(modified_traits.get("cooperation_tendency"), 0.5)
+                _emp = _safe_trait_value(modified_traits.get("empathy"), 0.5)
+                _zt = float(np.clip(((_coop - 0.5) + (_emp - 0.5)) / 2.0 / 0.2, -2.5, 2.5))
+                _w = 0.35
+                _z = _w * _zt + math.sqrt(1.0 - _w * _w) * float(_grng.normal())
+                _z_shift = condition_effect / (self._explicit_effect_scale(variable_name) * 0.25)
+                _q = 0.5 * (1.0 + math.erf((_z + _z_shift * _GAME_Z_GAIN) / math.sqrt(2.0)))
+                _val = scale_min + _qfn(_q) * scale_range
+                return int(max(scale_min, min(scale_max, int(round(_val)))))
 
         # Apply effect to tendency (normalized to 0-1 scale)
         # v1.0.8.6: Use dynamic bounds from scale geometry (wider for bipolar/novel)
@@ -8267,7 +8743,7 @@ class EnhancedSimulationEngine:
             # Base weight 0.15, boosted up to 0.22 for highly consistent/attentive,
             # reduced down to 0.08 for careless/inattentive
             _latent_weight = 0.15 + (_consistency - 0.5) * 0.10 + (_attention - 0.5) * 0.06
-            _latent_weight = float(np.clip(_latent_weight, 0.08, 0.22))
+            _latent_weight = float(np.clip(_latent_weight, 0.08, 0.22)) * _LATENT_WEIGHT_MULT
             _latent_effect = _latent_z * _latent_weight
             adjusted_tendency = float(np.clip(adjusted_tendency + _latent_effect, _bound_low, _bound_high))
 
@@ -8291,7 +8767,7 @@ class EnhancedSimulationEngine:
         # =====================================================================
         _g_factor_z = traits.get("_g_factor_z", 0.0)
         if _g_factor_z != 0.0:
-            _g_strength = traits.get("_g_factor_strength", 0.12)
+            _g_strength = traits.get("_g_factor_strength", 0.12) * _G_FACTOR_MULT
             # Determine construct-type-specific loading based on variable name
             # Podsakoff et al. (2003) meta-analytic loadings
             _var_lower = variable_name.lower()
@@ -8384,7 +8860,7 @@ class EnhancedSimulationEngine:
                 adjusted_tendency, scale_min, scale_max,
             )
             adjusted_tendency = float(np.clip(
-                adjusted_tendency + _inertia_pull, _bound_low, _bound_high
+                adjusted_tendency + _inertia_pull * _INERTIA_MULT, _bound_low, _bound_high
             ))
 
         # =====================================================================
@@ -8405,7 +8881,7 @@ class EnhancedSimulationEngine:
                     _consistency = _safe_trait_value(traits.get("response_consistency"), 0.60)
                     # Weight increases with consistency: careless participants are less coherent
                     _coherence_weight = 0.05 + (_consistency - 0.5) * 0.06
-                    _coherence_weight = float(np.clip(_coherence_weight, 0.02, 0.10))
+                    _coherence_weight = float(np.clip(_coherence_weight, 0.02, 0.10)) * _COHERENCE_MULT
                     # v1.0.8.6: Stronger coherence pull for economic game DVs
                     # A taker on one game should be selfish on another (Fehr & Schmidt 1999)
                     if _scale_geom['is_economic_game_allocation']:
@@ -8550,9 +9026,15 @@ class EnhancedSimulationEngine:
         if rng.random() < extremity * 0.45:  # Calibrated to produce ~15-20% endpoints for ERS
             # Use proportional noise near endpoints (scales to range)
             endpoint_noise = max(0.5, scale_range * 0.02)  # 2% of range, min 0.5
-            if response > (scale_min + scale_max) / 2.0:
+            # Extreme responders snap to an endpoint only when the item is at least
+            # moderately favourable/unfavourable to them (>= 15% of the range beyond
+            # the midpoint). Snapping EVERY response past the midpoint turned slight
+            # leaners into 7s and produced a ceiling spike taller than the 6 bin.
+            _mid = (scale_min + scale_max) / 2.0
+            _ers_margin = 0.15 * scale_range
+            if response > _mid + _ers_margin:
                 response = scale_max - float(rng.uniform(0, endpoint_noise))
-            else:
+            elif response < _mid - _ers_margin:
                 response = scale_min + float(rng.uniform(0, endpoint_noise))
 
         # =====================================================================
@@ -9103,6 +9585,29 @@ class EnhancedSimulationEngine:
     # Validates achieved within-person consistency and repairs violations.
     # ==================================================================
 
+    def _refresh_scale_composites(self, df: pd.DataFrame, scale_log: List[Dict[str, Any]]) -> None:
+        """Recompute each ``<Scale>_mean`` from its item columns (reverse-recoded, NaN-aware)."""
+        for entry in scale_log or []:
+            cols = [c for c in (entry.get("columns_generated") or []) if c in df.columns]
+            if not cols:
+                continue
+            mean_col = f"{cols[0].rsplit('_', 1)[0]}_mean"
+            if mean_col not in df.columns:
+                continue
+            rev = set(entry.get("reverse_items") or [])
+            flip = float(entry.get("scale_min", 1)) + float(entry.get("scale_max", 7))
+            vals = df[cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float, copy=True)
+            for j, col in enumerate(entry.get("columns_generated") or []):
+                if (j + 1) in rev and col in cols:
+                    k = cols.index(col)
+                    vals[:, k] = flip - vals[:, k]
+            answered = ~np.isnan(vals)
+            counts = answered.sum(axis=1)
+            sums = np.where(answered, vals, 0.0).sum(axis=1)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                means = np.where(counts > 0, sums / np.maximum(counts, 1), np.nan)
+            df[mean_col] = np.round(means, 2)
+
     def _audit_individual_consistency(
         self,
         df: pd.DataFrame,
@@ -9144,6 +9649,14 @@ class EnhancedSimulationEngine:
                 )
                 if item_matrix.shape[0] < 3 or item_matrix.shape[1] < 5:
                     continue
+                # Judge reliability in the construct direction (recode reverse items).
+                _audit_rev = [r - 1 for r in (log_entry.get("reverse_items") or [])
+                              if 1 <= r <= item_matrix.shape[0]]
+                if _audit_rev:
+                    item_matrix[_audit_rev, :] = (
+                        float(log_entry.get("scale_min", 1)) + float(log_entry.get("scale_max", 7))
+                        - item_matrix[_audit_rev, :]
+                    )
 
                 # Compute Cronbach's alpha
                 k = item_matrix.shape[0]
@@ -9170,12 +9683,23 @@ class EnhancedSimulationEngine:
                         _iic_seed = _stable_int_hash(f"{scale_name}|iic_loadings")
                         _repaired = _inject_inter_item_correlation(
                             _item_mat, target_alpha, scale_min, scale_max,
-                            seed=_iic_seed,
+                            seed=_iic_seed, reverse_items=log_entry.get("reverse_items"),
                         )
                         for j, c in enumerate(cols):
                             data[c] = _repaired[:, j].tolist()
                             if c in df.columns:
                                 df[c] = _repaired[:, j]
+                        # Items changed -> refresh this scale's composite (reverse-aware)
+                        _mcol = f"{cols[0].rsplit('_', 1)[0]}_mean"
+                        if _mcol in df.columns:
+                            _rv0 = [r - 1 for r in (log_entry.get("reverse_items") or []) if 1 <= r <= len(cols)]
+                            _sc = _repaired.astype(float).copy()
+                            if _rv0:
+                                _sc[:, _rv0] = (float(scale_min) + float(scale_max)) - _sc[:, _rv0]
+                            _newmeans = np.round(_sc.mean(axis=1), 2)
+                            df[_mcol] = _newmeans
+                            if _mcol in data:
+                                data[_mcol] = _newmeans.tolist()
                         audit_report["repairs_performed"] += 1
                         self._log(f"AUDIT REPAIR: Re-correlated '{scale_name}' "
                                   f"(alpha {alpha:.2f} → target {target_alpha:.2f})")
@@ -9234,9 +9758,15 @@ class EnhancedSimulationEngine:
                         if attn > 0.5:
                             # This participant shouldn't be straight-lining
                             # Mild repair: add small noise to 2-3 items
-                            _items_to_jitter = min(3, len(existing_cols))
+                            # Only jitter cells that were actually answered: missing
+                            # data is applied before this audit, and int(NaN) used to
+                            # crash the whole run for studies with missingness enabled.
+                            _answered_cols = [c for c in existing_cols if pd.notna(df.at[i, c])]
+                            _items_to_jitter = min(3, len(_answered_cols))
+                            if _items_to_jitter == 0:
+                                continue
                             _rng = np.random.RandomState((self.seed + i * 31) % (2**31))
-                            _jitter_cols = _rng.choice(existing_cols, _items_to_jitter, replace=False)
+                            _jitter_cols = _rng.choice(_answered_cols, _items_to_jitter, replace=False)
                             for jc in _jitter_cols:
                                 _old_val = int(df.at[i, jc]) if i in df.index else int(data[jc][i])
                                 _noise = int(_rng.choice([-1, 1]))
@@ -9246,6 +9776,22 @@ class EnhancedSimulationEngine:
                                     df.at[i, jc] = _new_val
                                 data[jc][i] = _new_val
                             audit_report["repairs_performed"] += 1
+                            # Keep each scale composite consistent with its (now
+                            # edited) items: recode reverse items, skip missing cells.
+                            for _le in scale_generation_log:
+                                _lc = _le.get("columns_generated") or []
+                                _mc = f"{_lc[0].rsplit('_', 1)[0]}_mean" if _lc else ""
+                                if len(_lc) < 2 or _mc not in df.columns or not any(c in _jitter_cols for c in _lc):
+                                    continue
+                                _rv = set(_le.get("reverse_items") or [])
+                                _fl = float(_le.get("scale_min", 0)) + float(_le.get("scale_max", 0))
+                                _vs = [(_fl - float(df.at[i, c])) if (j + 1) in _rv else float(df.at[i, c])
+                                       for j, c in enumerate(_lc) if c in df.columns and pd.notna(df.at[i, c])]
+                                if _vs:
+                                    _newmean = round(float(np.mean(_vs)), 2)
+                                    df.at[i, _mc] = _newmean
+                                    if _mc in data:
+                                        data[_mc][i] = _newmean
 
         return audit_report
 
@@ -10005,6 +10551,11 @@ class EnhancedSimulationEngine:
         # Each entry maps a keyword (found in study_domain or study_title) to
         # a domain-specific description that grounds open-text responses.
         # Adaptive fallback chain (Steps B-D) supplements for topics not in table.
+        # v1.2.8.8: duplicate keys removed (corruption/memory/family/conspiracy/belief were
+        # defined twice; Python kept the LAST value). Kept the FIRST (more specific,
+        # natural-language) phrasing: 'conspiracy_theory' already covers the 'alternative
+        # explanations' wording, and the narrative-domain 'memory'/'family'/'belief' rewordings
+        # were less natural topic descriptions.
         _domain_topic_hints = {
             # ── Economic games (meta-analysis-calibrated baselines) ──
             'dictator': 'giving and allocation decisions',
@@ -10120,7 +10671,6 @@ class EnhancedSimulationEngine:
             'deception': 'honesty and deceptive behavior',
             'lying': 'lying behavior and truth-telling norms',
             'cheating': 'cheating behavior and academic integrity',
-            'corruption': 'corruption perceptions and institutional trust',
             'hypocrisy': 'moral hypocrisy and inconsistency',
             'virtue': 'virtue and moral character judgments',
             'disgust': 'moral disgust and purity concerns',
@@ -10480,21 +11030,17 @@ class EnhancedSimulationEngine:
             'luck': 'luck beliefs and superstitious thinking',
             'superstition': 'superstitious beliefs and magical thinking',
             'conspiracy_theory': 'conspiracy thinking and epistemic mistrust',
-            'conspiracy': 'conspiracy beliefs and alternative explanations',
             'paranormal': 'paranormal beliefs and supernatural attitudes',
             # v1.0.8.3: Expanded for narrative/creative/disclosure question types
             'secret': 'personal secrets and self-disclosure',
             'disclosure': 'personal disclosure and private information sharing',
             'confession': 'confessions and personal admissions',
-            'family': 'family relationships and family knowledge',
             'narrative': 'personal narratives and life stories',
             'anecdote': 'personal anecdotes and memorable experiences',
             'story': 'personal stories and lived experiences',
-            'belief': 'personal beliefs and conviction systems',
             'theory': 'personal theories and explanatory beliefs',
             'opinion': 'personal opinions and value judgments',
             'experience': 'personal experiences and life events',
-            'memory': 'personal memories and recollections',
         }
         _domain_hint = ""
         # Step A: Check comprehensive domain vocabulary table
@@ -11624,7 +12170,7 @@ class EnhancedSimulationEngine:
 
         if _corr_matrix is not None and len(_scale_names) > 1:
             try:
-                _latent_scores = generate_latent_scores(n, _corr_matrix, self.seed)
+                _latent_scores = generate_latent_scores(n, _calibrate_latent_correlation(_corr_matrix), self.seed)
                 # Store latent z-scores in each participant's traits
                 for i in range(n):
                     all_traits[i]["_latent_dvs"] = {
@@ -11780,6 +12326,7 @@ class EnhancedSimulationEngine:
                 "scale_min": scale_min,
                 "scale_max": scale_max,
                 "num_items": num_items,
+                "reverse_items": sorted(i for i in reverse_items if 1 <= i <= num_items),
                 "type": str(scale.get("type", "")).lower(),
                 "question_text": str(scale.get("question_text", "")),
                 "dv_description": str(scale.get("dv_description", "")),
@@ -11790,6 +12337,10 @@ class EnhancedSimulationEngine:
                 "item_names": scale.get("item_names", []) or [],
                 "columns_generated": [],
             })
+
+            if not hasattr(self, "_scale_effect_meta"):
+                self._scale_effect_meta = {}
+            self._scale_effect_meta[str(scale_name)] = (num_items, scale_min, scale_max)
 
             for item_num in range(1, num_items + 1):
                 col_name = f"{scale_name}_{item_num}"
@@ -11866,31 +12417,61 @@ class EnhancedSimulationEngine:
                 # Items already share condition effects + traits + per-scale
                 # tendency, so they may already exceed the target. Only inject
                 # additional correlation if current alpha is below target.
-                target_alpha = float(scale.get("reliability", 0.75))
+                # Target reliability: honour an explicit value (e.g. 0.85 from the
+                # scale builder); otherwise draw a realistic per-scale alpha
+                # (0.80-0.90, seeded by scale name so scales differ but runs are
+                # reproducible) instead of one fixed 0.75 for every scale.
+                _rel_user = scale.get("reliability")
+                try:
+                    target_alpha = float(_rel_user) if _rel_user is not None else None
+                except (TypeError, ValueError):
+                    target_alpha = None
+                if target_alpha is None or not (0.3 <= target_alpha <= 0.99):
+                    target_alpha = float(np.random.RandomState(
+                        _stable_int_hash(f"{scale_name}|target_alpha") & 0x7FFFFFFF).uniform(0.80, 0.90))
                 item_col_names = [f"{scale_name}_{j+1}" for j in range(num_items)]
                 try:
-                    _item_matrix = np.array(
-                        [data[c] for c in item_col_names], dtype=float
-                    ).T  # shape (n, num_items)
-                    # v1.2.6.6: Check existing alpha before injection. Items
-                    # already share condition effects + traits + tendency, so
-                    # they often exceed the target. Skip to avoid alpha > 0.95.
-                    _existing_corr = np.corrcoef(_item_matrix.T)
-                    _existing_r_bar = np.mean(_existing_corr[np.triu_indices_from(_existing_corr, k=1)])
-                    _existing_alpha = (num_items * _existing_r_bar) / (1 + (num_items - 1) * _existing_r_bar) if _existing_r_bar > 0 else 0
+                    _rev_idx0 = [r - 1 for r in sorted(reverse_items) if 1 <= r <= num_items]
+
+                    def _construct_matrix(item_col_names=item_col_names, _rev_idx0=_rev_idx0,
+                                          scale_min=scale_min, scale_max=scale_max) -> np.ndarray:
+                        # Alpha/correlation must be judged in the CONSTRUCT direction.
+                        _m = np.array([data[c] for c in item_col_names], dtype=float).T
+                        if _rev_idx0:
+                            _m[:, _rev_idx0] = (scale_min + scale_max) - _m[:, _rev_idx0]
+                        return _m
+
+                    def _std_alpha(_m: np.ndarray, num_items=num_items) -> float:
+                        _c = np.corrcoef(_m.T)
+                        _rb = float(np.mean(_c[np.triu_indices_from(_c, k=1)]))
+                        return (num_items * _rb) / (1 + (num_items - 1) * _rb) if _rb > 0 else 0.0
+
+                    _item_matrix = np.array([data[c] for c in item_col_names], dtype=float).T
+                    _existing_alpha = _std_alpha(_construct_matrix())
                     if _existing_alpha < target_alpha:
-                        # v1.2.8.1: scale-stable seed → per-item loading
-                        # heterogeneity that is reproducible and distinct per scale.
+                        # v1.2.8.1: scale-stable seed -> per-item loading heterogeneity.
                         _iic_seed = _stable_int_hash(f"{scale_name}|iic_loadings")
                         _correlated = _inject_inter_item_correlation(
                             _item_matrix, target_alpha, scale_min, scale_max,
-                            seed=_iic_seed,
+                            seed=_iic_seed, reverse_items=sorted(reverse_items),
                         )
                         for j, c in enumerate(item_col_names):
                             data[c] = _correlated[:, j].tolist()
-                        self._log(f"Injected inter-item correlation for '{scale_name_raw}' (existing alpha={_existing_alpha:.2f} → target={target_alpha:.2f})")
-                    else:
-                        self._log(f"Skipped correlation injection for '{scale_name_raw}' (existing alpha={_existing_alpha:.2f} already >= target={target_alpha:.2f})")
+                        self._log(f"Injected inter-item correlation for '{scale_name_raw}' (existing alpha={_existing_alpha:.2f} -> target={target_alpha:.2f})")
+                    # The injection assumes independent items, so on items that already
+                    # share variance it OVERSHOOTS (alpha 0.73 -> 0.95 with target 0.75).
+                    # Bring any alpha well above target back to it (item-specific noise).
+                    _alpha_now = _std_alpha(_construct_matrix())
+                    if _alpha_now > target_alpha + 0.04:
+                        _cd_new = _attenuate_inter_item_correlation(
+                            _construct_matrix(), _alpha_now, target_alpha, scale_min, scale_max,
+                            seed=_stable_int_hash(f"{scale_name}|alpha_noise"),
+                        ).astype(float)
+                        if _rev_idx0:
+                            _cd_new[:, _rev_idx0] = (scale_min + scale_max) - _cd_new[:, _rev_idx0]
+                        for j, c in enumerate(item_col_names):
+                            data[c] = _cd_new[:, j].astype(int).tolist()
+                        self._log(f"Attenuated inter-item correlation for '{scale_name_raw}' (alpha={_alpha_now:.2f} -> ~{target_alpha:.2f})")
                 except Exception as _corr_err:
                     self._log(f"WARNING: Could not inject correlation for '{scale_name_raw}': {_corr_err}")
 
@@ -11960,9 +12541,19 @@ class EnhancedSimulationEngine:
                     self._log(f"WARNING: Skipping composite mean — some columns have < {n} rows")
                     continue
                 # Compute row-wise mean across all items for this scale
+                # Reverse-coded items are exported RAW (as in a real Qualtrics
+                # export) but the composite is a SCORED scale: recode them
+                # (min + max - x) before averaging, otherwise items pointing in
+                # opposite directions cancel and the composite stops measuring
+                # the construct (and under-recovers configured effects).
+                _rev = set(log_entry.get("reverse_items") or [])
+                _flip = log_entry["scale_min"] + log_entry["scale_max"]
                 mean_values: List[float] = []
                 for i in range(n):
-                    item_sum = sum(data[col][i] for col in item_cols)
+                    item_sum = sum(
+                        (_flip - data[col][i]) if (j + 1) in _rev else data[col][i]
+                        for j, col in enumerate(item_cols)
+                    )
                     mean_values.append(round(item_sum / len(item_cols), 2))
                 # Derive clean composite column name from the first item column
                 # e.g., "Trust_1" -> "Trust_mean"
@@ -11971,7 +12562,8 @@ class EnhancedSimulationEngine:
                 data[mean_col_name] = mean_values
                 scale_raw_name = log_entry["name"]
                 self.column_info.append(
-                    (mean_col_name, f"{scale_raw_name} composite mean ({log_entry['scale_min']}-{log_entry['scale_max']})")
+                    (mean_col_name, f"{scale_raw_name} composite mean ({log_entry['scale_min']}-{log_entry['scale_max']})"
+                     + (f"; reverse-coded items {sorted(_rev)} recoded before averaging" if _rev else ""))
                 )
                 self._log(f"Generated composite mean column '{mean_col_name}' from {len(item_cols)} items")
 
@@ -12885,6 +13477,10 @@ class EnhancedSimulationEngine:
             # Re-create DataFrame with repaired data
             df = pd.DataFrame(data)
 
+        # Final consistency pass: every <Scale>_mean must equal the mean of the delivered
+        # (reverse-recoded, missing-aware) items, whatever the steps above did to them.
+        self._refresh_scale_composites(df, _scale_generation_log)
+
         # Compute observed effect sizes to validate simulation quality
         observed_effects = self._compute_observed_effect_sizes(df)
 
@@ -13193,6 +13789,9 @@ class EnhancedSimulationEngine:
             except Exception as _val_err:
                 self._log(f"ABE 3.0: Validation skipped: {_val_err}")
 
+        # The validator may perturb item values: re-derive composites from the final items.
+        self._refresh_scale_composites(df, getattr(self, "_scale_generation_log", None) or [])
+
         # Step D: Add ABE 3.0 metadata
         try:
             import time as _time_mod
@@ -13206,8 +13805,8 @@ class EnhancedSimulationEngine:
             "census_demographics_active": HAS_HBS_DEMOGRAPHICS and len(_hbs_participant_states) > 0,
             "stylometric_engine_active": HAS_HBS_STYLOMETRIC,
             "validator_active": HAS_HBS_VALIDATOR,
-            "error_calibrator_active": HAS_HBS_ERROR_CAL,
-            "question_classifier_active": HAS_HBS_CLASSIFIER,
+            "error_calibrator_active": False,  # module may import, but nothing in the generation path calls it
+            "question_classifier_active": False,  # module may import, but nothing in the generation path calls it
             "validation_report": _validation_report,
             "abe3_processing_time_seconds": round(_abe3_elapsed, 2),
             "consistency_improvements": [
@@ -13250,6 +13849,14 @@ class EnhancedSimulationEngine:
             df["_Generation_Source"] = "Adaptive Behavioral Engine 3.0 (Non-LLM)"
 
         _report_progress("complete", n, n)
+        # Final authoritative reconciliation: no routine that edits item values after
+        # the composites were built (repairs, jitter, enrichment) may leave a scale
+        # mean inconsistent with its own items in the exported data.
+        try:
+            self._reconcile_composites(df)
+        except Exception as _rec_err:
+            self._log(f"WARNING: composite reconciliation failed: {_rec_err}")
+
         return df, metadata
 
     def _check_generation_warnings(self, df: pd.DataFrame) -> List[str]:
@@ -13486,6 +14093,38 @@ class EnhancedSimulationEngine:
 
         return report
 
+    def _reconcile_composites(self, df: pd.DataFrame) -> int:
+        """Recompute every ``<scale>_mean`` composite from the final item columns.
+
+        Reverse-keyed items are recoded (min + max - x) before averaging and missing
+        cells are skipped. Returns the number of rows whose composite was corrected.
+        """
+        fixed = 0
+        for le in (getattr(self, "_scale_generation_log", None) or []):
+            cols = [c for c in (le.get("columns_generated") or []) if c in df.columns]
+            if len(cols) < 2:
+                continue
+            mcol = f"{cols[0].rsplit('_', 1)[0]}_mean"
+            if mcol not in df.columns:
+                continue
+            allcols = le.get("columns_generated") or []
+            rev = set(le.get("reverse_items") or [])
+            flip = float(le.get("scale_min", 0)) + float(le.get("scale_max", 0))
+            M = df[cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float, copy=True)
+            for j, c in enumerate(cols):
+                if (allcols.index(c) + 1) in rev:
+                    M[:, j] = flip - M[:, j]
+            with np.errstate(all="ignore"):
+                new = np.round(np.nanmean(M, axis=1), 2)
+            old = pd.to_numeric(df[mcol], errors="coerce").to_numpy(dtype=float)
+            diff = ~np.isclose(np.nan_to_num(old, nan=-999.0), np.nan_to_num(new, nan=-999.0), atol=0.011)
+            if diff.any():
+                df[mcol] = new
+                fixed += int(diff.sum())
+        if fixed:
+            self._log(f"Reconciled {fixed} composite value(s) with their final item values")
+        return fixed
+
     def _compute_observed_effect_sizes(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
         """
         Compute observed effect sizes from the generated data.
@@ -13643,6 +14282,31 @@ class EnhancedSimulationEngine:
         return result
 
     def generate_explainer(self) -> str:
+        # Qualtrics-style delivery: Simulated_Data.csv holds the participant-facing
+        # columns plus Qualtrics metadata; internal columns live in the diagnostics sidecar.
+        try:
+            from .qualtrics_export import (
+                QUALTRICS_METADATA_COLUMNS as _qx_meta_cols,
+                QUALTRICS_COLUMN_DESCRIPTIONS as _qx_meta_desc,
+                split_columns as _qx_split,
+                protected_columns as _qx_protected,
+            )
+            _qx_ok = True
+        except ImportError:
+            _qx_ok = False
+            _qx_meta_cols, _qx_meta_desc = [], {}
+            _qx_split = None
+
+        _all_names = [c for c, _ in self.column_info]
+        if _qx_ok:
+            _facing_names, _internal_names = _qx_split(_all_names, _qx_protected({
+                "scale_generation_log": getattr(self, "_scale_generation_log", None),
+                "open_ended_questions": self.open_ended_questions,
+            }))
+        else:
+            _facing_names, _internal_names = _all_names, []
+        _facing_set = set(_facing_names)
+
         lines = [
             "=" * 70,
             "COLUMN EXPLAINER - Simulated Behavioral Experiment Data",
@@ -13656,16 +14320,83 @@ class EnhancedSimulationEngine:
             f"Conditions: {len(self.conditions)}",
             f"Detected Domains: {', '.join(self.detected_domains[:5])}",
             "",
-            "-" * 70,
-            "VARIABLE DESCRIPTIONS",
-            "-" * 70,
-            "",
         ]
 
-        for col_name, description in self.column_info:
+        if _qx_ok:
+            lines.extend([
+                "-" * 70,
+                "DELIVERED FILES",
+                "-" * 70,
+                "",
+                "Simulated_Data.csv",
+                "    The dataset, laid out like a Qualtrics export (one header row). It starts",
+                "    with the Qualtrics metadata columns, followed by the survey columns.",
+                "    Analysis scripts in this folder read this file.",
+                "Simulated_Data_Qualtrics_Raw.csv",
+                "    Same rows and columns with the three-row Qualtrics header: column names,",
+                "    question text, and an ImportId row. Use it to practice the usual step of",
+                "    deleting rows 2-3 before analysis.",
+                "Simulation_Diagnostics.csv",
+                "    Simulator bookkeeping for each response, keyed by ResponseId (same row order).",
+                "    A real survey export has none of these columns. It is a separate file so the",
+                "    main dataset looks like data collected from real respondents.",
+                "If Simulation_Diagnostics.csv is not in the ZIP, the Qualtrics-format build was",
+                "unavailable for this run and Simulated_Data.csv is the unprocessed simulator table.",
+                "",
+                "-" * 70,
+                "QUALTRICS METADATA COLUMNS (Simulated_Data.csv)",
+                "-" * 70,
+                "",
+            ])
+            for _mc in _qx_meta_cols:
+                lines.append(_mc)
+                lines.append(f"    {_qx_meta_desc.get(_mc, '')}")
+                lines.append("")
+            lines.extend([
+                "Rows are sorted by StartDate. Start times are spread over one to four days and",
+                "are generated from the random seed; they are not the time you ran the tool.",
+                "Responses that stop before the end of the survey have Finished = 0, a Progress",
+                "below 100, blank cells after the point where they stopped, and a shorter Duration.",
+                "",
+                "-" * 70,
+                "SURVEY COLUMNS (Simulated_Data.csv)",
+                "-" * 70,
+                "",
+            ])
+            _survey_cols = [(c, d) for c, d in self.column_info if c in _facing_set]
+        else:
+            lines.extend(["-" * 70, "VARIABLE DESCRIPTIONS", "-" * 70, ""])
+            _survey_cols = list(self.column_info)
+
+        for col_name, description in _survey_cols:
             lines.append(f"{col_name}")
             lines.append(f"    {description}")
             lines.append("")
+
+        if _qx_ok:
+            lines.extend([
+                "-" * 70,
+                "DIAGNOSTICS COLUMNS (Simulation_Diagnostics.csv)",
+                "-" * 70,
+                "",
+                "ResponseId",
+                "    Links each row to the same row of Simulated_Data.csv (merge on this column).",
+                "",
+            ])
+            for col_name, description in self.column_info:
+                if col_name in _facing_set:
+                    continue
+                if col_name.endswith("_mean"):
+                    description = f"{description} (researcher composite; not in Simulated_Data.csv, compute it from the item columns)"
+                lines.append(f"{col_name}")
+                lines.append(f"    {description}")
+                lines.append("")
+            lines.extend([
+                "Exclude_Recommended is the simulator's own flag. In a real analysis you would",
+                "apply your preregistered exclusion rules to Duration (in seconds), Finished and",
+                "the attention-check columns of Simulated_Data.csv instead.",
+                "",
+            ])
 
         lines.extend(["-" * 70, "EXPERIMENTAL CONDITIONS", "-" * 70, ""])
         # v1.0.0: Guard against division by zero when no conditions
@@ -13701,11 +14432,79 @@ class EnhancedSimulationEngine:
         )
         return "\n".join(lines)
 
+    # ------------------------------------------------------------------
+    # Analysis-script helpers (R / Python / Julia / SPSS / Stata)
+    # ------------------------------------------------------------------
+    _EXCLUSION_NOTE = (
+        "Real analyses apply preregistered exclusion rules to the Duration (in seconds), "
+        "Finished and attention-check columns of Simulated_Data.csv. Exclude_Recommended is the "
+        "simulator's own flag; it is stored in Simulation_Diagnostics.csv and joined on ResponseId "
+        "for this optional step only."
+    )
+
+    def _export_script_scales(self, df: Optional[pd.DataFrame], lowercase: bool = False) -> List[Dict[str, Any]]:
+        """Scale specs for analysis scripts, restricted to item columns present in the delivered CSV.
+
+        When ``df`` is given, only items that exist as columns are referenced, so a script never
+        names a column the file does not contain. Composites are computed by the script itself
+        (the delivered CSV has no ``<Scale>_mean`` columns).
+        """
+        cols = set(df.columns) if df is not None and hasattr(df, "columns") else None
+        out: List[Dict[str, Any]] = []
+        _log = list(getattr(self, "_scale_generation_log", None) or [])
+        _used: Set[int] = set()
+        for scale in self.scales:
+            raw = str(scale.get("name", "Scale")).strip() or "Scale"
+            name = _clean_column_name(raw)
+            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
+            points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
+            reverse = _safe_parse_reverse_items(scale.get("reverse_items", []))
+            # Reverse coding flips around scale_min + scale_max (same rule as the engine),
+            # which equals points + 1 only for 1-based scales.
+            _smin = _safe_numeric(scale.get("scale_min", 1), default=1, as_int=True)
+            _smax = _safe_numeric(scale.get("scale_max", points), default=points, as_int=True)
+            flip = _smin + _smax
+            items = [f"{name}_{i}" for i in range(1, num_items + 1)]
+            # The generator records the columns it actually wrote (their prefix comes from
+            # variable_name and is de-duplicated), so prefer that over rebuilding from `name`.
+            _k = next((k for k, e in enumerate(_log)
+                       if k not in _used and str(e.get("name", "")).strip() == raw), None)
+            _entry = _log[_k] if _k is not None else None
+            if _entry is not None:
+                _used.add(_k)
+                _gen_cols = [str(c) for c in (_entry.get("columns_generated") or [])]
+                if _gen_cols:
+                    name = _gen_cols[0].rsplit("_", 1)[0]
+                    items = _gen_cols
+                    reverse = _safe_parse_reverse_items(_entry.get("reverse_items", reverse))
+            if cols is not None:
+                items = [it for it in items if it in cols]
+                if not items:
+                    continue
+            rev = sorted(r for r in reverse if f"{name}_{r}" in items)
+            if lowercase:
+                name = name.lower()
+                items = [it.lower() for it in items]
+            # Composite = mean of the items AFTER reverse coding, so scripts must average
+            # the recoded `_R` (Stata: `_r`) columns for reverse-keyed items.
+            _sfx = "_r" if lowercase else "_R"
+            _rev_cols = {f"{name}_{r}" for r in rev}
+            composite_items = [(f"{it}{_sfx}" if it in _rev_cols else it) for it in items]
+            out.append({"raw": raw, "name": name, "items": items, "reverse": rev,
+                        "points": points, "flip": flip, "composite_items": composite_items})
+        return out
+
+    def _export_has_gender(self, df: Optional[pd.DataFrame]) -> bool:
+        if df is not None and hasattr(df, "columns"):
+            return "Gender" in df.columns
+        return bool(self.demographics.get("include_gender_column", True))
+
     def generate_r_export(self, df: pd.DataFrame) -> str:
         """
-        Generate R-compatible export with proper factor coding.
+        Generate R data-preparation script for Simulated_Data.csv.
 
-        Returns an R script that loads and prepares Simulated.csv.
+        Composites are computed from the item columns; Simulation_Diagnostics.csv is
+        joined on ResponseId for the optional exclusion step.
         """
         def _r_quote(x: str) -> str:
             x = str(x).replace("\\", "\\\\").replace('"', '\\"')
@@ -13726,48 +14525,46 @@ class EnhancedSimulationEngine:
             "  library(dplyr)",
             "})",
             "",
-            "# Load the data",
-            'data <- read_csv("Simulated.csv", show_col_types = FALSE)',
+            "# Load the data (Qualtrics-style export; one header row)",
+            'data <- read_csv("Simulated_Data.csv", show_col_types = FALSE)',
             "",
             "# Convert CONDITION to factor with proper levels",
             f"data$CONDITION <- factor(data$CONDITION, levels = c({condition_levels}))",
             "",
         ]
 
-        # v1.2.0.9: Only include Gender factor conversion if Gender column exists in output
-        if self.demographics.get("include_gender_column", True):
+        if self._export_has_gender(df):
             lines.extend([
                 "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
                 'data$Gender <- factor(data$Gender)',
                 "",
             ])
 
-        for scale in self.scales:
-            scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
-            scale_name = _clean_column_name(scale_name_raw)
-            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
-            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
-            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
-
-            items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
-
-            if reverse_items:
-                lines.append(f"# {scale_name_raw} - reverse code items {sorted(reverse_items)}")
-                for r_item in sorted(reverse_items):
-                    item_name = f"{scale_name}_{r_item}"
-                    max_val = scale_points
-                    lines.append(f"data${item_name}_R <- {max_val + 1} - data${item_name}")
+        for sc in self._export_script_scales(df):
+            if sc["reverse"]:
+                lines.append(f"# {sc['raw']} - reverse code items {sc['reverse']}")
+                for r_item in sc["reverse"]:
+                    item_name = f"{sc['name']}_{r_item}"
+                    lines.append(f"data${item_name}_R <- {sc['flip']} - data${item_name}")
                 lines.append("")
 
-            lines.append(f"# Create {scale_name_raw} composite")
-            item_list = ", ".join([f"data${item}" for item in items])
-            lines.append(f"data${scale_name}_composite <- rowMeans(cbind({item_list}), na.rm = TRUE)")
+            lines.append(f"# Create {sc['raw']} composite from the item columns")
+            item_list = ", ".join([f"data${item}" for item in sc["composite_items"]])
+            lines.append(f"data${sc['name']}_composite <- rowMeans(cbind({item_list}), na.rm = TRUE)")
             lines.append("")
 
         lines.extend(
             [
-                "# Filter excluded participants (optional)",
-                "data_clean <- data[data$Exclude_Recommended == 0, ]",
+                "# Optional exclusion step",
+                f"# {self._EXCLUSION_NOTE}",
+                'if (file.exists("Simulation_Diagnostics.csv")) {',
+                '  diagnostics <- read_csv("Simulation_Diagnostics.csv", show_col_types = FALSE)',
+                '  data <- left_join(data, diagnostics[, c("ResponseId", "Exclude_Recommended")], by = "ResponseId")',
+                "  data_clean <- data[!is.na(data$Exclude_Recommended) & data$Exclude_Recommended == 0, ]",
+                "} else {",
+                '  message("Simulation_Diagnostics.csv not found; no exclusions applied.")',
+                "  data_clean <- data",
+                "}",
                 "",
                 'cat("Total N:", nrow(data), "\\n")',
                 'cat("Clean N:", nrow(data_clean), "\\n")',
@@ -13780,9 +14577,10 @@ class EnhancedSimulationEngine:
 
     def generate_python_export(self, df: pd.DataFrame) -> str:
         """
-        Generate Python-compatible export script with pandas (v2.4.5).
+        Generate Python (pandas) data-preparation script for Simulated_Data.csv.
 
-        Returns a Python script that loads and prepares Simulated.csv.
+        Composites are computed from the item columns; Simulation_Diagnostics.csv is
+        merged on ResponseId for the optional exclusion step.
         """
         def _py_quote(x: str) -> str:
             x = str(x).replace("\\", "\\\\").replace("'", "\\'")
@@ -13797,10 +14595,11 @@ class EnhancedSimulationEngine:
             f"# Run ID: {self.run_id}",
             "# ============================================================",
             "",
+            "import os",
             "import pandas as pd",
             "import numpy as np",
             "",
-            "# Load the data",
+            "# Load the data (Qualtrics-style export; one header row)",
             "data = pd.read_csv('Simulated_Data.csv')",
             "",
             "# Convert CONDITION to categorical with proper order",
@@ -13809,57 +14608,57 @@ class EnhancedSimulationEngine:
             "",
         ]
 
-        # v1.2.0.9: Only include Gender conversion if Gender column exists in output
-        if self.demographics.get("include_gender_column", True):
+        if self._export_has_gender(df):
             lines.extend([
                 "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
                 "data['Gender'] = pd.Categorical(data['Gender'])",
                 "",
             ])
 
-        for scale in self.scales:
-            scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
-            scale_name = _clean_column_name(scale_name_raw)
-            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
-            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
-            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
-
-            items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
-
-            if reverse_items:
-                lines.append(f"# {scale_name_raw} - reverse code items {sorted(reverse_items)}")
-                for r_item in sorted(reverse_items):
-                    item_name = f"{scale_name}_{r_item}"
-                    max_val = scale_points
-                    lines.append(f"data['{item_name}_R'] = {max_val + 1} - data['{item_name}']")
+        scales = self._export_script_scales(df)
+        for sc in scales:
+            if sc["reverse"]:
+                lines.append(f"# {sc['raw']} - reverse code items {sc['reverse']}")
+                for r_item in sc["reverse"]:
+                    item_name = f"{sc['name']}_{r_item}"
+                    lines.append(f"data['{item_name}_R'] = {sc['flip']} - data['{item_name}']")
                 lines.append("")
 
-            lines.append(f"# Create {scale_name_raw} composite")
-            item_list = ", ".join([f"'{item}'" for item in items])
-            lines.append(f"data['{scale_name}_composite'] = data[[{item_list}]].mean(axis=1)")
+            lines.append(f"# Create {sc['raw']} composite from the item columns")
+            item_list = ", ".join([f"'{item}'" for item in sc["composite_items"]])
+            lines.append(f"data['{sc['name']}_composite'] = data[[{item_list}]].mean(axis=1)")
             lines.append("")
 
         lines.extend([
-            "# Filter excluded participants (optional)",
-            "data_clean = data[data['Exclude_Recommended'] == 0].copy()",
+            "# Optional exclusion step",
+            f"# {self._EXCLUSION_NOTE}",
+            "if os.path.exists('Simulation_Diagnostics.csv'):",
+            "    diagnostics = pd.read_csv('Simulation_Diagnostics.csv')",
+            "    data = data.merge(diagnostics[['ResponseId', 'Exclude_Recommended']], on='ResponseId', how='left')",
+            "    data_clean = data[data['Exclude_Recommended'] == 0].copy()",
+            "else:",
+            "    print('Simulation_Diagnostics.csv not found; no exclusions applied.')",
+            "    data_clean = data.copy()",
             "",
             "print(f'Total N: {len(data)}')",
             "print(f'Clean N: {len(data_clean)}')",
             "",
             "# Ready for analysis",
-            "# Example: data_clean.groupby('CONDITION')['Scale_composite'].mean()",
         ])
+        if scales:
+            lines.append(f"# Example: data_clean.groupby('CONDITION')['{scales[0]['name']}_composite'].mean()")
 
         return "\n".join(lines)
 
     def generate_julia_export(self, df: pd.DataFrame) -> str:
         """
-        Generate Julia-compatible export script with DataFrames.jl (v2.4.5).
+        Generate Julia (DataFrames.jl) data-preparation script for Simulated_Data.csv.
 
-        Returns a Julia script that loads and prepares Simulated.csv.
+        Composites are computed from the item columns; Simulation_Diagnostics.csv is
+        joined on ResponseId for the optional exclusion step.
         """
         def _jl_quote(x: str) -> str:
-            x = str(x).replace("\\", "\\\\").replace('"', '\\"')
+            x = str(x).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
             return f'"{x}"'
 
         condition_levels = ", ".join([_jl_quote(c) for c in self.conditions])
@@ -13876,7 +14675,7 @@ class EnhancedSimulationEngine:
             "using CategoricalArrays",
             "using Statistics",
             "",
-            "# Load the data",
+            "# Load the data (Qualtrics-style export; one header row)",
             'data = CSV.read("Simulated_Data.csv", DataFrame)',
             "",
             "# Convert CONDITION to categorical with proper order",
@@ -13885,59 +14684,61 @@ class EnhancedSimulationEngine:
             "",
         ]
 
-        # v1.2.0.9: Only include Gender conversion if Gender column exists in output
-        if self.demographics.get("include_gender_column", True):
+        if self._export_has_gender(df):
             lines.extend([
                 "# Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
                 "data.Gender = categorical(data.Gender)",
                 "",
             ])
 
-        for scale in self.scales:
-            scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
-            scale_name = _clean_column_name(scale_name_raw)
-            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
-            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
-            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
-
-            items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
-
-            if reverse_items:
-                lines.append(f"# {scale_name_raw} - reverse code items {sorted(reverse_items)}")
-                for r_item in sorted(reverse_items):
-                    item_name = f"{scale_name}_{r_item}"
-                    max_val = scale_points
-                    lines.append(f'data.{item_name}_R = {max_val + 1} .- data.{item_name}')
+        scales = self._export_script_scales(df)
+        for sc in scales:
+            if sc["reverse"]:
+                lines.append(f"# {sc['raw']} - reverse code items {sc['reverse']}")
+                for r_item in sc["reverse"]:
+                    item_name = f"{sc['name']}_{r_item}"
+                    lines.append(f'data.{item_name}_R = {sc["flip"]} .- data.{item_name}')
                 lines.append("")
 
-            lines.append(f"# Create {scale_name_raw} composite")
-            item_syms = ", ".join([f":{item}" for item in items])
-            lines.append(f"data.{scale_name}_composite = mean.(eachrow(data[:, [{item_syms}]]))")
+            lines.append(f"# Create {sc['raw']} composite from the item columns (missing values skipped)")
+            item_syms = ", ".join([f":{item}" for item in sc["composite_items"]])
+            lines.append(
+                f"data.{sc['name']}_composite = [isempty(collect(skipmissing(collect(r)))) ? missing : "
+                f"mean(skipmissing(collect(r))) for r in eachrow(data[:, [{item_syms}]])]"
+            )
             lines.append("")
 
         lines.extend([
-            "# Filter excluded participants (optional)",
-            "data_clean = filter(row -> row.Exclude_Recommended == 0, data)",
+            "# Optional exclusion step",
+            f"# {self._EXCLUSION_NOTE}",
+            'if isfile("Simulation_Diagnostics.csv")',
+            '    diagnostics = CSV.read("Simulation_Diagnostics.csv", DataFrame)',
+            "    data = leftjoin(data, select(diagnostics, [:ResponseId, :Exclude_Recommended]), on = :ResponseId)",
+            "    data_clean = filter(row -> coalesce(row.Exclude_Recommended, 1) == 0, data)",
+            "else",
+            '    println("Simulation_Diagnostics.csv not found; no exclusions applied.")',
+            "    data_clean = copy(data)",
+            "end",
             "",
             'println("Total N: ", nrow(data))',
             'println("Clean N: ", nrow(data_clean))',
             "",
             "# Ready for analysis",
-            "# Example: combine(groupby(data_clean, :CONDITION), :Scale_composite => mean)",
         ])
+        if scales:
+            lines.append(
+                f"# Example: combine(groupby(data_clean, :CONDITION), :{scales[0]['name']}_composite => x -> mean(skipmissing(x)))"
+            )
 
         return "\n".join(lines)
 
     def generate_spss_export(self, df: pd.DataFrame) -> str:
         """
-        Generate SPSS syntax file for data preparation (v2.4.5).
+        Generate SPSS syntax for data preparation of Simulated_Data.csv.
 
-        Returns SPSS syntax that prepares the data after import.
+        Composites are computed from the item columns; Simulation_Diagnostics.csv is
+        matched on ResponseId for the optional exclusion step.
         """
-        def _spss_quote(x: str) -> str:
-            x = str(x).replace("'", "''")
-            return f"'{x}'"
-
         lines: List[str] = [
             "* ============================================================.",
             f"* SPSS Data Preparation Syntax - {self.study_title}.",
@@ -13947,54 +14748,47 @@ class EnhancedSimulationEngine:
             "",
             "* Load the data first using:",
             "*   File > Import Data > CSV Data...",
-            "*   Select 'Simulated_Data.csv'.",
+            "*   Select 'Simulated_Data.csv' (one header row; text columns as strings).",
             "",
-            "* Define variable labels and value labels.",
+            "DATASET NAME data WINDOW=FRONT.",
+            "",
+            "* CONDITION is a string column; create a numeric version with value labels.",
+            "AUTORECODE VARIABLES=CONDITION /INTO CONDITION_num /PRINT.",
             "",
         ]
 
-        # Add condition value labels
-        condition_labels = " ".join([f"{i+1} {_spss_quote(c)}" for i, c in enumerate(self.conditions)])
-        lines.extend([
-            "VALUE LABELS CONDITION",
-            f"  {condition_labels}.",
-            "",
-        ])
-
-        # v1.2.0.9: Only include Gender line if Gender column exists in output
-        if self.demographics.get("include_gender_column", True):
+        if self._export_has_gender(df):
             lines.extend([
                 "* Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say).",
-                "* STRING Gender(A20).",
                 "",
             ])
 
-        for scale in self.scales:
-            scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
-            scale_name = _clean_column_name(scale_name_raw)
-            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
-            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
-            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
-
-            items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
-
-            if reverse_items:
-                lines.append(f"* {scale_name_raw} - reverse code items {sorted(reverse_items)}.")
-                for r_item in sorted(reverse_items):
-                    item_name = f"{scale_name}_{r_item}"
-                    max_val = scale_points
-                    lines.append(f"COMPUTE {item_name}_R = {max_val + 1} - {item_name}.")
+        for sc in self._export_script_scales(df):
+            if sc["reverse"]:
+                lines.append(f"* {sc['raw']} - reverse code items {sc['reverse']}.")
+                for r_item in sc["reverse"]:
+                    item_name = f"{sc['name']}_{r_item}"
+                    lines.append(f"COMPUTE {item_name}_R = {sc['flip']} - {item_name}.")
                 lines.append("EXECUTE.")
                 lines.append("")
 
-            lines.append(f"* Create {scale_name_raw} composite.")
-            item_list = " ".join(items)
-            lines.append(f"COMPUTE {scale_name}_composite = MEAN({item_list}).")
+            lines.append(f"* Create {sc['raw']} composite from the item columns.")
+            lines.append(f"COMPUTE {sc['name']}_composite = MEAN({' '.join(sc['composite_items'])}).")
             lines.append("EXECUTE.")
             lines.append("")
 
         lines.extend([
-            "* Filter excluded participants (optional).",
+            "* Optional exclusion step.",
+            f"* {self._EXCLUSION_NOTE}",
+            "* Import 'Simulation_Diagnostics.csv' the same way (File > Import Data > CSV Data...), then run:",
+            "DATASET NAME diag WINDOW=FRONT.",
+            "DATASET ACTIVATE diag.",
+            "SORT CASES BY ResponseId (A).",
+            "DATASET ACTIVATE data.",
+            "SORT CASES BY ResponseId (A).",
+            "MATCH FILES /FILE=* /TABLE=diag /BY ResponseId.",
+            "EXECUTE.",
+            "",
             "USE ALL.",
             "COMPUTE filter_$=(Exclude_Recommended = 0).",
             "VARIABLE LABELS filter_$ 'Exclude_Recommended = 0 (FILTER)'.",
@@ -14012,9 +14806,11 @@ class EnhancedSimulationEngine:
 
     def generate_stata_export(self, df: pd.DataFrame) -> str:
         """
-        Generate Stata .do file for data preparation (v2.4.5).
+        Generate Stata .do file for data preparation of Simulated_Data.csv.
 
-        Returns Stata commands that prepare the data after import.
+        Composites are computed from the item columns; Simulation_Diagnostics.csv is
+        merged on responseid (Stata lower-cases imported names) for the optional
+        exclusion step.
         """
         def _stata_quote(x: str) -> str:
             x = str(x).replace('"', "'")
@@ -14027,13 +14823,13 @@ class EnhancedSimulationEngine:
             f"// Run ID: {self.run_id}",
             "// ============================================================",
             "",
-            "// Load the data",
-            'import delimited "Simulated_Data.csv", clear',
+            "// Load the data (Qualtrics-style export; one header row)",
+            "// Note: import delimited lower-cases variable names (CONDITION -> condition).",
+            'import delimited "Simulated_Data.csv", clear varnames(1)',
             "",
             "// Label the CONDITION variable",
         ]
 
-        # Add condition value labels
         for i, c in enumerate(self.conditions):
             lines.append(f'label define condition_lbl {i+1} {_stata_quote(c)}, add')
         lines.extend([
@@ -14041,43 +14837,46 @@ class EnhancedSimulationEngine:
             "",
         ])
 
-        # v1.2.0.9: Only include Gender comment if Gender column exists in output
-        if self.demographics.get("include_gender_column", True):
+        if self._export_has_gender(df):
             lines.extend([
                 "// Gender is already labeled as strings (Male, Female, Non-binary, Prefer not to say)",
                 "// No numeric encoding needed",
                 "",
             ])
 
-        for scale in self.scales:
-            scale_name_raw = str(scale.get("name", "Scale")).strip() or "Scale"
-            scale_name = _clean_column_name(scale_name_raw).lower()
-            num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
-            scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
-            reverse_items = _safe_parse_reverse_items(scale.get("reverse_items", []))
-
-            items = [f"{scale_name}_{i}" for i in range(1, num_items + 1)]
-
-            if reverse_items:
-                lines.append(f"// {scale_name_raw} - reverse code items {sorted(reverse_items)}")
-                for r_item in sorted(reverse_items):
-                    item_name = f"{scale_name}_{r_item}"
-                    max_val = scale_points
-                    lines.append(f"gen {item_name}_r = {max_val + 1} - {item_name}")
+        for sc in self._export_script_scales(df, lowercase=True):
+            if sc["reverse"]:
+                lines.append(f"// {sc['raw']} - reverse code items {sc['reverse']}")
+                for r_item in sc["reverse"]:
+                    item_name = f"{sc['name']}_{r_item}"
+                    lines.append(f"gen {item_name}_r = {sc['flip']} - {item_name}")
                 lines.append("")
 
-            lines.append(f"// Create {scale_name_raw} composite")
-            item_list = " ".join(items)
-            lines.append(f"egen {scale_name}_composite = rowmean({item_list})")
+            lines.append(f"// Create {sc['raw']} composite from the item columns")
+            lines.append(f"egen {sc['name']}_composite = rowmean({' '.join(sc['composite_items'])})")
             lines.append("")
 
         lines.extend([
-            "// Filter excluded participants (optional)",
+            "// Optional exclusion step",
+            f"// {self._EXCLUSION_NOTE}",
+            'capture confirm file "Simulation_Diagnostics.csv"',
+            "if _rc == 0 {",
+            "    preserve",
+            '    import delimited "Simulation_Diagnostics.csv", clear varnames(1)',
+            "    keep responseid exclude_recommended",
+            "    tempfile diag",
+            "    save `diag'",
+            "    restore",
+            "    merge 1:1 responseid using `diag', keep(master match) nogenerate",
+            "} else {",
+            '    display "Simulation_Diagnostics.csv not found; no exclusions applied."',
+            "    gen exclude_recommended = 0",
+            "}",
+            "",
+            'display "Total N: " _N',
             "preserve",
             "keep if exclude_recommended == 0",
-            "",
-            '// Display counts',
-            'display "Total N: " _N',
+            'display "Clean N: " _N',
             "",
             "// Summary statistics",
             "summarize",
@@ -14092,8 +14891,8 @@ class EnhancedSimulationEngine:
         """
         Generate a scientific methods write-up for the simulation.
 
-        This produces a publication-ready methods section that documents
-        the scientific approach used to generate the synthetic data.
+        This produces a methods paragraph that documents how the synthetic data
+        were generated. It is not a description of empirical data collection.
 
         Args:
             condensed: If True, returns a brief paragraph. If False, returns
@@ -14110,7 +14909,7 @@ class EnhancedSimulationEngine:
         n_scales = len(self.scales)
 
         # Determine effect size info
-        effect_info = "auto-generated (d = 0.4-0.6)"
+        effect_info = "not configured; inferred from condition labels (exploratory)"
         if self.effect_sizes:
             ds = [
                 (es.get("cohens_d", 0.5) if isinstance(es, dict) else getattr(es, "cohens_d", 0.5))
@@ -14124,9 +14923,9 @@ class EnhancedSimulationEngine:
         methods = f"""
 METHODS: SYNTHETIC DATA GENERATION
 
-Data were generated using a scientifically-calibrated simulation engine (v2.2.8)
-grounded in survey methodology research. The simulation employs a persona-based
-response model with parameters calibrated from published empirical research.
+Data were generated by a persona-based simulation engine whose response-style
+and domain parameters are informed by published survey-methodology research.
+The data are synthetic.
 
 Sample and Design: N = {self.sample_size} synthetic participants were randomly
 assigned to {n_conditions} experimental condition{'s' if n_conditions > 1 else ''}.
@@ -14134,9 +14933,8 @@ Responses were generated for {n_scales} scale{'s' if n_scales > 1 else ''} measu
 dependent variables relevant to the study context.
 
 Response Generation: Each response was generated through a multi-step process:
-(1) Personas were assigned based on population weights derived from Krosnick (1991)
-satisficing theory (35% engaged, 22% satisficers, 10% extreme responders, 8%
-acquiescent, 5% careless, 12% socially desirable responders, 8% other).
+(1) Each participant was assigned a persona (response-style and domain personas,
+after study-specific reweighting) informed by Krosnick (1991) satisficing theory.
 (2) Domain-specific calibrations adjusted response means to match published norms
 (Oliver, 1980; Slovic, 1987; Mayer et al., 1995).
 (3) Condition effects were applied using standardized effect sizes ({effect_info})
@@ -14144,9 +14942,10 @@ with Cohen's d methodology (Cohen, 1988).
 (4) Response styles were simulated based on Greenleaf (1992) for extreme responding
 and Billiet & McClendon (2000) for acquiescence bias.
 
-Validation: The simulation produces data matching empirical benchmarks: mean
-responses of M = 4.0-5.2 on 7-point scales, within-condition SD = 1.2-1.8,
-and attention check pass rates of 85-95%.
+Validation: The generator has not been validated against real participant data.
+Responses are bounded to each scale, runs are reproducible from the seed, and a
+configured effect size is recovered on the scale mean within roughly 12%. These
+data are synthetic and must not be reported as empirical findings.
 
 Key Citations:
 - Krosnick, J. A. (1991). Response strategies. Applied Cognitive Psychology.
