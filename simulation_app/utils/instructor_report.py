@@ -457,6 +457,601 @@ def _align_condition_values(df: pd.DataFrame, metadata_conditions: List[str]) ->
     return out
 
 
+# ============================================================================
+# SHARED HELPERS FOR TRUTHFUL REPORTS (v1.2.9.1)
+#
+# The student summary, the instructor markdown and the instructor HTML all state composites,
+# effect sizes and settings. These helpers keep the three documents consistent with each other
+# and with the generator: composites are scored the way the engine scores them (reverse-keyed
+# items recoded), the effect tables read the engine's own bookkeeping (`effect_sizes_applied`),
+# and every user-controlled string reaches HTML escaped.
+# ============================================================================
+
+_EFFECT_TABLE_CAP = 40  # rows in an instructor effects table; the number left out is always stated
+
+
+def _esc(value: Any) -> str:
+    """HTML-escape ``value`` (None becomes an empty string) for text and attribute positions."""
+    return _html_lib.escape("" if value is None else str(value), quote=True)
+
+
+def _finite(value: Any) -> Optional[float]:
+    """``value`` as a finite float, or None for None, NaN, infinities and non-numbers."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _fmt(value: Any, digits: int = 3, signed: bool = False) -> str:
+    """Format a number for a report table; "n/a" when it is missing or not finite."""
+    number = _finite(value)
+    if number is None:
+        return "n/a"
+    number = round(number, digits)
+    if number == 0:
+        number = 0.0  # never "-0.00"
+    return f"{number:+.{digits}f}" if signed else f"{number:.{digits}f}"
+
+
+def _fmt_p(p_value: Any) -> str:
+    """p-value text: "< .001" below one in a thousand, otherwise three decimals; "n/a" if missing."""
+    number = _finite(p_value)
+    if number is None:
+        return "n/a"
+    return "< .001" if number < 0.001 else f"{number:.3f}"
+
+
+def _norm_label(value: Any) -> str:
+    """Case- and punctuation-insensitive key for matching names (conditions, variables, levels)."""
+    return re.sub(r"[^a-z0-9]+", "_", str(value).lower()).strip("_")
+
+
+def _gen_log_entry(metadata: Dict[str, Any], scale: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The ``scale_generation_log`` entry the engine wrote for ``scale`` (matched on its name), if any."""
+    name = str((scale or {}).get("name", "")).strip()
+    for entry in (metadata or {}).get("scale_generation_log") or []:
+        if isinstance(entry, dict) and str(entry.get("name", "")).strip() == name:
+            return entry
+    return None
+
+
+def _engine_prefix(metadata: Dict[str, Any], scale: Dict[str, Any]) -> str:
+    """Column prefix the engine used for ``scale``: its first generated column, else the cleaned name."""
+    entry = _gen_log_entry(metadata, scale) or {}
+    cols = [str(c) for c in (entry.get("columns_generated") or [])]
+    if cols:
+        return cols[0].rsplit("_", 1)[0]
+    raw = str((scale or {}).get("variable_name") or (scale or {}).get("name") or "Scale").strip()
+    return _report_clean_column_name(raw)
+
+
+def _reverse_keyed_items(metadata: Dict[str, Any], scale: Dict[str, Any]) -> List[int]:
+    """1-based numbers of a scale's reverse-keyed items (the generation log first, then the scale spec)."""
+    entry = _gen_log_entry(metadata, scale)
+    if entry is not None and "reverse_items" in entry:
+        raw = entry.get("reverse_items")
+    else:
+        raw = (scale or {}).get("reverse_items")
+    found: set = set()
+    if isinstance(raw, (list, tuple, set)):
+        for item in raw:
+            try:
+                found.add(int(item))
+            except (TypeError, ValueError):
+                logger.debug("Ignoring invalid reverse-item entry %r", item)
+    return sorted(found)
+
+
+def _scale_flip_constant(metadata: Dict[str, Any], scale: Dict[str, Any]) -> float:
+    """scale_min + scale_max: ``flip - x`` recodes a reverse-keyed answer (the engine's own rule)."""
+    entry = _gen_log_entry(metadata, scale)
+    source = entry if entry is not None and "scale_min" in entry and "scale_max" in entry else (scale or {})
+    smin = _finite(source.get("scale_min", 1))
+    smin = 1.0 if smin is None else smin
+    smax = _finite(source.get("scale_max"))
+    if smax is None:
+        points = _finite((scale or {}).get("scale_points"))
+        smax = smin + (7.0 if points is None else points) - 1.0
+    return smin + smax
+
+
+def _item_number(column: str, position: int) -> int:
+    """Item number encoded in a column name ("Trust_3" is 3), else the column's 1-based position."""
+    match = re.search(r"(\d+)$", str(column))
+    return int(match.group(1)) if match else position + 1
+
+
+def _scale_composite(
+    df: "pd.DataFrame",
+    scale: Dict[str, Any],
+    scale_cols: List[str],
+    metadata: Optional[Dict[str, Any]] = None,
+) -> "pd.Series":
+    """Composite score of one scale, scored the way the engine scores it.
+
+    The delivered item columns hold the raw answers. A reverse-keyed item must be recoded
+    (``scale_min + scale_max - x``) before averaging, otherwise items that point in opposite
+    directions cancel and the composite stops measuring the construct (a configured effect can then
+    even flip sign). The engine already stores the scored composite as ``<prefix>_mean``; that column
+    is used when it agrees with the recoded items (so the instructor numbers equal the engine's and
+    the student summary's), otherwise the composite is rebuilt from the items. One-item scales return
+    the item itself.
+    """
+    metadata = metadata or {}
+    cols = [c for c in scale_cols if c in df.columns]
+    if not cols:
+        return pd.Series(np.nan, index=df.index, dtype=float)
+    items = df[cols].apply(pd.to_numeric, errors="coerce")
+    if len(cols) == 1:
+        return items.iloc[:, 0]
+    reverse = set(_reverse_keyed_items(metadata, scale))
+    scored = items
+    if reverse:
+        flip = _scale_flip_constant(metadata, scale)
+        scored = items.copy()
+        for position, col in enumerate(cols):
+            if _item_number(col, position) in reverse:
+                scored[col] = flip - items[col]
+    composite = scored.mean(axis=1)
+    prefixes = {c.rsplit("_", 1)[0] for c in cols}
+    if len(prefixes) == 1:
+        engine_col = f"{next(iter(prefixes))}_mean"
+        if engine_col in df.columns:
+            engine = pd.to_numeric(df[engine_col], errors="coerce")
+            ours = np.nan_to_num(composite.to_numpy(dtype=float), nan=-9999.0)
+            theirs = np.nan_to_num(engine.to_numpy(dtype=float), nan=-9999.0)
+            if np.allclose(ours, theirs, atol=0.011):  # the engine rounds composites to two decimals
+                return engine
+    return composite
+
+
+def _applied_contrasts(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Rows of ``effect_sizes_applied['contrasts']`` (empty for metadata written before that key existed)."""
+    applied = (metadata or {}).get("effect_sizes_applied")
+    rows = applied.get("contrasts") if isinstance(applied, dict) else None
+    return [r for r in (rows or []) if isinstance(r, dict)]
+
+
+def _inferred_effects_enabled(metadata: Dict[str, Any]) -> bool:
+    """Whether condition-name-derived (inferred) effects were switched on for the run."""
+    applied = (metadata or {}).get("effect_sizes_applied")
+    return bool(applied.get("inferred_effects_enabled", True)) if isinstance(applied, dict) else True
+
+
+def _applied_index(metadata: Dict[str, Any]) -> Dict[Tuple[str, str, str], Dict[str, Any]]:
+    """Applied contrasts keyed by (normalised variable, condition 1, condition 2)."""
+    index: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    for row in _applied_contrasts(metadata):
+        key = (_norm_label(row.get("variable", "")), str(row.get("condition_1", "")), str(row.get("condition_2", "")))
+        index[key] = row
+    return index
+
+
+def _lookup_applied(
+    index: Dict[Tuple[str, str, str], Dict[str, Any]], prefix: str, cond_1: str, cond_2: str
+) -> Tuple[Optional[Dict[str, Any]], float]:
+    """Applied row for a pair of conditions in either order, with the sign that orients it as 1 minus 2."""
+    variable = _norm_label(prefix)
+    row = index.get((variable, str(cond_1), str(cond_2)))
+    if row is not None:
+        return row, 1.0
+    row = index.get((variable, str(cond_2), str(cond_1)))
+    return (row, -1.0) if row is not None else (None, 1.0)
+
+
+_SOURCE_LABELS = {
+    "user": "Your specified effect(s)",
+    "inferred": "Inferred from condition names",
+    "none": "None built in",
+    "mixed": "Specified and inferred",
+}
+
+
+def _source_label(source: Any) -> str:
+    """Reader-facing name of an ``effect_sizes_applied`` source ("user", "inferred", "none", "mixed")."""
+    if source in (None, ""):
+        return "Not recorded"
+    return _SOURCE_LABELS.get(str(source), str(source))
+
+
+def _scale_level_effects(metadata: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
+    """Observed condition contrasts at SCALE level, one row per scale and pair of conditions.
+
+    ``effect_sizes_observed`` holds a row for every item AND every composite for every pair of
+    conditions (23,310 rows with 36 conditions). A table of that is unreadable and hides the number
+    that matters, so this keeps the composite (``<prefix>_mean``) rows, or the item of a one-item
+    scale. Rows keep the engine's orientation (condition 1 minus condition 2) and sign. Returns the
+    rows and how many item-level rows were left out.
+    """
+    metadata = metadata or {}
+    observed = [r for r in (metadata.get("effect_sizes_observed") or []) if isinstance(r, dict)]
+    by_variable: Dict[str, List[Dict[str, Any]]] = {}
+    for row in observed:
+        by_variable.setdefault(str(row.get("variable", "")), []).append(row)
+    rows: List[Dict[str, Any]] = []
+    for scale in metadata.get("scales") or []:
+        if not isinstance(scale, dict):
+            continue
+        prefix = _engine_prefix(metadata, scale)
+        entry = _gen_log_entry(metadata, scale) or {}
+        n_items = len(entry.get("columns_generated") or []) or int(_finite(scale.get("num_items")) or 1)
+        column = f"{prefix}_mean"
+        if column not in by_variable and n_items <= 1:
+            column = f"{prefix}_1"
+        for row in by_variable.get(column, []):
+            d_value = _finite(row.get("cohens_d", row.get("d")))
+            if d_value is None:
+                continue
+            rows.append({
+                "scale": str(scale.get("name", prefix)), "prefix": prefix, "variable": column,
+                "condition_1": str(row.get("condition_1", "")), "condition_2": str(row.get("condition_2", "")),
+                "mean_1": _finite(row.get("mean_1")), "mean_2": _finite(row.get("mean_2")), "d": d_value,
+                "n_1": row.get("n_1"), "n_2": row.get("n_2"),
+            })
+    return rows, max(0, len(observed) - len(rows))
+
+
+def _effect_contrast_rows(metadata: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
+    """Scale-level contrasts with the source and intended d the engine recorded for them.
+
+    Every row is oriented condition 1 minus condition 2. ``source`` / ``intended`` are None when
+    the metadata has no ``effect_sizes_applied`` entry for the pair. Returns the rows and the number
+    of item-level rows that were left out.
+    """
+    rows, dropped = _scale_level_effects(metadata)
+    index = _applied_index(metadata)
+    for row in rows:
+        applied, sign = _lookup_applied(index, row["prefix"], row["condition_1"], row["condition_2"])
+        intended = _finite(applied.get("intended_d")) if applied is not None else None
+        row["source"] = applied.get("source") if applied is not None else None
+        row["intended"] = None if intended is None else (intended * sign) + 0.0
+    return rows, dropped
+
+
+def _cap_by_effect(rows: List[Dict[str, Any]], cap: int) -> List[Dict[str, Any]]:
+    """At most ``cap`` rows: the largest |d| are kept and the original order is preserved."""
+    if len(rows) <= cap:
+        return rows
+    keep = sorted(range(len(rows)), key=lambda i: -abs(rows[i].get("d") or 0.0))[:cap]
+    return [rows[i] for i in sorted(keep)]
+
+
+def _word_match(keyword: str, text: str) -> bool:
+    """Whole-word, case-insensitive match (the engine's rule for matching effect levels to conditions)."""
+    return bool(keyword) and re.search(r"\b" + re.escape(keyword) + r"\b", text, flags=re.IGNORECASE) is not None
+
+
+def _effect_level_groups(conditions: List[Any], level_high: Any, level_low: Any) -> Tuple[List[str], List[str]]:
+    """Conditions the engine treats as the high and the low arm of a specified effect.
+
+    A level matches a condition as a whole word; when both levels match ("AI" and "No AI" in
+    "No AI x Hedonic") the longer, more specific level wins. With a factor-level effect in a
+    factorial design each arm therefore holds several cells.
+    """
+    high_text = str(level_high or "").strip().lower()
+    low_text = str(level_low or "").strip().lower()
+    high: List[str] = []
+    low: List[str] = []
+    for cond in conditions:
+        text = str(cond).strip().lower()
+        is_high = _word_match(high_text, text)
+        is_low = _word_match(low_text, text)
+        if is_high and is_low:
+            if len(high_text) >= len(low_text):
+                is_low = False
+            else:
+                is_high = False
+        if is_high:
+            high.append(str(cond))
+        elif is_low:
+            low.append(str(cond))
+    return high, low
+
+
+def _variable_matches(effect_variable: Any, prefix: str) -> bool:
+    """The engine's rule for deciding whether a specified effect applies to a DV (separator-insensitive)."""
+    effect_var = re.sub(r"[\s_\-]+", " ", str(effect_variable).lower()).strip()
+    column_var = re.sub(r"[\s_\-]+", " ", str(prefix).lower()).strip()
+    return effect_var == column_var or column_var.startswith(effect_var) or effect_var in column_var
+
+
+def _pooled_cohens_d(high_values: "pd.Series", low_values: "pd.Series") -> Tuple[Optional[float], int, int]:
+    """Cohen's d (high minus low, pooled SD) and the two group sizes; d is None when it is undefined."""
+    a = pd.to_numeric(high_values, errors="coerce").dropna()
+    b = pd.to_numeric(low_values, errors="coerce").dropna()
+    n1, n2 = len(a), len(b)
+    if n1 < 2 or n2 < 2:
+        return None, n1, n2
+    pooled_var = ((n1 - 1) * float(a.var(ddof=1)) + (n2 - 1) * float(b.var(ddof=1))) / (n1 + n2 - 2)
+    if not pooled_var > 0:
+        return None, n1, n2
+    return (float(a.mean()) - float(b.mean())) / math.sqrt(pooled_var), n1, n2
+
+
+def _effect_phrase(effect: Dict[str, Any]) -> str:
+    """One line for a specified effect: "Trust: Treatment higher than Control (d = 0.80)"."""
+    magnitude = abs(_finite(effect.get("cohens_d", 0.5)) or 0.0)
+    variable = str(effect.get("variable", "")).strip() or "DV"
+    high = str(effect.get("level_high") or "").strip()
+    low = str(effect.get("level_low") or "").strip()
+    lower = str(effect.get("direction") or "positive").strip().lower() != "positive"
+    if high and low:
+        return f"{variable}: {high} {'lower' if lower else 'higher'} than {low} (d = {magnitude:.2f})"
+    return f"{variable}: d = {magnitude:.2f}"
+
+
+def _effect_check(intended: Optional[float], observed: Optional[float], n_1: Any, n_2: Any) -> str:
+    """Compare an observed d with the intended one against the sampling error of d.
+
+    An observed d is a sample statistic: with 30 participants per condition its standard error is
+    about 0.26, so a fixed "within 0.1" rule would call ordinary sampling noise a failure.
+    """
+    n1, n2 = _finite(n_1), _finite(n_2)
+    if intended is None or observed is None or not n1 or not n2 or n1 <= 0 or n2 <= 0:
+        return "n/a"
+    se = math.sqrt((n1 + n2) / (n1 * n2) + observed ** 2 / (2.0 * (n1 + n2)))
+    return "Within sampling error" if abs(observed - intended) <= 2.0 * se else "Outside 2 SE of the intended d"
+
+
+def _configured_effect_summary(df: Optional["pd.DataFrame"], metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """One row per (specified effect, DV it was applied to): intended and observed d, high minus low.
+
+    Intended d is the configured Cohen's d, signed by its direction (a "negative" effect makes the
+    high level the lower one). Observed d comes from the engine's ``effect_sizes_applied`` contrast
+    for exactly that pair of conditions (re-oriented to high minus low). When no single contrast
+    corresponds, as for a factor-level effect in a factorial design whose arms hold several cells,
+    d is computed from the data between the arms and marked ``basis == "groups"``. Rows with no
+    matching DV or no computable d keep ``observed = None``.
+    """
+    metadata = metadata or {}
+    effects = [e for e in (metadata.get("effect_sizes_configured") or metadata.get("effect_sizes") or [])
+               if isinstance(e, dict)]
+    if not effects:
+        return []
+    scales = [s for s in (metadata.get("scales") or []) if isinstance(s, dict)]
+    conditions = [str(c) for c in (metadata.get("conditions") or [])]
+    index = _applied_index(metadata)
+    observed_rows, _unused = _scale_level_effects(metadata)
+    registry = {str(e.get("name", "")): list(e.get("columns_generated") or [])
+                for e in (metadata.get("scale_generation_log") or []) if isinstance(e, dict)}
+    has_condition = df is not None and hasattr(df, "columns") and "CONDITION" in df.columns
+    rows: List[Dict[str, Any]] = []
+    for eff in effects:
+        magnitude = abs(_finite(eff.get("cohens_d", 0.5)) or 0.0)
+        direction = str(eff.get("direction") or "positive").strip().lower()
+        high, low = str(eff.get("level_high") or ""), str(eff.get("level_low") or "")
+        base = {"variable": str(eff.get("variable", "")), "high": high, "low": low,
+                "intended": magnitude if direction == "positive" else -magnitude}
+        matched = [(s, _engine_prefix(metadata, s)) for s in scales]
+        matched = [(s, p) for s, p in matched if _variable_matches(eff.get("variable", ""), p)]
+        if not matched:
+            rows.append({**base, "scale": None, "prefix": None, "observed": None, "n_1": None, "n_2": None,
+                         "basis": None})
+            continue
+        for scale, prefix in matched:
+            row = {**base, "scale": str(scale.get("name", prefix)), "prefix": prefix, "observed": None,
+                   "n_1": None, "n_2": None, "basis": None}
+            high_cond = next((c for c in conditions if _norm_label(c) == _norm_label(high)), None)
+            low_cond = next((c for c in conditions if _norm_label(c) == _norm_label(low)), None)
+            applied, sign = (_lookup_applied(index, prefix, high_cond, low_cond)
+                             if high_cond is not None and low_cond is not None else (None, 1.0))
+            observed_d = _finite(applied.get("observed_d")) if applied is not None else None
+            if observed_d is not None:
+                row["observed"] = (observed_d * sign) + 0.0
+                row["basis"] = "contrast"
+                for obs in observed_rows:
+                    if obs["prefix"] == prefix and {obs["condition_1"], obs["condition_2"]} == {high_cond, low_cond}:
+                        same = obs["condition_1"] == high_cond
+                        row["n_1"], row["n_2"] = (obs["n_1"], obs["n_2"]) if same else (obs["n_2"], obs["n_1"])
+                        break
+            elif has_condition:
+                high_conds, low_conds = _effect_level_groups(conditions, high, low)
+                if high_conds and low_conds:
+                    cols = _find_scale_columns(df, scale, registry)
+                    if cols:
+                        composite = _scale_composite(df, scale, cols, metadata)
+                        d_value, n1, n2 = _pooled_cohens_d(composite[df["CONDITION"].astype(str).isin(high_conds)],
+                                                           composite[df["CONDITION"].astype(str).isin(low_conds)])
+                        if d_value is not None:
+                            row["observed"], row["n_1"], row["n_2"], row["basis"] = d_value + 0.0, n1, n2, "groups"
+            rows.append(row)
+    return rows
+
+
+def _recorded_rate(value: Any) -> Optional[str]:
+    """Text for a recorded 0-1 rate such as 0.95 -> "95%"; None when it was not recorded."""
+    number = _finite(value)
+    if number is None:
+        return None
+    return f"{number:.0%}" if 0.0 <= number <= 1.0 else f"{number:g}"
+
+
+def _settings_transparency_lines(df: Optional["pd.DataFrame"], metadata: Dict[str, Any]) -> List[str]:
+    """The student summary's "Simulation Settings (Transparency)" section.
+
+    Lists only the settings the run recorded in its metadata (demographics, response-quality rates,
+    exclusion criteria). A setting that was not recorded is marked as such instead of being replaced
+    by an assumed default, and observed values (age, gender, attention pass rate) are computed from
+    the generated data and labelled as observed.
+    """
+    metadata = metadata or {}
+    lines = ["## Simulation Settings (Transparency)", "",
+             "Only settings that were recorded for this run are listed. A setting the run did not record is marked "
+             "as such (no default is assumed), and values labelled observed are computed from the generated data.", ""]
+    have_df = df is not None and hasattr(df, "columns")
+
+    def table(title: str, rows: List[Tuple[str, str]], observed: List[Tuple[str, str]]) -> None:
+        lines.extend([f"### {title}", ""])
+        if rows:
+            lines.extend(["| Setting | Value |", "|---------|-------|"])
+            lines.extend(f"| {k} | {v} |" for k, v in rows)
+        else:
+            lines.append("_Not recorded in this run's metadata._")
+        lines.append("")
+        if observed:
+            lines.extend(["| Observed in the generated data | Value |", "|---------------------------------|-------|"])
+            lines.extend(f"| {k} | {v} |" for k, v in observed)
+            lines.append("")
+
+    demo = metadata.get("demographics") if isinstance(metadata.get("demographics"), dict) else {}
+    demo_rows: List[Tuple[str, str]] = []
+    for key, label, unit in (("gender_quota", "Gender quota (% male)", "%"), ("age_mean", "Age mean", ""),
+                             ("age_sd", "Age standard deviation", "")):
+        number = _finite(demo.get(key))
+        if number is not None:
+            demo_rows.append((label, f"{number:g}{unit}"))
+    age_lo, age_hi = _finite(demo.get("age_min")), _finite(demo.get("age_max"))
+    if age_lo is not None and age_hi is not None:
+        demo_rows.append(("Age range", f"{age_lo:g} to {age_hi:g}"))
+    demo_seen: List[Tuple[str, str]] = []
+    if have_df and "Age" in df.columns:
+        age = pd.to_numeric(df["Age"], errors="coerce").dropna()
+        if len(age):
+            demo_seen.append(("Age", f"M = {age.mean():.1f}, SD = {_fmt(age.std(), 1)}, range {age.min():.0f} to {age.max():.0f}"))
+    if have_df and "Gender" in df.columns:
+        shares = df["Gender"].value_counts(normalize=True, dropna=True)
+        if len(shares):
+            demo_seen.append(("Gender", ", ".join(f"{str(k).replace('|', '/')} {v:.0%}" for k, v in list(shares.items())[:4])))
+    table("Demographics Configuration", demo_rows, demo_seen)
+
+    quality_rows: List[Tuple[str, str]] = []
+    for key, label in (("attention_rate", "Attention check pass rate (setting)"),
+                       ("random_responder_rate", "Random responder rate (setting)")):
+        text = _recorded_rate(metadata.get(key))
+        if text is not None:
+            quality_rows.append((label, text))
+    quality_seen: List[Tuple[str, str]] = []
+    if have_df and "Attention_Pass_Rate" in df.columns:
+        rate = pd.to_numeric(df["Attention_Pass_Rate"], errors="coerce").dropna()
+        if len(rate):
+            quality_seen.append(("Attention check pass rate", f"{rate.mean():.0%} (mean of Attention_Pass_Rate)"))
+    table("Response Quality Settings", quality_rows, quality_seen)
+
+    exclusion = metadata.get("exclusion_criteria")
+    if isinstance(exclusion, dict) and exclusion:
+        crit_rows: List[Tuple[str, str]] = []
+        for key, label, unit in (("completion_time_min_seconds", "Min completion time", " seconds"),
+                                 ("completion_time_max_seconds", "Max completion time", " seconds"),
+                                 ("straight_line_threshold", "Straight-line threshold", " items")):
+            number = _finite(exclusion.get(key))
+            if number is not None:
+                crit_rows.append((label, f"{number:g}{unit}"))
+        if "duplicate_ip_check" in exclusion:
+            crit_rows.append(("Duplicate IP check", "Yes" if exclusion.get("duplicate_ip_check") else "No"))
+        if crit_rows:
+            lines.extend(["### Exclusion Criteria", "", "| Criterion | Threshold |", "|-----------|-----------|"])
+            lines.extend(f"| {k} | {v} |" for k, v in crit_rows)
+            lines.append("")
+    return lines
+
+
+def _attention_check_description(df: Optional["pd.DataFrame"]) -> Optional[str]:
+    """What ``Attention_Check_1`` really holds, read from the data (None when it cannot be derived).
+
+    The column stores the option the participant selected (1 or 2), not a pass/fail code. The option
+    counted as correct depends on the participant's condition, so "1 = Correct" is true only where
+    option 1 is the keyed answer. ``Attention_Pass_Rate`` (1 = passed, 0 = failed) holds the result.
+    The keyed option per condition is taken from the participants who passed (or, if none did, the
+    opposite of what those who failed chose).
+    """
+    if df is None or not hasattr(df, "columns") or "Attention_Check_1" not in df.columns:
+        return None
+    codes = pd.to_numeric(df["Attention_Check_1"], errors="coerce")
+    if codes.isna().any() or not set(codes.unique()) <= {1, 2}:
+        return None  # the column was not written by the simulator's two-option check
+    base = ("Option selected on the attention/manipulation check (1 or 2), not a pass/fail code. Which option counts as "
+            "correct depends on the participant's condition")
+    if "Attention_Pass_Rate" not in df.columns or "CONDITION" not in df.columns:
+        return base + "; Attention_Pass_Rate holds the result (1 = passed, 0 = failed)."
+    passed = pd.to_numeric(df["Attention_Pass_Rate"], errors="coerce")
+    keyed: Dict[Any, int] = {}
+    for cond, idx in df.groupby("CONDITION").groups.items():
+        right = codes.loc[idx][passed.loc[idx] == 1]
+        wrong = codes.loc[idx][passed.loc[idx] == 0]
+        if len(right) and right.nunique() == 1:
+            keyed[cond] = int(right.iloc[0])
+        elif len(wrong) and wrong.nunique() == 1:
+            keyed[cond] = 3 - int(wrong.iloc[0])
+    tail = "; Attention_Pass_Rate holds the result (1 = passed, 0 = failed)."
+    if not keyed or len(keyed) < df["CONDITION"].nunique():
+        return base + tail
+    options = set(keyed.values())
+    if options == {1}:
+        return ("Option selected on the attention/manipulation check: 1 = correct, 2 = incorrect (option 1 is the correct "
+                "answer in every condition); Attention_Pass_Rate holds the result (1 = passed, 0 = failed).")
+    if options == {2}:
+        return ("Option selected on the attention/manipulation check: 2 = correct, 1 = incorrect (option 2 is the correct "
+                "answer in every condition, so 1 is NOT 'correct'); Attention_Pass_Rate holds the result "
+                "(1 = passed, 0 = failed).")
+
+    def names(option: int) -> str:
+        found = [str(c) for c, o in keyed.items() if o == option]
+        return ", ".join(found[:4]) + (f" and {len(found) - 4} more" if len(found) > 4 else "")
+
+    return (base + f": option 1 is correct in {names(1)}; option 2 is correct in {names(2)}"
+            + tail)
+
+
+def _dictionary_description(column: str, description: Any, df: Optional["pd.DataFrame"]) -> str:
+    """Data-dictionary text for ``column``: the engine's description, corrected where the data show it is wrong."""
+    if str(column) == "Attention_Check_1":
+        derived = _attention_check_description(df)
+        if derived:
+            return derived
+    return str(description)
+
+
+def _speed_flag_lines(df: "pd.DataFrame", metadata: Dict[str, Any]) -> List[str]:
+    """Completion-time bullets for the instructor markdown that agree with the ``Flag_Speed`` column.
+
+    The generator sets ``Flag_Speed`` when the completion time it drew for a participant is below the
+    minimum or above the maximum of the exclusion window (``completion_time_min_seconds`` and
+    ``completion_time_max_seconds``; 60 s and 1,800 s unless changed). It later moves the recorded
+    ``Completion_Time_Seconds`` into a plausible human range without recomputing the flag, so a count
+    of recorded times against fixed limits can disagree with the flag. Both are reported, and a note
+    appears when the data prove a disagreement: a flagged participant whose recorded time lies
+    between the times of unflagged participants cannot have been flagged by the rule, whatever the
+    thresholds were (they are not recorded in the run metadata unless an ``exclusion_criteria`` entry
+    was supplied).
+    """
+    criteria = (metadata or {}).get("exclusion_criteria")
+    criteria = criteria if isinstance(criteria, dict) else {}
+    low, high = _finite(criteria.get("completion_time_min_seconds")), _finite(criteria.get("completion_time_max_seconds"))
+    configured = low is not None and high is not None
+    low = 60.0 if low is None else low
+    high = 1800.0 if high is None else high
+    times = pd.to_numeric(df["Completion_Time_Seconds"], errors="coerce")
+    below, above = int((times < low).sum()), int((times > high).sum())
+    lines: List[str] = []
+    if "Flag_Speed" not in df.columns:
+        lines.append(f"- Suspiciously fast (<{low:g} s): {below}")
+        lines.append(f"- Very slow (>{high:g} s): {above}")
+        return lines
+    flagged = pd.to_numeric(df["Flag_Speed"], errors="coerce").fillna(0) > 0
+    window = f"{low:g} s to {high:g} s" + ("" if configured else " by default, unless changed in Advanced Settings")
+    lines.append(f"- Speed-flagged (`Flag_Speed` = 1): {int(flagged.sum())}")
+    lines.append("  - Rule: flagged when the completion time is below the minimum or above the maximum of the "
+                 f"exclusion window ({window}).")
+    lines.append(f"- Recorded `Completion_Time_Seconds` below {low:g} s: {below}; above {high:g} s: {above}"
+                 + ("" if configured else " (default window)"))
+    unflagged_times = times[~flagged].dropna()
+    if configured:
+        impossible = flagged & ~((times < low) | (times > high))
+    elif len(unflagged_times):
+        impossible = flagged & (times >= unflagged_times.min()) & (times <= unflagged_times.max())
+    else:
+        impossible = flagged & False
+    if int(impossible.sum()):
+        lines.append(f"- Note: {int(impossible.sum())} flagged participant(s) have a recorded time "
+                     f"({times[impossible].min():.0f} to {times[impossible].max():.0f} s) that the flag's rule cannot "
+                     "have produced from the recorded times. The flag is set from the completion time drawn when the "
+                     "participant is simulated, and the generator later adjusts the recorded times to a plausible range "
+                     "without recomputing it. Use `Flag_Speed` / `Exclude_Recommended` as the exclusion rule and read the "
+                     "recorded times as descriptive only.")
+    return lines
+
 
 # ============================================================================
 # NUMPY-BASED STATISTICAL FUNCTIONS (fallbacks when scipy unavailable)
@@ -731,7 +1326,8 @@ class InstructorReportGenerator:
         lines.append(f"| **Run ID** | `{metadata.get('run_id', 'N/A')}` |")
         lines.append(f"| **Mode** | {metadata.get('simulation_mode', 'pilot').title()} |")
         lines.append(f"| **Tool Version** | {metadata.get('app_version', 'N/A')} |")
-        lines.append(f"| **Random Seed** | {metadata.get('random_seed', 'Auto')} |")
+        _seed_value = metadata.get('seed', metadata.get('random_seed'))
+        lines.append(f"| **Random Seed** | {_seed_value if _seed_value not in (None, '') else 'not recorded'} |")
         # v1.1.0.7: Show data source (QSF upload vs manual builder)
         _data_source_label = metadata.get('data_source_label', '')
         if _data_source_label:
@@ -867,9 +1463,7 @@ class InstructorReportGenerator:
         lines.append("### Condition Effects Strategy")
         lines.append("")
 
-        applied = metadata.get('effect_sizes_applied') or {}
-        contrasts = applied.get('contrasts') or []
-        inferred_on = applied.get('inferred_effects_enabled', True)
+        inferred_on = _inferred_effects_enabled(metadata)
 
         if effect_sizes:
             lines.append("**Effects you specified** (the Cohen's d on the scale mean is calibrated to land "
@@ -877,32 +1471,17 @@ class InstructorReportGenerator:
             lines.append("")
             lines.append("| Variable | High level | Low level | Intended d (high - low) | Observed d (high - low) |")
             lines.append("|----------|------------|-----------|-------------------------|-------------------------|")
-            user_rows = [r for r in contrasts if r.get('source') == 'user']
-
-            def _norm_name(x: Any) -> str:
-                return re.sub(r"[^a-z0-9]+", "_", str(x).lower()).strip("_")
-
-            for es in effect_sizes[:10]:
-                var = es.get('variable', 'DV')
-                high = es.get('level_high', '') or 'high level'
-                low = es.get('level_low', '') or 'low level'
-                d = _safe_float(es.get('cohens_d', 0.5))
-                # The engine raises the high level for direction "positive" and lowers it otherwise
-                intended = d if str(es.get('direction', 'positive')).lower() == 'positive' else -d
-                observed = None
-                for r in user_rows:
-                    if _norm_name(r.get('variable', '')) != _norm_name(var):
-                        continue
-                    pair = (r.get('condition_1'), r.get('condition_2'))
-                    if pair not in ((high, low), (low, high)) or r.get('observed_d') is None:
-                        continue
-                    # contrast rows are condition_1 minus condition_2, in condition order:
-                    # orient them as high minus low
-                    observed = r['observed_d'] if pair == (high, low) else -r['observed_d']
-                    break
-                obs_txt = f"{observed:+.2f}" if observed is not None else "n/a"
-                lines.append(f"| {var} | {high} | {low} | {intended:+.2f} | {obs_txt} |")
+            specified_rows = _configured_effect_summary(df, metadata)
+            for row in specified_rows[:10]:
+                var = row["scale"] or str(row["variable"] or "DV")
+                obs_txt = _fmt(row["observed"], 2, signed=True) + ("*" if row["basis"] == "groups" else "")
+                lines.append(f"| {var} | {row['high'] or 'high level'} | {row['low'] or 'low level'} | "
+                             f"{_fmt(row['intended'], 2, signed=True)} | {obs_txt} |")
             lines.append("")
+            if any(r["basis"] == "groups" for r in specified_rows[:10]):
+                lines.append("*Computed between all conditions that carry the level (a factor-level effect in a "
+                             "factorial design), not from a single contrast.*")
+                lines.append("")
 
         if inferred_on:
             lines.append("**Inferred differences:** for contrasts without a specified effect, the tool infers a "
@@ -916,20 +1495,26 @@ class InstructorReportGenerator:
         lines.append("")
 
         # --- OBSERVED EFFECTS ---
-        observed_effects = metadata.get('effect_sizes_observed', [])
-        if observed_effects:
+        contrast_rows, dropped_items = _effect_contrast_rows(metadata)
+        if contrast_rows:
+            shown_contrasts = _cap_by_effect(contrast_rows, 12)
             lines.append("### Observed Effects in Generated Data")
             lines.append("")
-            lines.append("| Variable | Condition 1 | Condition 2 | M₁ | M₂ | Cohen's d |")
-            lines.append("|----------|-------------|-------------|-----|-----|-----------|")
-            for obs in observed_effects[:10]:
-                var = obs.get('variable', 'DV')
-                c1 = obs.get('condition_1', 'C1')
-                c2 = obs.get('condition_2', 'C2')
-                m1 = obs.get('mean_1', 0)
-                m2 = obs.get('mean_2', 0)
-                d = obs.get('cohens_d', 0)
-                lines.append(f"| {var} | {c1} | {c2} | {m1:.2f} | {m2:.2f} | {d:.2f} |")
+            lines.append("| Variable | Condition 1 | Condition 2 | M₁ | M₂ | Cohen's d | Built in as | Intended d |")
+            lines.append("|----------|-------------|-------------|-----|-----|-----------|-------------|------------|")
+            for obs in shown_contrasts:
+                if obs["intended"] is not None:
+                    intended_txt = _fmt(obs["intended"], 2, signed=True)
+                else:
+                    intended_txt = "not calibrated" if obs["source"] == "inferred" else "n/a"
+                lines.append(f"| {obs['scale']} | {obs['condition_1']} | {obs['condition_2']} | {_fmt(obs['mean_1'], 2)} | "
+                             f"{_fmt(obs['mean_2'], 2)} | {_fmt(obs['d'], 2)} | {_source_label(obs['source'])} | {intended_txt} |")
+            lines.append("")
+            lines.append("Cohen's d is condition 1 minus condition 2 on the scale mean, so a negative d means condition 2 "
+                         "scored higher.")
+            if len(shown_contrasts) < len(contrast_rows):
+                lines.append(f"Showing the {len(shown_contrasts)} contrasts with the largest |d| out of "
+                             f"{len(contrast_rows)}; the full set per item is in Metadata.json.")
             lines.append("")
 
             lines.append("**Effect Size Interpretation:**")
@@ -1171,44 +1756,8 @@ class InstructorReportGenerator:
         lines.append("- **This is simulated data**: Results demonstrate what your analysis pipeline will produce with realistic-looking data structures.")
         lines.append("")
 
-        # SIMULATION SETTINGS TRANSPARENCY SECTION
-        lines.append("## Simulation Settings (Transparency)")
-        lines.append("")
-        lines.append("These settings were used to generate the simulated data:")
-        lines.append("")
-
-        # Demographics settings
-        demo = metadata.get("demographics", {})
-        lines.append("### Demographics Configuration")
-        lines.append("")
-        lines.append("| Setting | Value |")
-        lines.append("|---------|-------|")
-        lines.append(f"| Gender quota (% male) | {demo.get('gender_quota', 50)}% |")
-        lines.append(f"| Age mean | {demo.get('age_mean', 35)} |")
-        lines.append(f"| Age standard deviation | {demo.get('age_sd', 12)} |")
-        lines.append("")
-
-        # Response quality settings
-        lines.append("### Response Quality Settings")
-        lines.append("")
-        lines.append("| Setting | Value |")
-        lines.append("|---------|-------|")
-        lines.append(f"| Attention check pass rate | {_safe_float(metadata.get('attention_rate', 0.85)):.0%} |")
-        lines.append(f"| Random responder rate | {_safe_float(metadata.get('random_responder_rate', 0.05)):.0%} |")
-        lines.append("")
-
-        # Exclusion criteria
-        exclusion = metadata.get("exclusion_criteria", {})
-        if exclusion:
-            lines.append("### Exclusion Criteria")
-            lines.append("")
-            lines.append("| Criterion | Threshold |")
-            lines.append("|-----------|-----------|")
-            lines.append(f"| Min completion time | {exclusion.get('completion_time_min_seconds', 60)} seconds |")
-            lines.append(f"| Max completion time | {exclusion.get('completion_time_max_seconds', 1800)} seconds |")
-            lines.append(f"| Straight-line threshold | {exclusion.get('straight_line_threshold', 10)} items |")
-            lines.append(f"| Duplicate IP check | {'Yes' if exclusion.get('duplicate_ip_check', True) else 'No'} |")
-            lines.append("")
+        # SIMULATION SETTINGS TRANSPARENCY SECTION (only what the run recorded; observed values from the data)
+        lines.extend(_settings_transparency_lines(df, metadata))
 
         if prereg_text:
             lines.append("## Preregistration Notes (as provided)")
@@ -1275,6 +1824,10 @@ class InstructorReportGenerator:
                 lines.append(f"- **{_attn_col}** distribution:")
                 lines.append(_safe_to_markdown(df[_attn_col].value_counts(dropna=False).to_frame("n")))
                 lines.append("")
+                _attn_note = _attention_check_description(df) if _attn_col == "Attention_Check_1" else None
+                if _attn_note:
+                    lines.append(f"  {_attn_note}")
+                    lines.append("")
             if "Attention_Pass_Rate" in df.columns:
                 lines.append("- **Attention_Pass_Rate** summary:")
                 lines.append(_safe_to_markdown(df["Attention_Pass_Rate"].describe().to_frame()))
@@ -1857,7 +2410,7 @@ class InstructorReportGenerator:
             lines.append("|--------|-------------|")
             for col_name, col_desc in column_descriptions.items():
                 safe_name = str(col_name).replace("|", "/")
-                safe_desc = str(col_desc).replace("|", "/")
+                safe_desc = _dictionary_description(col_name, col_desc, df).replace("|", "/")
                 lines.append(f"| `{safe_name}` | {safe_desc} |")
             lines.append("")
         elif df is not None and len(df.columns) > 0:
@@ -1873,11 +2426,12 @@ class InstructorReportGenerator:
                 "CONDITION": "Experimental condition assignment",
                 "Age": "Participant age in years",
                 "Gender": "Participant gender (Male, Female, Non-binary, Prefer not to say)",
-                "Attention_Check_1": "Attention/manipulation check (1=Correct, 2=Incorrect)",
+                "Attention_Check_1": "Option selected on the attention/manipulation check (1 or 2); see Attention_Pass_Rate for pass/fail",
                 "Completion_Time_Seconds": "Survey completion time in seconds",
                 "Attention_Pass_Rate": "Proportion of attention checks passed (0-1)",
                 "Max_Straight_Line": "Longest run of identical consecutive responses",
-                "Flag_Speeder": "Speed flag: 1=unusually fast completion",
+                "Flag_Speed": "Speed flag: 1=completion time outside the exclusion window (too fast or too slow)",
+                "Flag_Attention": "Attention flag: 1=attention-check pass rate below the threshold",
                 "Flag_StraightLine": "Straight-line flag: 1=repetitive pattern detected",
                 "Exclude_Recommended": "Recommended exclusion: 1=exclude, 0=retain",
                 "SIMULATION_MODE": "Simulation mode (pilot/full)",
@@ -1886,7 +2440,7 @@ class InstructorReportGenerator:
             for col in df.columns:
                 col_str = str(col)
                 dtype_str = str(df[col].dtype)
-                desc = _col_desc_map.get(col_str, "")
+                desc = _dictionary_description(col_str, _col_desc_map.get(col_str, ""), df)
                 if not desc:
                     if col_str.endswith("_mean"):
                         desc = "Composite mean score for scale"
@@ -2399,16 +2953,12 @@ class ComprehensiveInstructorReport:
             lines.append("")
 
         # Effect Sizes (hypotheses)
-        effect_sizes = metadata.get('effect_sizes_configured', [])
+        effect_sizes = [e for e in (metadata.get('effect_sizes_configured', []) or [])
+                        if isinstance(e, dict) and (_finite(e.get('cohens_d', 0)) or 0.0) != 0.0]
         if effect_sizes:
             lines.append("**Hypothesized Effects:**")
             for effect in effect_sizes:
-                var = effect.get('variable', '')
-                factor = effect.get('factor', '')
-                d = effect.get('cohens_d', 0)
-                direction = effect.get('direction', 'higher')
-                if d > 0:
-                    lines.append(f"  - {var}: d = {d:.2f} ({direction} in treatment)")
+                lines.append(f"  - {_effect_phrase(effect)}")
             lines.append("")
 
         # Sample Size
@@ -2515,8 +3065,7 @@ class ComprehensiveInstructorReport:
             lines.append(f"- Median: {time_stats['50%']:.1f} seconds")
             lines.append(f"- Min: {time_stats['min']:.1f} seconds")
             lines.append(f"- Max: {time_stats['max']:.1f} seconds")
-            lines.append(f"- Suspiciously fast (<60s): {(df['Completion_Time_Seconds'] < 60).sum()}")
-            lines.append(f"- Very slow (>30min): {(df['Completion_Time_Seconds'] > 1800).sum()}")
+            lines.extend(_speed_flag_lines(df, metadata))
             lines.append("")
 
         # =============================================================
@@ -2591,6 +3140,9 @@ class ComprehensiveInstructorReport:
         for _entry in _gen_log:
             _col_registry[str(_entry.get("name", ""))] = list(_entry.get("columns_generated", []))
 
+        key_table_at = len(lines)  # the key-results table is inserted here once every DV has been analysed
+        key_rows: List[Dict[str, Any]] = []
+
         for scale in scales:
             scale_name = scale.get("name", "Scale")
             num_items = scale.get("num_items", 5)
@@ -2618,7 +3170,12 @@ class ComprehensiveInstructorReport:
 
                 # v1.0.5.4: Compute composite for multi-item scales, use raw values for single-item DVs
                 if len(scale_cols) >= 2:
-                    composite = df_clean[scale_cols].mean(axis=1)
+                    composite = _scale_composite(df_clean, scale, scale_cols, metadata)
+                    _reverse_note = _reverse_keyed_items(metadata, scale)
+                    if _reverse_note:
+                        lines.append(f"Reverse-keyed item{'s' if len(_reverse_note) > 1 else ''} {', '.join(str(i) for i in _reverse_note)}: the item rows above show the "
+                                     "raw exported answers; the composite below recodes them (scale minimum + maximum - answer) before averaging.")
+                        lines.append("")
                     lines.append("#### Composite Score (Mean)")
                     lines.append("")
                     comp_stats = composite.describe()
@@ -2639,6 +3196,8 @@ class ComprehensiveInstructorReport:
 
                     df_clean_copy = df_clean.copy()
                     df_clean_copy["_composite"] = composite
+                    if len(conditions) >= 2:
+                        key_rows.append(self._key_test_row(str(scale_name), df_clean_copy))
 
                     for cond in conditions:
                         cond_data = df_clean_copy[df_clean_copy["CONDITION"] == cond]["_composite"]
@@ -2681,6 +3240,9 @@ class ComprehensiveInstructorReport:
                                 lines.append("")
 
             lines.append("")
+
+        if key_rows:
+            lines[key_table_at:key_table_at] = self._key_test_table_md(key_rows)
 
         # =============================================================
         # SECTION 4: PREREGISTRATION CHECK
@@ -2872,50 +3434,7 @@ class ComprehensiveInstructorReport:
         lines.append("-" * 80)
         lines.append("")
 
-        configured_effects = metadata.get("effect_sizes_configured", [])
-        observed_effects = metadata.get("effect_sizes_observed", [])
-
-        if configured_effects:
-            lines.append("### Configured vs Observed Effect Sizes")
-            lines.append("")
-            lines.append("| Variable | Configured d | Observed d | Match Quality |")
-            lines.append("|----------|--------------|------------|---------------|")
-
-            for cfg in configured_effects:
-                var = cfg.get("variable", "Unknown")
-                cfg_d = cfg.get("cohens_d", 0)
-                # Find matching observed effect
-                obs_d = None
-                for obs in observed_effects:
-                    if obs.get("variable") == var:
-                        obs_d = obs.get("cohens_d", obs.get("d_observed"))
-                        break
-
-                if obs_d is not None:
-                    diff = abs(cfg_d - obs_d)
-                    if diff < 0.1:
-                        quality = "✅ Excellent"
-                    elif diff < 0.2:
-                        quality = "✅ Good"
-                    elif diff < 0.3:
-                        quality = "⚠️ Acceptable"
-                    else:
-                        quality = "❌ Poor match"
-                    lines.append(f"| {var} | {cfg_d:.3f} | {obs_d:.3f} | {quality} |")
-                else:
-                    lines.append(f"| {var} | {cfg_d:.3f} | N/A | ⚠️ Not computed |")
-            lines.append("")
-
-            # Overall assessment
-            lines.append("### Quality Interpretation")
-            lines.append("")
-            lines.append("Effect sizes are calibrated from published meta-analyses and research findings.")
-            lines.append("Good matches indicate the simulation faithfully reproduces expected effect magnitudes.")
-            lines.append("")
-        else:
-            lines.append("No effect sizes were explicitly configured for this simulation.")
-            lines.append("The simulation used domain-inferred defaults based on study context.")
-            lines.append("")
+        lines.extend(self._effects_assessment_md(df, metadata))
 
         # =============================================================
         # SECTION 8: CONDITION BALANCE ANALYSIS (NEW v2.4.4)
@@ -3009,6 +3528,210 @@ class ComprehensiveInstructorReport:
         lines.append("-" * 80)
 
         return "\n".join(lines)
+
+    def _key_test_row(self, dv_name: str, df: pd.DataFrame, dv_column: str = "_composite") -> Dict[str, Any]:
+        """Headline test of one DV composite across conditions, for the key-results table.
+
+        Two conditions: the pooled-variance t-test and Cohen's d, with the contrast written as
+        "first - second" in the order the test used. Three or more: the one-way ANOVA and eta-squared.
+        Uses the same ``_run_statistical_tests`` results as the HTML report, so both files agree.
+        """
+        row: Dict[str, Any] = {"dv": dv_name}
+        try:
+            results = self._run_statistical_tests(df, dv_column, "CONDITION")
+            valid = [int(g.notna().sum()) for _, g in df.groupby("CONDITION")[dv_column]]
+            valid = [n for n in valid if n >= 2]  # the test drops groups with fewer than two observations
+            if "t_test" in results:
+                t_res = results["t_test"]
+                groups = [str(g) for g in (t_res.get("groups") or [])]
+                effect = (results.get("cohens_d") or {}).get("value")
+                row.update(
+                    contrast=" - ".join(groups) if len(groups) == 2 else "condition 1 - condition 2",
+                    test="pooled-variance t-test", statistic=f"t = {_fmt(t_res.get('statistic'), 2, signed=True)}",
+                    df=str(sum(valid) - 2) if len(valid) == 2 else "n/a", p=t_res.get("p_value"),
+                    effect=f"d = {_fmt(effect, 2, signed=True)}",
+                    label=self._interpret_cohens_d(effect) if _finite(effect) is not None else "n/a")
+            elif "anova" in results:
+                a_res = results["anova"]
+                k, total = len(valid), sum(valid)
+                eta = (results.get("eta_squared") or {}).get("value")
+                row.update(
+                    contrast=f"omnibus, {a_res.get('num_groups', k)} conditions", test="one-way ANOVA",
+                    statistic=f"F = {_fmt(a_res.get('f_statistic'), 2)}", df=f"{k - 1}, {total - k}",
+                    p=a_res.get("p_value"), effect=f"η² = {_fmt(eta, 3)}",
+                    label=self._interpret_eta_squared(eta) if _finite(eta) is not None else "n/a")
+            else:
+                row["error"] = str(results.get("error", "not computed"))
+        except Exception as exc:  # noqa: BLE001 - one DV must not take the whole analysis down
+            logger.warning("Key test row for %s failed: %s", dv_name, exc)
+            row["error"] = f"{type(exc).__name__}: {exc}"
+        return row
+
+    @staticmethod
+    def _key_test_table_md(rows: List[Dict[str, Any]]) -> List[str]:
+        """Markdown table of the headline test per DV (placed at the top of the DV section)."""
+
+        def cell(value: Any) -> str:
+            return str(value).replace("|", "/").replace("\n", " ")
+
+        lines = ["### Key Test Results (one row per DV composite)", "",
+                 "| DV | Contrast / test | Statistic | df | p | Effect size | Magnitude |",
+                 "|----|-----------------|-----------|----|---|-------------|-----------|"]
+        for row in rows:
+            if "error" in row:
+                lines.append(f"| {cell(row['dv'])} | not computed: {cell(row['error'])} | n/a | n/a | n/a | n/a | n/a |")
+                continue
+            lines.append(f"| {cell(row['dv'])} | {cell(row['contrast'])} ({row['test']}) | {row['statistic']} | {row['df']} | "
+                         f"{_fmt_p(row['p'])} | {row['effect']} | {row['label']} |")
+        lines += ["",
+                  "Two-sided tests on each DV's composite score in the full sample (no exclusions applied); p-values are not "
+                  "corrected for the number of DVs. For two conditions the contrast is the first condition minus the second, "
+                  "and t and d carry that sign. For three or more conditions the omnibus ANOVA is shown; pairwise comparisons "
+                  "are in the HTML report.", ""]
+        return lines
+
+    @staticmethod
+    def _effects_notes(contrasts: List[Dict[str, Any]], has_applied: bool) -> List[str]:
+        """Plain-text notes under the contrast table; only the sentences that apply to the rows shown."""
+        notes = ["Each contrast is condition 1 minus condition 2, in the order the conditions are listed, "
+                 "so a negative d means condition 2 scored higher."]
+        sources = {r.get("source") for r in contrasts}
+        n_conditions = len({r.get("condition_1") for r in contrasts} | {r.get("condition_2") for r in contrasts})
+        if "user" in sources and n_conditions > 2:
+            notes.append("A condition that no specified effect names is built in at the reference level, so a contrast "
+                         "against it carries about half of the specified d.")
+        if "inferred" in sources:
+            notes.append("Inferred effects are heuristic differences read from the condition names; they are not "
+                         "calibrated to a target d.")
+        if None in sources:
+            notes.append("\"Not recorded\": the generator records the source and intended d for at most 15 pairs of conditions "
+                         "per DV (each condition against the first one when there are more)." if has_applied else
+                         "\"Not recorded\": this run's metadata has no record of where each effect came from.")
+        return notes
+
+    def _effects_assessment_md(self, df: pd.DataFrame, metadata: Dict[str, Any]) -> List[str]:
+        """Markdown for section 7: specified vs observed d, then every contrast built into the data.
+
+        Reads ``effect_sizes_configured`` and the engine's ``effect_sizes_applied`` so the table says
+        what was actually built in and where it came from, oriented high minus low like the student
+        summary. Scale-level rows only, capped, with the number of omitted rows stated.
+        """
+        lines: List[str] = []
+        configured = _configured_effect_summary(df, metadata)
+        contrasts, dropped_items = _effect_contrast_rows(metadata)
+
+        def cell(value: Any) -> str:
+            return str(value).replace("|", "/").replace("\n", " ")
+
+        if configured:
+            lines.append("### Configured vs Observed Effect Sizes")
+            lines.append("")
+            lines.append("| DV | High level | Low level | Intended d (high - low) | Observed d (high - low) | Check |")
+            lines.append("|----|------------|-----------|-------------------------|-------------------------|-------|")
+            for row in configured:
+                dv = cell(row["scale"] or f"{row['variable']} (no matching DV)")
+                observed = _fmt(row["observed"], 2, signed=True) + ("*" if row["basis"] == "groups" else "")
+                check = _effect_check(row["intended"], row["observed"], row["n_1"], row["n_2"])
+                lines.append(f"| {dv} | {cell(row['high'] or 'n/a')} | {cell(row['low'] or 'n/a')} | "
+                             f"{_fmt(row['intended'], 2, signed=True)} | {observed} | {check} |")
+            lines.append("")
+            lines.append("Observed d is (M high - M low) / pooled SD on the scale mean, so it is positive when the high "
+                         "level scored higher. It is a sample statistic (its standard error is about 0.26 with 30 "
+                         "participants per condition); \"Within sampling error\" means it lies within 2 standard errors "
+                         "of the intended d.")
+            if any(r["basis"] == "groups" for r in configured):
+                lines.append("* Computed between all conditions that carry the level (a factor-level effect in a "
+                             "factorial design), not from a single contrast.")
+            lines.append("")
+        elif _inferred_effects_enabled(metadata):
+            lines.append("No effect sizes were specified. Differences between conditions were inferred from the "
+                         "condition names (a heuristic, not calibrated to any target d); what was built in is listed below.")
+            lines.append("")
+        else:
+            lines.append("No effect sizes were specified and inferred effects were switched off, so no difference between "
+                         "conditions was built in apart from sampling noise.")
+            lines.append("")
+
+        if contrasts:
+            shown = _cap_by_effect(contrasts, _EFFECT_TABLE_CAP)
+            lines.append("### Effects Built Into the Data, by Source")
+            lines.append("")
+            lines.append("| DV | Contrast (condition 1 - condition 2) | Source | Intended d | Observed d |")
+            lines.append("|----|--------------------------------------|--------|------------|------------|")
+            for row in shown:
+                if row["intended"] is not None:
+                    intended = _fmt(row["intended"], 2, signed=True)
+                else:
+                    intended = "not calibrated" if row["source"] == "inferred" else "n/a"
+                lines.append(f"| {cell(row['scale'])} | {cell(row['condition_1'])} - {cell(row['condition_2'])} | "
+                             f"{_source_label(row['source'])} | {intended} | {_fmt(row['d'], 2, signed=True)} |")
+            lines.append("")
+            if len(shown) < len(contrasts):
+                lines.append(f"Showing the {len(shown)} contrasts with the largest |d| out of {len(contrasts)} scale-level "
+                             f"contrasts; {len(contrasts) - len(shown)} omitted.")
+            if dropped_items:
+                lines.append(f"{dropped_items} item-level rows (one per item and pair of conditions) are recorded in "
+                             "Metadata.json (effect_sizes_observed) and are not listed here.")
+            lines.extend(self._effects_notes(shown, bool(_applied_contrasts(metadata))))
+            lines.append("")
+        return lines
+
+    def _effects_assessment_html(self, df: pd.DataFrame, metadata: Dict[str, Any]) -> List[str]:
+        """HTML for section 6; the same content and numbers as ``_effects_assessment_md``, escaped."""
+        parts: List[str] = []
+        configured = _configured_effect_summary(df, metadata)
+        contrasts, dropped_items = _effect_contrast_rows(metadata)
+
+        if configured:
+            parts.append("<h3>Configured vs Observed Effect Sizes</h3>")
+            parts.append("<table><tr><th>DV</th><th>High level</th><th>Low level</th><th>Intended d (high &minus; low)</th>"
+                         "<th>Observed d (high &minus; low)</th><th>Check</th></tr>")
+            for row in configured:
+                dv = row["scale"] or f"{row['variable']} (no matching DV)"
+                observed = _fmt(row["observed"], 2, signed=True) + ("*" if row["basis"] == "groups" else "")
+                check = _effect_check(row["intended"], row["observed"], row["n_1"], row["n_2"])
+                parts.append(f"<tr><td>{_esc(dv)}</td><td>{_esc(row['high'] or 'n/a')}</td><td>{_esc(row['low'] or 'n/a')}</td>"
+                             f"<td>{_fmt(row['intended'], 2, signed=True)}</td><td>{observed}</td><td>{_esc(check)}</td></tr>")
+            parts.append("</table>")
+            parts.append("<p><em>Observed d is (M high &minus; M low) / pooled SD on the scale mean, so it is positive when the "
+                         "high level scored higher. It is a sample statistic (its standard error is about 0.26 with 30 "
+                         "participants per condition); &ldquo;Within sampling error&rdquo; means it lies within 2 standard "
+                         "errors of the intended d.</em></p>")
+            if any(r["basis"] == "groups" for r in configured):
+                parts.append("<p><em>* Computed between all conditions that carry the level (a factor-level effect in a "
+                             "factorial design), not from a single contrast.</em></p>")
+        elif _inferred_effects_enabled(metadata):
+            parts.append("<p>No effect sizes were specified. Differences between conditions were inferred from the condition "
+                         "names (a heuristic, not calibrated to any target d); what was built in is listed below.</p>")
+        else:
+            parts.append("<p>No effect sizes were specified and inferred effects were switched off, so no difference between "
+                         "conditions was built in apart from sampling noise.</p>")
+
+        if contrasts:
+            shown = _cap_by_effect(contrasts, _EFFECT_TABLE_CAP)
+            parts.append("<h3>Effects Built Into the Data, by Source</h3>")
+            parts.append("<table><tr><th>DV</th><th>Contrast (condition 1 &minus; condition 2)</th><th>Source</th>"
+                         "<th>Intended d</th><th>Observed d</th><th>Magnitude</th></tr>")
+            for row in shown:
+                if row["intended"] is not None:
+                    intended = _fmt(row["intended"], 2, signed=True)
+                else:
+                    intended = "not calibrated" if row["source"] == "inferred" else "n/a"
+                parts.append(f"<tr><td>{_esc(row['scale'])}</td><td>{_esc(_clean_condition_name(row['condition_1']))} "
+                             f"&minus; {_esc(_clean_condition_name(row['condition_2']))}</td>"
+                             f"<td>{_esc(_source_label(row['source']))}</td><td>{intended}</td>"
+                             f"<td>{_fmt(row['d'], 3, signed=True)}</td><td>{_esc(self._interpret_cohens_d(row['d']).capitalize())}</td></tr>")
+            parts.append("</table>")
+            notes = []
+            if len(shown) < len(contrasts):
+                notes.append(f"Showing the {len(shown)} contrasts with the largest |d| out of {len(contrasts)} scale-level "
+                             f"contrasts; {len(contrasts) - len(shown)} omitted.")
+            if dropped_items:
+                notes.append(f"{dropped_items} item-level rows (one per item and pair of conditions) are recorded in "
+                             "Metadata.json (effect_sizes_observed) and are not listed here.")
+            notes.extend(self._effects_notes(shown, bool(_applied_contrasts(metadata))))
+            parts.append("<p><em>" + " ".join(_esc(n) for n in notes) + "</em></p>")
+        return parts
 
     def _get_detailed_impact(self, persona: str) -> str:
         """Get detailed impact description for instructor understanding."""
@@ -3906,7 +4629,8 @@ class ComprehensiveInstructorReport:
             scale_name: Name of the scale being analyzed
 
         Returns:
-            HTML string with interpretation
+            HTML string with interpretation. ``chart_data`` keys and ``scale_name`` are
+            interpolated as they are, so the caller passes them HTML-escaped.
         """
         if not chart_data:
             return ""
@@ -4084,6 +4808,10 @@ class ComprehensiveInstructorReport:
 
             finding_info = {
                 "scale": scale_name,
+                # escaped copies for display (the raw values stay available for matching)
+                "scale_html": _esc(scale_name),
+                "highest_html": _esc(highest_cond) if highest_cond is not None else None,
+                "lowest_html": _esc(lowest_cond) if lowest_cond is not None else None,
                 "effect_size": effect_val,
                 "effect_type": effect_type,
                 "p_value": p_val,
@@ -4120,7 +4848,7 @@ class ComprehensiveInstructorReport:
         html.append(
             f"This simulation generated data for <strong>{n_total} participants</strong> randomly assigned to "
             f"<strong>{n_conditions} experimental condition{'s' if n_conditions > 1 else ''}</strong>: "
-            f"{', '.join(str(c) for c in conditions)}. "
+            f"{', '.join(_esc(c) for c in conditions)}. "
         )
         html.append(f"The analysis examined {n_scales} dependent variable{'s' if n_scales > 1 else ''}.")
 
@@ -4138,16 +4866,16 @@ class ComprehensiveInstructorReport:
                              "medium" if (finding["effect_type"] == "d" and finding["effect_size"] >= 0.5) or \
                                         (finding["effect_type"] == "η²" and finding["effect_size"] >= 0.06) else "small"
 
-                html.append(f"&nbsp;&nbsp;• <strong>{finding['scale']}</strong>: ")
+                html.append(f"&nbsp;&nbsp;• <strong>{finding['scale_html']}</strong>: ")
                 if finding['highest_cond'] and finding['lowest_cond']:
                     html.append(
-                        f"{finding['highest_cond']} (M = {finding['highest_mean']:.2f}) > {finding['lowest_cond']} (M = {finding['lowest_mean']:.2f}), "
+                        f"{finding['highest_html']} (M = {finding['highest_mean']:.2f}) > {finding['lowest_html']} (M = {finding['lowest_mean']:.2f}), "
                     )
                 html.append(f"p = {finding['p_value']:.4f}, {effect_desc} effect ({finding['effect_type']} = {finding['effect_size']:.2f})<br>")
 
             if largest_effect:
                 html.append(
-                    f"<br>The <strong>strongest effect</strong> was observed for <strong>{largest_effect['scale']}</strong>. "
+                    f"<br>The <strong>strongest effect</strong> was observed for <strong>{largest_effect['scale_html']}</strong>. "
                 )
 
         # Show marginally significant findings
@@ -4156,10 +4884,10 @@ class ComprehensiveInstructorReport:
                 f"<br><span style='color:#f39c12;'>†</span> <strong>{len(marginal_findings)} DV{'s' if len(marginal_findings) > 1 else ''} showed marginally significant differences</strong> (p &lt; .10):<br>"
             )
             for finding in marginal_findings:
-                html.append(f"&nbsp;&nbsp;• <strong>{finding['scale']}</strong>: ")
+                html.append(f"&nbsp;&nbsp;• <strong>{finding['scale_html']}</strong>: ")
                 if finding['highest_cond'] and finding['lowest_cond']:
                     html.append(
-                        f"{finding['highest_cond']} (M = {finding['highest_mean']:.2f}) > {finding['lowest_cond']} (M = {finding['lowest_mean']:.2f}), "
+                        f"{finding['highest_html']} (M = {finding['highest_mean']:.2f}) > {finding['lowest_html']} (M = {finding['lowest_mean']:.2f}), "
                     )
                 html.append(f"p = {finding['p_value']:.4f}<br>")
 
@@ -4172,7 +4900,7 @@ class ComprehensiveInstructorReport:
             if all_effects:
                 closest = min(all_effects, key=lambda x: x['p_value'] if x['p_value'] else 1)
                 if closest['p_value']:
-                    html.append(f"The closest to significance was <strong>{closest['scale']}</strong> (p = {closest['p_value']:.4f}).")
+                    html.append(f"The closest to significance was <strong>{closest['scale_html']}</strong> (p = {closest['p_value']:.4f}).")
         elif n_sig == 0:
             # Had marginal but no sig findings
             html.append(
@@ -4238,7 +4966,11 @@ class ComprehensiveInstructorReport:
         chart_data: Dict[str, Tuple[float, float]],
         scale_name: str
     ) -> str:
-        """Generate plain-language interpretation for a statistical test."""
+        """Generate plain-language HTML interpretation for a statistical test.
+
+        ``chart_data`` keys and ``scale_name`` are interpolated as they are, so the caller passes
+        them HTML-escaped.
+        """
         conditions = list(chart_data.keys())
         means = {c: chart_data[c][0] for c in conditions}
         sorted_conds = sorted(means.items(), key=lambda x: x[1], reverse=True)
@@ -4963,7 +5695,7 @@ class ComprehensiveInstructorReport:
             "<head>",
             "<meta charset='UTF-8'>",
             "<meta name='viewport' content='width=device-width, initial-scale=1.0'>",
-            f"<title>Instructor Report: {metadata.get('study_title', 'Study')}</title>",
+            f"<title>Instructor Report: {_esc(metadata.get('study_title', 'Study'))}</title>",
             css,
             "</head>",
             "<body>",
@@ -5058,16 +5790,13 @@ class ComprehensiveInstructorReport:
         # NOTE: Data Dictionary moved to bottom of report (after Methodology) per user request
 
         # Effect Sizes
-        effect_sizes = metadata.get('effect_sizes_configured', [])
-        if effect_sizes and any(e.get('cohens_d', 0) > 0 for e in effect_sizes):
+        effect_sizes = [e for e in (metadata.get('effect_sizes_configured', []) or [])
+                        if isinstance(e, dict) and (_finite(e.get('cohens_d', 0)) or 0.0) != 0.0]
+        if effect_sizes:
             html_parts.append("<p><strong>Hypothesized Effects:</strong></p>")
             html_parts.append("<ul>")
             for effect in effect_sizes:
-                d = effect.get('cohens_d', 0)
-                if d > 0:
-                    var = effect.get('variable', '')
-                    direction = effect.get('direction', 'higher')
-                    html_parts.append(f"<li>{_e(var)}: d = {d:.2f} ({_e(direction)} in treatment)</li>")
+                html_parts.append(f"<li>{_e(_effect_phrase(effect))}</li>")
             html_parts.append("</ul>")
 
         # ── Study Context / Domain ─────────────────────────────────────
@@ -5155,7 +5884,7 @@ class ComprehensiveInstructorReport:
                     html_parts.append("<p><em><strong>Tip:</strong> Provide your own API key (Groq, Google AI, etc.) for AI-powered responses.</em></p>")
             elif llm_init_error_h:
                 html_parts.append("<p><strong>Generation approach:</strong> LLM initialization failure (run integrity warning)</p>")
-                html_parts.append(f"<p>LLM generator failed to initialize: <code>{llm_init_error_h}</code></p>")
+                html_parts.append(f"<p>LLM generator failed to initialize: <code>{_esc(llm_init_error_h)}</code></p>")
                 html_parts.append("<p>Open-ended responses did not run through API calls in this run.</p>")
             elif not allow_template_fallback_h:
                 html_parts.append("<p><strong>Generation approach:</strong> LLM-first strict mode</p>")
@@ -5169,7 +5898,7 @@ class ComprehensiveInstructorReport:
                                      "Stylometric voice fingerprinting ensures consistent writing style per participant.</p>")
                     if _is_llm_method_h:
                         _gen_label_h = metadata.get('generation_method_label', _gen_method_h)
-                        html_parts.append(f"<p><strong>Selected method:</strong> {_gen_label_h}</p>")
+                        html_parts.append(f"<p><strong>Selected method:</strong> {_esc(_gen_label_h)}</p>")
                 elif _is_adaptive_h:
                     html_parts.append("<p><strong>Generation approach:</strong> Adaptive Behavioral Engine 3.0</p>")
                     html_parts.append("<p>50+ persona archetypes with 7-dimensional trait profiles. "
@@ -5185,18 +5914,18 @@ class ComprehensiveInstructorReport:
 
         # Generation Details (still inside section-block)
         html_parts.append("<h3 style='margin-top:28px;padding-top:16px;border-top:1px solid #e2e8f0;'>Generation Details</h3>")
-        html_parts.append(f"<p><strong>Generated:</strong> {metadata.get('generation_timestamp', datetime.now().isoformat())}</p>")
-        html_parts.append(f"<p><strong>Run ID:</strong> <code>{metadata.get('run_id', 'N/A')}</code></p>")
+        html_parts.append(f"<p><strong>Generated:</strong> {_esc(metadata.get('generation_timestamp', datetime.now().isoformat()))}</p>")
+        html_parts.append(f"<p><strong>Run ID:</strong> <code>{_esc(metadata.get('run_id', 'N/A'))}</code></p>")
         _html_gen_method = metadata.get('generation_method_label', metadata.get('generation_method', 'N/A'))
-        html_parts.append(f"<p><strong>Generation Method:</strong> {_html_gen_method}</p>")
-        html_parts.append(f"<p><strong>Mode:</strong> {metadata.get('simulation_mode', 'pilot').title()}</p>")
-        html_parts.append(f"<p><strong>Seed:</strong> <code>{metadata.get('seed', 'N/A')}</code></p>")
-        html_parts.append(f"<p><strong>App Version:</strong> {metadata.get('app_version', __version__)}</p>")
+        html_parts.append(f"<p><strong>Generation Method:</strong> {_esc(_html_gen_method)}</p>")
+        html_parts.append(f"<p><strong>Mode:</strong> {_esc(str(metadata.get('simulation_mode', 'pilot')).title())}</p>")
+        html_parts.append(f"<p><strong>Seed:</strong> <code>{_esc(metadata.get('seed', 'N/A'))}</code></p>")
+        html_parts.append(f"<p><strong>App Version:</strong> {_esc(metadata.get('app_version', __version__))}</p>")
 
         # Internal usage counter (for instructor tracking)
         usage_stats = metadata.get('usage_stats', {})
         total_simulations = usage_stats.get('total_simulations', 'N/A')
-        html_parts.append(f"<p><strong>Total Simulations Run (all time):</strong> {total_simulations}</p>")
+        html_parts.append(f"<p><strong>Total Simulations Run (all time):</strong> {_esc(total_simulations)}</p>")
         html_parts.append("</div>")  # close Study Overview section-block
         html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
 
@@ -5231,7 +5960,7 @@ class ComprehensiveInstructorReport:
             for cond, count in cond_counts.items():
                 pct = count / n_total * 100
                 clean_cond = _clean_condition_name(cond)
-                html_parts.append(f"<tr><td>{clean_cond}</td><td>{count}</td><td>{pct:.1f}%</td></tr>")
+                html_parts.append(f"<tr><td>{_esc(clean_cond)}</td><td>{count}</td><td>{pct:.1f}%</td></tr>")
             html_parts.append("</table>")
 
         html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
@@ -5268,11 +5997,12 @@ class ComprehensiveInstructorReport:
             if not scale_cols:
                 continue
 
-            html_parts.append(f"<h3>{scale_name}</h3>")
+            html_parts.append(f"<h3>{_esc(scale_name)}</h3>")
+            scale_name_html = _esc(scale_name)  # helpers that return HTML get escaped names
 
-            # Calculate composite
+            # Calculate composite (reverse-keyed items recoded, as the engine scores them)
             if len(scale_cols) >= 1:
-                composite = df_clean[scale_cols].mean(axis=1)
+                composite = _scale_composite(df_clean, scale, scale_cols, metadata)
                 df_analysis = df_clean.copy()
                 df_analysis["_composite"] = composite
 
@@ -5299,12 +6029,14 @@ class ComprehensiveInstructorReport:
                         ci_high = mean + 1.96 * se
                         clean_cond = _clean_condition_name(cond)
                         if n == 1:
-                            html_parts.append(f"<tr><td>{clean_cond}</td><td>{n}</td><td>{mean:.3f}</td><td>—</td><td>N/A (single observation)</td></tr>")
+                            html_parts.append(f"<tr><td>{_esc(clean_cond)}</td><td>{n}</td><td>{mean:.3f}</td><td>—</td><td>N/A (single observation)</td></tr>")
                         else:
-                            html_parts.append(f"<tr><td>{clean_cond}</td><td>{n}</td><td>{mean:.3f}</td><td>{sd:.3f}</td><td>[{ci_low:.3f}, {ci_high:.3f}]</td></tr>")
+                            html_parts.append(f"<tr><td>{_esc(clean_cond)}</td><td>{n}</td><td>{mean:.3f}</td><td>{sd:.3f}</td><td>[{ci_low:.3f}, {ci_high:.3f}]</td></tr>")
                         chart_data[clean_cond] = (mean, 1.96 * se)
 
                 html_parts.append("</table>")
+                # The interpretation helpers return HTML built from these names: hand them escaped copies.
+                chart_data_html = {_esc(k): v for k, v in chart_data.items()}
 
                 # Add interpretation for descriptive statistics
                 if chart_data:
@@ -5317,7 +6049,7 @@ class ComprehensiveInstructorReport:
                         grand_mean = sum(m[1] for m in means) / len(means)
 
                         html_parts.append("<div class='interpretation-box' style='background:#f8f9fa;padding:12px;border-radius:6px;margin:10px 0;border-left:3px solid #3498db;'>")
-                        html_parts.append(f"<strong>Summary:</strong> The <em>{highest[0]}</em> condition showed the highest mean ({highest[1]:.2f}), while <em>{lowest[0]}</em> showed the lowest ({lowest[1]:.2f}). ")
+                        html_parts.append(f"<strong>Summary:</strong> The <em>{_esc(highest[0])}</em> condition showed the highest mean ({highest[1]:.2f}), while <em>{_esc(lowest[0])}</em> showed the lowest ({lowest[1]:.2f}). ")
                         html_parts.append(f"The difference between highest and lowest conditions is {diff:.2f} scale points. ")
                         html_parts.append(f"The grand mean across conditions is {grand_mean:.2f}.")
                         html_parts.append("</div>")
@@ -5480,7 +6212,7 @@ class ComprehensiveInstructorReport:
                         svg_lines = [
                             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 300" style="max-width:100%;height:auto;background:#fff;font-family:Arial,sans-serif;">',
                             '<rect width="500" height="300" fill="white"/>',
-                            f'<text x="250" y="25" text-anchor="middle" font-size="14" font-weight="bold" fill="#2c3e50">{scale_name}: Condition Means</text>',
+                            f'<text x="250" y="25" text-anchor="middle" font-size="14" font-weight="bold" fill="#2c3e50">{_esc(scale_name)}: Condition Means</text>',
                         ]
 
                         bar_width = 60
@@ -5496,7 +6228,7 @@ class ComprehensiveInstructorReport:
 
                             svg_lines.append(f'<rect x="{x}" y="{y}" width="{bar_width}" height="{bar_height}" fill="{color}" opacity="0.8"/>')
                             svg_lines.append(f'<text x="{x + bar_width/2}" y="{y - 5}" text-anchor="middle" font-size="11" fill="#2c3e50">{mean:.2f}</text>')
-                            svg_lines.append(f'<text x="{x + bar_width/2}" y="270" text-anchor="middle" font-size="9" fill="#2c3e50">{label}</text>')
+                            svg_lines.append(f'<text x="{x + bar_width/2}" y="270" text-anchor="middle" font-size="9" fill="#2c3e50">{_esc(label)}</text>')
 
                         svg_lines.append('</svg>')
 
@@ -5513,7 +6245,7 @@ class ComprehensiveInstructorReport:
 
                 # Add chart interpretation summary
                 if viz_count > 0 and chart_data:
-                    interpretation = self._generate_chart_interpretation(chart_data, stats_results, scale_name)
+                    interpretation = self._generate_chart_interpretation(chart_data_html, stats_results, scale_name_html)
                     if interpretation:
                         html_parts.append("<div class='interpretation-box' style='background:#f8f9fa;padding:15px;border-radius:6px;margin:15px 0;border-left:3px solid #3498db;'>")
                         html_parts.append(f"<strong>Key Finding:</strong> {interpretation}")
@@ -5536,7 +6268,7 @@ class ComprehensiveInstructorReport:
                         html_parts.append(f"<strong>Independent Samples t-test:</strong>{prereg_badge}<br>")
                         html_parts.append(f"t = {t['statistic']:.3f}, <span class='{sig_class}'>p = {t['p_value']:.4f}</span>")
                         # Add interpretation
-                        interp = self._generate_stat_test_interpretation("t_test", stats_results, chart_data, scale_name)
+                        interp = self._generate_stat_test_interpretation("t_test", stats_results, chart_data_html, scale_name_html)
                         if interp:
                             html_parts.append(f"<br><em style='color:#666;'>{interp}</em>")
                         html_parts.append("</div>")
@@ -5547,7 +6279,7 @@ class ComprehensiveInstructorReport:
                         html_parts.append("<div class='stat-box'>")
                         html_parts.append(f"<strong>Effect Size (Cohen's d):</strong> {d['value']:.3f}")
                         # Add interpretation
-                        interp = self._generate_stat_test_interpretation("effect_size", stats_results, chart_data, scale_name)
+                        interp = self._generate_stat_test_interpretation("effect_size", stats_results, chart_data_html, scale_name_html)
                         if interp:
                             html_parts.append(f"<br><em style='color:#666;'>{interp}</em>")
                         html_parts.append("</div>")
@@ -5561,7 +6293,7 @@ class ComprehensiveInstructorReport:
                         html_parts.append(f"<strong>One-way ANOVA:</strong>{prereg_badge}<br>")
                         html_parts.append(f"F = {a['f_statistic']:.3f}, <span class='{sig_class}'>p = {a['p_value']:.4f}</span>")
                         # Add interpretation
-                        interp = self._generate_stat_test_interpretation("anova", stats_results, chart_data, scale_name)
+                        interp = self._generate_stat_test_interpretation("anova", stats_results, chart_data_html, scale_name_html)
                         if interp:
                             html_parts.append(f"<br><em style='color:#666;'>{interp}</em>")
                         html_parts.append("</div>")
@@ -5572,7 +6304,7 @@ class ComprehensiveInstructorReport:
                         html_parts.append("<div class='stat-box'>")
                         html_parts.append(f"<strong>Effect Size (η²):</strong> {e['value']:.4f}")
                         # Add interpretation
-                        interp = self._generate_stat_test_interpretation("effect_size", stats_results, chart_data, scale_name)
+                        interp = self._generate_stat_test_interpretation("effect_size", stats_results, chart_data_html, scale_name_html)
                         if interp:
                             html_parts.append(f"<br><em style='color:#666;'>{interp}</em>")
                         html_parts.append("</div>")
@@ -5584,14 +6316,19 @@ class ComprehensiveInstructorReport:
                         if lev["homogeneous"]:
                             assumption_notes.append(f"Variance homogeneity: ✓ Met (Levene's p = {lev['p_value']:.3f})")
                         else:
-                            assumption_notes.append(f"Variance homogeneity: Welch's correction applied (Levene's p = {lev['p_value']:.3f})")
+                            # No correction is applied: the t-test / ANOVA shown above assume equal variances.
+                            _pooled_test = "pooled-variance t-test" if "t_test" in stats_results else "one-way ANOVA"
+                            assumption_notes.append(f"Variance homogeneity: not met (Levene's p = {lev['p_value']:.3f}); "
+                                                    f"the {_pooled_test} shown above assumes equal variances, so read its p-value with caution")
 
                     if "normality_test" in stats_results:
                         sw = stats_results["normality_test"]
+                        _normality_name = _esc(sw.get("test_name", "Normality test"))
                         if sw["normal"]:
-                            assumption_notes.append(f"Normality: ✓ Met (p = {sw['p_value']:.3f})")
+                            assumption_notes.append(f"Normality (pooled across conditions): ✓ Met ({_normality_name} p = {sw['p_value']:.3f})")
                         else:
-                            assumption_notes.append(f"Normality: Non-parametric tests also reported (p = {sw['p_value']:.3f})")
+                            assumption_notes.append(f"Normality (pooled across conditions): not met ({_normality_name} p = {sw['p_value']:.3f}); "
+                                                    "no rank-based test is shown in this report")
 
                     if assumption_notes:
                         html_parts.append("<div class='stat-box' style='background:#f8f9fa;'>")
@@ -5612,7 +6349,7 @@ class ComprehensiveInstructorReport:
                             _is_marginal = comp.get("marginally_significant", False)
                             sig_class = "sig" if comp["significant"] else ("marginal" if _is_marginal else "nonsig")
                             sig_text = "Yes" if comp["significant"] else ("Marginal" if _is_marginal else "No")
-                            html_parts.append(f"<tr><td>{comp['comparison']}</td><td>{comp['t_stat']:.3f}</td><td class='{sig_class}'>{comp['p_value']:.4f}</td><td>{comp['cohens_d']:.3f}</td><td class='{sig_class}'>{sig_text}</td></tr>")
+                            html_parts.append(f"<tr><td>{_esc(comp['comparison'])}</td><td>{comp['t_stat']:.3f}</td><td class='{sig_class}'>{comp['p_value']:.4f}</td><td>{comp['cohens_d']:.3f}</td><td class='{sig_class}'>{sig_text}</td></tr>")
 
                             if comp["significant"]:
                                 sig_pairs.append(comp['comparison'])
@@ -5630,9 +6367,9 @@ class ComprehensiveInstructorReport:
                         if sig_pairs:
                             html_parts.append(f"{len(sig_pairs)} of {len(stats_results['pairwise_comparisons'])} pairwise comparisons reached statistical significance. ")
                             if largest_effect_pair:
-                                html_parts.append(f"The largest effect was between {largest_effect_pair['comparison']} (d = {largest_effect_pair['cohens_d']:.2f}).")
+                                html_parts.append(f"The largest effect was between {_esc(largest_effect_pair['comparison'])} (d = {largest_effect_pair['cohens_d']:.2f}).")
                         elif marginal_pairs:
-                            html_parts.append(f"No pairwise comparisons reached conventional significance (p < .05), but {len(marginal_pairs)} showed marginally significant differences (p < .10): {', '.join(marginal_pairs)}.")
+                            html_parts.append(f"No pairwise comparisons reached conventional significance (p < .05), but {len(marginal_pairs)} showed marginally significant differences (p < .10): {_esc(', '.join(marginal_pairs))}.")
                         else:
                             html_parts.append("No pairwise comparisons reached statistical significance, suggesting the overall ANOVA effect may be driven by subtle differences across multiple groups rather than any single pair.")
                         html_parts.append("</div>")
@@ -5664,7 +6401,7 @@ class ComprehensiveInstructorReport:
 
                         controls_used = reg_results.get("controls_included", [])
                         if controls_used:
-                            html_parts.append(f"<div class='stat-box'><strong>Control variables included:</strong> {', '.join(controls_used)}</div>")
+                            html_parts.append(f"<div class='stat-box'><strong>Control variables included:</strong> {_esc(', '.join(controls_used))}</div>")
 
                         html_parts.append("<div class='stat-box'>")
                         fit = reg_results["model_fit"]
@@ -5681,12 +6418,12 @@ class ComprehensiveInstructorReport:
                             html_parts.append("<table><tr><th>Predictor</th><th>B</th><th>SE</th><th>t</th><th>p</th></tr>")
                             for pred, coef in reg_results["coefficients"].items():
                                 sig_class = "sig" if coef.get("significant") else ("marginal" if coef.get("marginally_significant") else "nonsig")
-                                html_parts.append(f"<tr><td>{pred}</td><td>{coef['estimate']:.3f}</td><td>{coef['std_error']:.3f}</td><td>{coef['t_stat']:.3f}</td><td class='{sig_class}'>{coef['p_value']:.4f}</td></tr>")
+                                html_parts.append(f"<tr><td>{_esc(pred)}</td><td>{coef['estimate']:.3f}</td><td>{coef['std_error']:.3f}</td><td>{coef['t_stat']:.3f}</td><td class='{sig_class}'>{coef['p_value']:.4f}</td></tr>")
                             html_parts.append("</table>")
 
                         # Regression interpretation
                         html_parts.append("<br><em style='color:#666;'>")
-                        html_parts.append(f"The regression model explains {fit['r_squared']*100:.1f}% of variance in {scale_name}. ")
+                        html_parts.append(f"The regression model explains {fit['r_squared']*100:.1f}% of variance in {scale_name_html}. ")
                         if "f_test" in reg_results and reg_results["f_test"]["significant"]:
                             html_parts.append("The overall model is statistically significant.")
                         html_parts.append("</em>")
@@ -5708,18 +6445,18 @@ class ComprehensiveInstructorReport:
                             # Main effect 1
                             me1 = factorial_results["main_effect_1"]
                             sig_class = "sig" if me1["significant"] else ("marginal" if me1.get("marginally_significant") else "nonsig")
-                            html_parts.append(f"<tr><td><strong>{me1['factor']}</strong></td><td>{me1['ss']:.2f}</td><td>{me1['df']}</td><td>{me1['ms']:.2f}</td><td>{me1['f_statistic']:.3f}</td><td class='{sig_class}'>{me1['p_value']:.4f}</td><td>{me1['partial_eta_squared']:.4f}</td></tr>")
+                            html_parts.append(f"<tr><td><strong>{_esc(me1['factor'])}</strong></td><td>{me1['ss']:.2f}</td><td>{me1['df']}</td><td>{me1['ms']:.2f}</td><td>{me1['f_statistic']:.3f}</td><td class='{sig_class}'>{me1['p_value']:.4f}</td><td>{me1['partial_eta_squared']:.4f}</td></tr>")
 
                             # Main effect 2
                             me2 = factorial_results["main_effect_2"]
                             sig_class = "sig" if me2["significant"] else ("marginal" if me2.get("marginally_significant") else "nonsig")
-                            html_parts.append(f"<tr><td><strong>{me2['factor']}</strong></td><td>{me2['ss']:.2f}</td><td>{me2['df']}</td><td>{me2['ms']:.2f}</td><td>{me2['f_statistic']:.3f}</td><td class='{sig_class}'>{me2['p_value']:.4f}</td><td>{me2['partial_eta_squared']:.4f}</td></tr>")
+                            html_parts.append(f"<tr><td><strong>{_esc(me2['factor'])}</strong></td><td>{me2['ss']:.2f}</td><td>{me2['df']}</td><td>{me2['ms']:.2f}</td><td>{me2['f_statistic']:.3f}</td><td class='{sig_class}'>{me2['p_value']:.4f}</td><td>{me2['partial_eta_squared']:.4f}</td></tr>")
 
                             # Interaction
                             if "interaction" in factorial_results:
                                 inter = factorial_results["interaction"]
                                 sig_class = "sig" if inter["significant"] else ("marginal" if inter.get("marginally_significant") else "nonsig")
-                                html_parts.append(f"<tr><td><strong>{inter['factors']}</strong></td><td>{inter['ss']:.2f}</td><td>{inter['df']}</td><td>{inter['ms']:.2f}</td><td>{inter['f_statistic']:.3f}</td><td class='{sig_class}'>{inter['p_value']:.4f}</td><td>{inter['partial_eta_squared']:.4f}</td></tr>")
+                                html_parts.append(f"<tr><td><strong>{_esc(inter['factors'])}</strong></td><td>{inter['ss']:.2f}</td><td>{inter['df']}</td><td>{inter['ms']:.2f}</td><td>{inter['f_statistic']:.3f}</td><td class='{sig_class}'>{inter['p_value']:.4f}</td><td>{inter['partial_eta_squared']:.4f}</td></tr>")
 
                             # Error
                             if "error" in factorial_results and isinstance(factorial_results["error"], dict):
@@ -5733,13 +6470,13 @@ class ComprehensiveInstructorReport:
                             html_parts.append("<strong>Key Finding:</strong> ")
                             findings = []
                             if me1["significant"]:
-                                findings.append(f"significant main effect of <strong>{me1['factor']}</strong> ({me1['interpretation']} effect)")
+                                findings.append(f"significant main effect of <strong>{_esc(me1['factor'])}</strong> ({me1['interpretation']} effect)")
                             elif me1.get("marginally_significant"):
-                                findings.append(f"marginally significant main effect of <strong>{me1['factor']}</strong> (p < .10)")
+                                findings.append(f"marginally significant main effect of <strong>{_esc(me1['factor'])}</strong> (p < .10)")
                             if me2["significant"]:
-                                findings.append(f"significant main effect of <strong>{me2['factor']}</strong> ({me2['interpretation']} effect)")
+                                findings.append(f"significant main effect of <strong>{_esc(me2['factor'])}</strong> ({me2['interpretation']} effect)")
                             elif me2.get("marginally_significant"):
-                                findings.append(f"marginally significant main effect of <strong>{me2['factor']}</strong> (p < .10)")
+                                findings.append(f"marginally significant main effect of <strong>{_esc(me2['factor'])}</strong> (p < .10)")
                             if "interaction" in factorial_results and factorial_results["interaction"]["significant"]:
                                 findings.append(f"<strong>significant interaction</strong> between factors ({factorial_results['interaction']['interpretation']} effect)")
                             elif "interaction" in factorial_results and factorial_results["interaction"].get("marginally_significant"):
@@ -5756,7 +6493,7 @@ class ComprehensiveInstructorReport:
                                 html_parts.append("<strong>Cell Means:</strong>")
                                 html_parts.append("<table><tr><th>Cell</th><th>N</th><th>Mean</th><th>SD</th></tr>")
                                 for cell, stats in factorial_results["cell_statistics"].items():
-                                    html_parts.append(f"<tr><td>{cell}</td><td>{stats['n']}</td><td>{stats['mean']:.3f}</td><td>{stats['std']:.3f}</td></tr>")
+                                    html_parts.append(f"<tr><td>{_esc(cell)}</td><td>{stats['n']}</td><td>{stats['mean']:.3f}</td><td>{stats['std']:.3f}</td></tr>")
                                 html_parts.append("</table>")
 
                             # Interaction plot for factorial design
@@ -5837,9 +6574,9 @@ class ComprehensiveInstructorReport:
                     pkey = persona.lower()
                     info = _persona_info.get(pkey, ("Standard response pattern", "Typical survey behavior"))
                     html_parts.append(
-                        f"<tr><td><strong>{persona.title()}</strong></td>"
-                        f"<td>{info[0]}</td>"
-                        f"<td><em>{info[1]}</em></td>"
+                        f"<tr><td><strong>{_esc(str(persona).title())}</strong></td>"
+                        f"<td>{_esc(info[0])}</td>"
+                        f"<td><em>{_esc(info[1])}</em></td>"
                         f"<td>{pct:.1f}%</td>"
                         f"<td>{count}</td></tr>"
                     )
@@ -5873,11 +6610,11 @@ class ComprehensiveInstructorReport:
                     html_parts.append("<tr><th>Persona</th>")
                     for cond in conditions:
                         clean_c = _clean_condition_name(cond)
-                        html_parts.append(f"<th>{clean_c}</th>")
+                        html_parts.append(f"<th>{_esc(clean_c)}</th>")
                     html_parts.append("</tr>")
 
                     for ptype in all_ptypes_sorted:
-                        html_parts.append(f"<tr><td><strong>{ptype.title()}</strong></td>")
+                        html_parts.append(f"<tr><td><strong>{_esc(str(ptype).title())}</strong></td>")
                         for cond in conditions:
                             cond_dict = pbc_counts.get(cond, {})
                             count = cond_dict.get(ptype, 0) if isinstance(cond_dict, dict) else 0
@@ -5896,46 +6633,48 @@ class ComprehensiveInstructorReport:
                     html_parts.append(
                         f"<div class='metric-card' style='background:linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: #1a1a2e;'>"
                         f"<div class='metric-value'>{val:.2f}</div>"
-                        f"<div class='metric-label'>{trait_display}</div></div>"
+                        f"<div class='metric-label'>{_esc(trait_display)}</div></div>"
                     )
                 html_parts.append("</div>")
 
             # ── Trait Averages by Condition ────────────────────────────────
+            # Each condition records the traits of the personas it happened to contain, so the trait
+            # sets differ between conditions. Only a trait recorded for EVERY condition is comparable;
+            # the others used to print as 0.000 for the conditions that never recorded them.
             trait_avg_by_cond = metadata.get("trait_averages_by_condition", {})
             if trait_avg_by_cond and isinstance(trait_avg_by_cond, dict) and conditions:
-                # Check if any condition has trait data
-                has_traits = any(
-                    isinstance(v, dict) and len(v) > 0
-                    for v in trait_avg_by_cond.values()
-                )
-                if has_traits:
+                recorded_conds = [c for c in conditions if isinstance(trait_avg_by_cond.get(c), dict) and trait_avg_by_cond.get(c)]
+                if recorded_conds:
                     html_parts.append("<h4>Personality Profiles by Condition</h4>")
-                    html_parts.append("<p>Average trait values per condition. Balanced profiles across conditions indicates "
-                                      "that persona assignment did not confound the experimental manipulation.</p>")
-
-                    # Collect all traits
-                    all_traits = set()
-                    for cond_traits in trait_avg_by_cond.values():
-                        if isinstance(cond_traits, dict):
-                            all_traits.update(cond_traits.keys())
-                    all_traits_sorted = sorted(all_traits)
-
-                    if all_traits_sorted:
+                    trait_sets = [set(trait_avg_by_cond[c].keys()) for c in recorded_conds]
+                    common_traits = sorted(
+                        t for t in set.intersection(*trait_sets)
+                        if any((_finite(trait_avg_by_cond[c].get(t)) or 0.0) != 0.0 for c in recorded_conds)
+                    )
+                    partial_traits = len(set.union(*trait_sets)) - len(set.intersection(*trait_sets))
+                    if common_traits:
+                        html_parts.append("<p>Average trait values per condition. Balanced profiles across conditions indicates "
+                                          "that persona assignment did not confound the experimental manipulation.</p>")
                         html_parts.append("<table>")
                         html_parts.append("<tr><th>Trait</th>")
-                        for cond in conditions:
-                            clean_c = _clean_condition_name(cond)
-                            html_parts.append(f"<th>{clean_c}</th>")
+                        for cond in recorded_conds:
+                            html_parts.append(f"<th>{_esc(_clean_condition_name(cond))}</th>")
                         html_parts.append("</tr>")
-                        for trait in all_traits_sorted:
-                            trait_display = trait.replace("_", " ").title()
-                            html_parts.append(f"<tr><td>{trait_display}</td>")
-                            for cond in conditions:
-                                cond_traits = trait_avg_by_cond.get(cond, {})
-                                val = cond_traits.get(trait, 0) if isinstance(cond_traits, dict) else 0
-                                html_parts.append(f"<td>{val:.3f}</td>")
+                        for trait in common_traits:
+                            trait_display = str(trait).replace("_", " ").title()
+                            html_parts.append(f"<tr><td>{_esc(trait_display)}</td>")
+                            for cond in recorded_conds:
+                                html_parts.append(f"<td>{_fmt(trait_avg_by_cond[cond].get(trait), 3)}</td>")
                             html_parts.append("</tr>")
                         html_parts.append("</table>")
+                    else:
+                        html_parts.append("<p><em>No trait was recorded for every condition, so profiles are not compared.</em></p>")
+                    if partial_traits:
+                        html_parts.append(f"<p><em>{partial_traits} further trait(s) were recorded for only some conditions "
+                                          "and are left out, because a condition without a record is not the same as a zero.</em></p>")
+                    if len(recorded_conds) < len(conditions):
+                        html_parts.append(f"<p><em>{len(conditions) - len(recorded_conds)} condition(s) have no trait record "
+                                          "and are not shown.</em></p>")
 
             # ── Validation Issues Corrected ────────────────────────────────
             validation_corrected = metadata.get("validation_issues_corrected", 0)
@@ -5978,10 +6717,10 @@ class ComprehensiveInstructorReport:
                 # Contingency table
                 html_parts.append("<table><tr><th>Condition</th>")
                 for col in contingency.columns:
-                    html_parts.append(f"<th>{col}</th>")
+                    html_parts.append(f"<th>{_esc(col)}</th>")
                 html_parts.append("</tr>")
                 for idx, row in contingency.iterrows():
-                    html_parts.append(f"<tr><td>{idx}</td>")
+                    html_parts.append(f"<tr><td>{_esc(idx)}</td>")
                     for val in row:
                         html_parts.append(f"<td>{val}</td>")
                     html_parts.append("</tr>")
@@ -6009,38 +6748,7 @@ class ComprehensiveInstructorReport:
         if obs_effects or cfg_effects:
             html_parts.append("<a id='effect-verification'></a>")
             html_parts.append("<h2>6. Effect Size Verification</h2>")
-            if cfg_effects and any(e.get("cohens_d", 0) > 0 for e in cfg_effects):
-                html_parts.append("<h3>Configured Effects</h3>")
-                html_parts.append("<table><tr><th>DV</th><th>Target d</th><th>Direction</th><th>Comparison</th></tr>")
-                for eff in cfg_effects:
-                    d_val = eff.get("cohens_d", 0)
-                    if d_val > 0:
-                        html_parts.append(
-                            f"<tr><td>{eff.get('variable', '')}</td>"
-                            f"<td>{d_val:.2f}</td>"
-                            f"<td>{eff.get('direction', '')}</td>"
-                            f"<td>{eff.get('level_high', '')} vs {eff.get('level_low', '')}</td></tr>"
-                        )
-                html_parts.append("</table>")
-            if obs_effects:
-                html_parts.append("<h3>Observed Effects in Generated Data</h3>")
-                html_parts.append("<table><tr><th>DV</th><th>Observed d</th><th>Comparison</th><th>Interpretation</th></tr>")
-                for eff in obs_effects:
-                    d_val = abs(_safe_float(eff.get("cohens_d", eff.get("d", 0))))
-                    if d_val < 0.2:
-                        interp = "Negligible"
-                    elif d_val < 0.5:
-                        interp = "Small"
-                    elif d_val < 0.8:
-                        interp = "Medium"
-                    else:
-                        interp = "Large"
-                    var_name = eff.get("variable", eff.get("scale", ""))
-                    comp = f"{eff.get('condition_high', '')} vs {eff.get('condition_low', '')}"
-                    html_parts.append(
-                        f"<tr><td>{var_name}</td><td>{d_val:.3f}</td><td>{comp}</td><td>{interp}</td></tr>"
-                    )
-                html_parts.append("</table>")
+            html_parts.extend(self._effects_assessment_html(df, metadata))
 
         # ── Exclusion Summary ─────────────────────────────────────────
         excl = metadata.get("exclusion_summary", {})
@@ -6068,7 +6776,7 @@ class ComprehensiveInstructorReport:
             html_parts.append("<div class='warning-box' style='border-left:4px solid #f59e0b;background:#fffbeb;padding:15px;margin:20px 0;'>")
             html_parts.append("<strong>Generation Warnings:</strong><ul>")
             for gw in gen_warnings:
-                html_parts.append(f"<li>{gw}</li>")
+                html_parts.append(f"<li>{_esc(gw)}</li>")
             html_parts.append("</ul></div>")
 
         # Footer - Notes for Instructors
@@ -6113,8 +6821,8 @@ class ComprehensiveInstructorReport:
             html_parts.append("<p>Complete reference for every column in the output CSV:</p>")
             html_parts.append("<table><tr><th>Column</th><th>Description</th></tr>")
             for _cd_col, _cd_desc in _col_descs_html.items():
-                _cd_col_safe = str(_cd_col).replace("<", "&lt;").replace(">", "&gt;")
-                _cd_desc_safe = str(_cd_desc).replace("<", "&lt;").replace(">", "&gt;")
+                _cd_col_safe = _esc(_cd_col)
+                _cd_desc_safe = _esc(_dictionary_description(_cd_col, _cd_desc, df))
                 html_parts.append(f"<tr><td><code>{_cd_col_safe}</code></td><td>{_cd_desc_safe}</td></tr>")
             html_parts.append("</table>")
             html_parts.append("<a href='#top' class='back-to-top'>Back to top</a>")
