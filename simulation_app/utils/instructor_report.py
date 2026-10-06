@@ -23,12 +23,12 @@ import numpy as np
 import pandas as pd
 import logging
 try:  # neutralises active content in the finished HTML report (v1.2.9.1); never blocks report generation
-    from .html_safety import sanitize_report_html as _sanitize_report_html
+    from .html_safety import harden_report_html as _harden_report_html
 except ImportError:  # imported as a top-level module (scripts) or a partial deploy
     try:
-        from html_safety import sanitize_report_html as _sanitize_report_html  # type: ignore[no-redef]
+        from html_safety import harden_report_html as _harden_report_html  # type: ignore[no-redef]
     except ImportError:
-        def _sanitize_report_html(document: str) -> str:  # type: ignore[misc]
+        def _harden_report_html(document: str) -> str:  # type: ignore[misc]
             return document
 logger = logging.getLogger(__name__)
 
@@ -6125,5 +6125,6 @@ class ComprehensiveInstructorReport:
         html_parts.append("</div></div></body></html>")  # close report-container + page-wrapper
 
         # Safety net: whatever user-controlled text reached the markup, the finished report contains no
-        # script, iframe, form, event handler, external resource or javascript: link.
-        return _sanitize_report_html("\n".join(html_parts))
+        # script, iframe, form, event handler, external resource or javascript: link, and the browser
+        # that opens the file is told to run no script and load nothing from the network.
+        return _harden_report_html("\n".join(html_parts))

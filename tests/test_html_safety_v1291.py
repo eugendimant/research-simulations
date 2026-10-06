@@ -147,3 +147,25 @@ def test_a_real_instructor_html_report_survives_unchanged_and_hostile_titles_are
     assert "&lt;iframe src=//evil&gt;&lt;/iframe&gt; Why?" in report
     assert "&lt;img src=x onerror=alert(1)&gt; abstract" in report
     assert importlib.util.find_spec("utils.html_safety") is not None
+
+
+def test_the_content_security_policy_is_added_once_and_survives_a_second_pass():
+    from utils.html_safety import CONTENT_SECURITY_POLICY, harden_report_html
+
+    doc = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>t</title></head><body><script>x</script></body></html>"
+    once = harden_report_html(doc)
+    assert once.count("Content-Security-Policy") == 1 and "<script" not in once
+    assert once.index("Content-Security-Policy") < once.index("<title>")  # first element of <head>
+    assert harden_report_html(once) == once
+    assert "default-src &#x27;none&#x27;" in once and "default-src 'none'" in CONTENT_SECURITY_POLICY
+    assert "<head" not in harden_report_html("<p>fragment</p>")[:5] and "Content-Security-Policy" in harden_report_html("<p>fragment</p>")
+
+
+def test_a_policy_or_refresh_tag_typed_by_a_user_is_shown_as_text_not_applied():
+    from utils.html_safety import harden_report_html
+
+    out = harden_report_html("<head></head><body><meta http-equiv='refresh' content='0;url=http://evil'>"
+                             "<meta http-equiv='Content-Security-Policy' content=\"default-src *\"></body>")
+    assert out.count("<meta ") == 1  # only our own policy tag is live markup
+    assert "&lt;meta http-equiv=&#x27;refresh&#x27;" in out or "&lt;meta http-equiv='refresh'" in out
+

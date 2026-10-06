@@ -266,3 +266,142 @@ def test_admin_email_tab_shows_status_sends_a_test_and_lists_the_log(monkeypatch
     assert json.loads(log[-1])["kind"] == "test"
     at.run()  # the table of recent deliveries renders the entry
     assert not at.exception and len(at.dataframe) >= 1
+
+
+# ---- fixes from the security review ---------------------------------------------------------------
+def _clean_limiters():
+    import utils.email_delivery as ed
+
+    ed._APP_LIMITERS.clear()
+
+
+def test_a_pasted_line_separator_in_the_study_title_does_not_cost_the_instructor_the_email(app_env):
+    app, _st, tmp = app_env
+    _clean_limiters()
+    thread = app._notify_instructor(
+        title="Coffee\u2028study\u2029two\x0bthree", metadata=_metadata(), files={}, zip_bytes=b"PK", html_bytes=b"<html>r</html>",
+        md_bytes=b"# Analysis", summary_bytes=b"# Summary")
+    thread.join(30)
+    assert len(RecordingSMTP.sent) == 2  # summary and attachments message
+    assert all(len(str(msg["Subject"]).splitlines()) == 1 for msg, _to in RecordingSMTP.sent)
+    log = [json.loads(line) for line in (tmp / "email_delivery_log.jsonl").read_text(encoding="utf-8").split("\n") if line]
+    assert [e["ok"] for e in log] == [True, True]
+
+
+def test_student_summary_html_escapes_user_text_but_keeps_the_markdown_formatting(app_env):
+    app, _st, _tmp = app_env
+    from html.parser import HTMLParser
+
+    markdown = ("# Study <script>alert(1)</script>\n\n| a | b |\n|---|---|\n| <img src=x onerror=alert(1)> | 2 |\n\n"
+                "- item <b onclick=x()>bold</b>\n\n**strong** and `code` with a < b & c > d\n")
+    page = app._markdown_to_html(markdown, title="</title><script>alert(2)</script>")
+    live = []
+
+    class Probe(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            if tag in {"script", "img", "iframe", "form"} or any(name.startswith("on") for name, _ in attrs):
+                live.append((tag, attrs))
+
+    Probe().feed(page)
+    assert live == [], live
+    for expected in ("<h1>", "<table>", "<th>", "<li>", "<strong>strong</strong>", "<code>code</code>", "a &lt; b &amp; c &gt; d"):
+        assert expected in page, expected
+    assert "Content-Security-Policy" in page
+
+
+def test_a_student_cannot_mail_the_same_person_more_than_twice_a_day_or_exceed_the_daily_budget(app_env, monkeypatch):
+    app, st, _tmp = app_env
+    _clean_limiters()
+    monkeypatch.setattr(st, "secrets", {**SECRETS, "USER_EMAIL_MAX_PER_SESSION_PER_HOUR": 99, "USER_EMAIL_MAX_PER_HOUR": 99,
+                                        "USER_EMAIL_MAX_PER_DAY": 4})
+    victim = "victim@example.org"
+    results = []
+    for _ in range(3):
+        monkeypatch.setattr(st, "session_state", {})  # a fresh session each time: a new browser tab
+        results.append(app._user_email_allowed(victim)[0])
+    assert results == [True, True, False]
+    for address, expected in (("other1@example.org", True), ("other2@example.org", True), ("other3@example.org", False)):
+        monkeypatch.setattr(st, "session_state", {})
+        assert app._user_email_allowed(address)[0] is expected, address  # slots 3 and 4 of 4, then the budget is spent
+    _clean_limiters()
+
+
+def test_an_attachment_that_cannot_be_sent_is_reported_instead_of_claiming_success(app_env):
+    app, _st, tmp = app_env
+    ok, message = app._send_email("student@example.org", "Subject", "Body",
+                                  [("simulation_output.zip", os.urandom(11 * 1024 * 1024))], kind="user_zip")
+    assert ok is False and "too large" in message and "Download" in message
+    entry = json.loads((tmp / "email_delivery_log.jsonl").read_text(encoding="utf-8").split("\n")[-2])
+    assert entry["omitted"][0]["action"] == "omitted"
+
+
+def test_the_emailed_student_zip_leaves_out_the_uploaded_source_files(app_env):
+    app, _st, _tmp = app_env
+    import io
+    import zipfile
+
+    full = app._bytes_to_zip({"Simulated_Data.csv": b"a,b\n1,2\n", "Source_Files/survey.pdf": b"%PDF big", "Source_Files/x/q.qsf": b"{}",
+                              "Metadata.json": b"{}"})
+    lean = app._zip_without_prefix(full, "Source_Files/")
+    assert sorted(zipfile.ZipFile(io.BytesIO(lean)).namelist()) == ["Metadata.json", "Simulated_Data.csv"]
+    assert zipfile.ZipFile(io.BytesIO(lean)).read("Simulated_Data.csv") == b"a,b\n1,2\n"
+    no_sources = app._bytes_to_zip({"Simulated_Data.csv": b"x"})
+    assert app._zip_without_prefix(no_sources, "Source_Files/") == no_sources  # nothing to remove: unchanged bytes
+    assert app._zip_without_prefix(b"not a zip", "Source_Files/") == b"not a zip"  # never loses the email over this
+
+
+def test_a_session_that_loops_cannot_flood_the_instructor_mailbox(app_env, monkeypatch):
+    app, st, tmp = app_env
+    _clean_limiters()
+    monkeypatch.setattr(st, "secrets", {**SECRETS, "INSTRUCTOR_EMAIL_MAX_PER_SESSION_PER_HOUR": 1})
+
+    def notify():
+        return app._notify_instructor(title="t", metadata=_metadata(), files={}, zip_bytes=b"PK", html_bytes=b"<html/>",
+                                      md_bytes=b"m", summary_bytes=b"s")
+
+    first = notify()
+    first.join(30)
+    sent_after_first = len(RecordingSMTP.sent)
+    assert sent_after_first == 2
+    assert notify() is None and len(RecordingSMTP.sent) == sent_after_first  # the second run is not mailed
+    last = json.loads((tmp / "email_delivery_log.jsonl").read_text(encoding="utf-8").split("\n")[-2])
+    assert last["kind"] == "instructor_skipped" and last["error_kind"] == "rate_limited" and last["ok"] is False
+    _clean_limiters()
+
+
+def test_the_daily_instructor_budget_applies_across_sessions(app_env, monkeypatch):
+    app, st, _tmp = app_env
+    _clean_limiters()
+    monkeypatch.setattr(st, "secrets", {**SECRETS, "INSTRUCTOR_EMAIL_MAX_PER_DAY": 1})
+    threads = []
+    for _ in range(3):
+        monkeypatch.setattr(st, "session_state", {"team_name": "T"})  # three different sessions
+        threads.append(app._notify_instructor(title="t", metadata=_metadata(), files={}, zip_bytes=b"PK", html_bytes=b"<html/>",
+                                              md_bytes=b"m", summary_bytes=b"s"))
+    assert threads[0] is not None and threads[1] is None and threads[2] is None
+    threads[0].join(30)
+    assert len(RecordingSMTP.sent) == 2
+    _clean_limiters()
+
+
+def test_access_codes_lock_after_twenty_wrong_guesses_across_sessions(app_env, monkeypatch):
+    app, st, _tmp = app_env
+    _clean_limiters()
+    right = "adm" + "in-code-" + "9x"
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
+    monkeypatch.delenv("ADMIN_PASSWORD_SHA256", raising=False)
+    monkeypatch.setattr(st, "secrets", {"ADMIN_PASSWORD": right})
+    assert app._access_code_matches(right, "ADMIN_PASSWORD") is True
+    for i in range(20):
+        monkeypatch.setattr(st, "session_state", {})  # new sessions do not reset the guess budget
+        assert app._access_code_matches(f"wrong-{i}", "ADMIN_PASSWORD") is False
+    assert app._access_code_matches(right, "ADMIN_PASSWORD") is False  # locked, even for the right code
+    _clean_limiters()
+    assert app._access_code_matches(right, "ADMIN_PASSWORD") is True  # the window passed
+
+
+def test_labels_built_from_student_text_cannot_form_links_or_images(app_env):
+    app, _st, _tmp = app_env
+    label = app._plain_label("[click](http://evil) ![x](http://evil/p.png) **bold** `code` <b>")
+    assert not any(ch in label for ch in "[]()`*<>!") and "evil" in label  # the words remain, the syntax is gone
+

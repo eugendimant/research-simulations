@@ -60,7 +60,11 @@ DEFAULT_MAX_MESSAGE_BYTES = 15 * 1024 * 1024
 _ENCODING_OVERHEAD = 1.37
 _MAX_RECIPIENTS = 10
 _TRANSIENT_SMTP_CODES = frozenset({421, 450, 451, 452, 454})
-_ADDRESS_RE = re.compile(r"^[^@\s<>,;\"']+@[^@\s<>,;\"']+\.[^@\s<>,;\"']+$")
+
+
+def _is_transient_code(code: Optional[int]) -> bool:
+    return code is not None and (code in _TRANSIENT_SMTP_CODES or 400 <= int(code) < 500)
+_ADDRESS_RE = re.compile(r"^[^@\s<>,;\"]+@[^@\s<>,;\"]+\.[^@\s<>,;\"]+$")
 _LOG_LOCK = threading.Lock()
 _MAX_LOG_LINES = 400
 
@@ -92,7 +96,7 @@ class SMTPConfig:
     server: str = ""
     port: int = 587
     username: str = ""
-    password: str = ""
+    password: str = field(default="", repr=False)
     from_email: str = ""
     from_name: str = "Behavioral Experiment Simulation Tool"
     use_tls: bool = True
@@ -204,11 +208,17 @@ def parse_recipients(value: Any, limit: int = _MAX_RECIPIENTS) -> Tuple[List[str
     if value is None:
         return [], []
     text = ", ".join(str(v) for v in value) if isinstance(value, (list, tuple)) else str(value)
+    if len(text) > 2000:  # nobody types a 2 KB address list; refuse instead of cutting an address in half
+        return [], [text[:40]]
     text = text.replace(";", ",").replace("\n", ",")
     valid: List[str] = []
     invalid: List[str] = []
     seen = set()
-    for _name, addr in getaddresses([text]):
+    try:
+        parsed = getaddresses([text])
+    except Exception:  # noqa: BLE001 - e.g. RecursionError on deeply nested comments
+        return [], [text[:40]]
+    for _name, addr in parsed:
         addr = (addr or "").strip()
         if not addr:
             continue
@@ -233,9 +243,14 @@ def mask_address(address: str) -> str:
     return f"{local[0]}***{local[-1]}@{domain}"
 
 
+_CTRL_RE = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029]+")  # C0 controls plus the other characters str.splitlines() splits on
+
+
 def _clean_header(value: Any, limit: int = 250) -> str:
-    """One physical line: no CR/LF/tab, so user-controlled text can never inject headers."""
-    return re.sub(r"[\r\n\t]+", " ", str(value or "")).strip()[:limit]
+    """One physical line: no CR/LF/tab/VT/FF/NEL/LS/PS, so user-controlled text can neither inject
+    headers nor make the message builder raise (a pasted U+2028 used to drop the whole notification)."""
+    text = str(value or "").encode("utf-8", "replace").decode("utf-8")  # lone surrogates cannot be encoded
+    return _CTRL_RE.sub(" ", text).strip()[:limit]
 
 
 def _safe_filename(name: str) -> str:
@@ -328,6 +343,27 @@ def fit_attachments(
     return [a for a in current if a is not None], notes
 
 
+def harden_html_attachment(data: bytes) -> bytes:
+    """Neutralise active content in an HTML report and add a restrictive Content-Security-Policy.
+
+    Idempotent. Used for stored reports (re-sent from the archive) that may predate the sanitiser.
+    Falls back to the unchanged bytes when the sanitiser module is unavailable."""
+    try:
+        try:
+            from .html_safety import harden_report_html
+        except ImportError:
+            from html_safety import harden_report_html  # type: ignore[no-redef]
+        return harden_report_html(data.decode("utf-8", "replace")).encode("utf-8")
+    except Exception as exc:  # noqa: BLE001 - never block a notification on the hardening step
+        logger.warning("Could not harden the HTML attachment: %s", exc)
+        return data
+
+
+def _scrub_text(value: Any) -> str:
+    """Make text encodable: lone surrogates (from a broken paste) would otherwise make the whole message fail."""
+    return str(value or "").encode("utf-8", "replace").decode("utf-8")
+
+
 def _address_domain(address: str) -> str:
     return address.partition("@")[2] or "localhost"
 
@@ -344,7 +380,7 @@ def build_message(
     extra_headers: Optional[Dict[str, str]] = None,
 ) -> EmailMessage:
     """Build the MIME message. Text plus optional HTML alternative; attachments get real types."""
-    msg = EmailMessage(policy=policy.default)
+    msg = EmailMessage(policy=policy.default.clone(cte_type="7bit"))
     msg["From"] = formataddr((_clean_header(from_name, 100), from_email)) if from_name else from_email
     msg["To"] = ", ".join(recipients)
     msg["Subject"] = _clean_header(subject)
@@ -354,9 +390,9 @@ def build_message(
     msg["X-Mailer"] = "Behavioral Experiment Simulation Tool"
     for key, value in (extra_headers or {}).items():
         msg[_clean_header(key, 60)] = _clean_header(value)
-    msg.set_content(body_text)
+    msg.set_content(_scrub_text(body_text))
     if body_html:
-        msg.add_alternative(body_html, subtype="html")
+        msg.add_alternative(_scrub_text(body_html), subtype="html")
     for att in attachments:
         maintype, subtype = guess_mime_type(att.name)
         msg.add_attachment(att.data, maintype=maintype, subtype=subtype, filename=_safe_filename(att.name))
@@ -382,12 +418,17 @@ class DeliveryResult:
     message_bytes: int = 0
     attachments: List[Dict[str, Any]] = field(default_factory=list)
     omitted: List[Dict[str, Any]] = field(default_factory=list)
+    possible_duplicate: bool = False  # a retry followed a dropped connection: the server may have kept the first copy
+
+
+_EMAIL_IN_TEXT = re.compile(r"[\w.+'%-]+@[\w.-]+\.[A-Za-z]{2,}")
 
 
 def _clean_detail(text: Any, secret: str = "") -> str:
     out = str(text or "")
     if secret:
         out = out.replace(secret, "***")
+    out = _EMAIL_IN_TEXT.sub(lambda m: mask_address(m.group(0)), out)
     return re.sub(r"\s+", " ", out).strip()[:300]
 
 
@@ -414,13 +455,13 @@ def classify_error(exc: BaseException) -> Tuple[str, Optional[int], str]:
         detail = _decode(getattr(exc, "smtp_error", ""))
         if _QUOTA_RE.search(detail):
             return "quota", code, detail
-        return ("transient" if code in _TRANSIENT_SMTP_CODES else "auth"), code, detail
+        return ("transient" if _is_transient_code(code) else "auth"), code, detail
     if isinstance(exc, smtplib.SMTPRecipientsRefused):
         detail = "; ".join(f"{k}: {_decode(v[1])}" for k, v in (exc.recipients or {}).items())
         code = next((v[0] for v in (exc.recipients or {}).values()), None)
         if _QUOTA_RE.search(detail):
             return "quota", code, detail
-        return ("transient" if code in _TRANSIENT_SMTP_CODES else "recipient"), code, detail
+        return ("transient" if _is_transient_code(code) else "recipient"), code, detail
     if isinstance(exc, smtplib.SMTPNotSupportedError):
         return "config", None, str(exc)
     if isinstance(exc, smtplib.SMTPResponseException):  # SenderRefused, DataError, ConnectError, HeloError...
@@ -432,7 +473,7 @@ def classify_error(exc: BaseException) -> Tuple[str, Optional[int], str]:
             return "size", code, detail
         if _QUOTA_RE.search(detail):
             return "quota", code, detail
-        if code in _TRANSIENT_SMTP_CODES:
+        if _is_transient_code(code):
             return "transient", code, detail
         return "permanent", code, detail
     if isinstance(exc, smtplib.SMTPServerDisconnected):
@@ -490,6 +531,7 @@ def send_with_retries(
         result.message_bytes = len(msg.as_bytes())
     except Exception:  # sizing must never prevent the attempt
         result.message_bytes = 0
+    ambiguous_failure = False
     for attempt in range(1, max_attempts + 1):
         result.attempts = attempt
         server = None
@@ -504,6 +546,7 @@ def send_with_retries(
                               for k, v in refused.items()}
             result.accepted = [r for r in recipients if r not in refused]
             result.ok = bool(result.accepted)
+            result.possible_duplicate = bool(result.ok and attempt > 1 and ambiguous_failure)
             result.error_kind = "" if result.ok else "recipient"
             result.message = "Email sent successfully!" if result.ok else "No recipient accepted the message."
             result.elapsed_s = round(time.monotonic() - started, 2)
@@ -515,6 +558,8 @@ def send_with_retries(
                 except Exception:
                     pass
             kind, code, detail = classify_error(exc)
+            if kind == "transient" and code is None:  # disconnect or timeout: the outcome of this attempt is unknown
+                ambiguous_failure = True
             result.error_class = type(exc).__name__
             result.error_kind = kind
             result.smtp_code = code
@@ -566,6 +611,7 @@ def record_delivery(
         "to": [mask_address(r) for r in recipients],
         "accepted": [mask_address(r) for r in result.accepted],
         "refused": {mask_address(k): v for k, v in result.refused.items()},
+        "possible_duplicate": bool(result.possible_duplicate),
         "smtp_host": host,
         "smtp_code": result.smtp_code,
         "error_kind": result.error_kind,
@@ -586,6 +632,7 @@ def record_delivery(
         print(f"EMAIL-DELIVERY {kind} {'OK' if result.ok else 'FAILED'} to={[mask_address(r) for r in recipients]} "
               f"attempts={result.attempts} seconds={result.elapsed_s} bytes={result.message_bytes} "
               f"problem={result.error_kind or '-'}:{result.smtp_code or '-'} {result.error_detail} "
+              f"refused={len(result.refused)} dup={'maybe' if result.possible_duplicate else 'no'} "
               f"message-id={result.message_id}", file=sys.stderr, flush=True)
     except Exception:  # noqa: BLE001 - logging must never break a send
         pass
@@ -594,12 +641,12 @@ def record_delivery(
     try:
         path = Path(log_path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        line = json.dumps(entry, ensure_ascii=False, default=str)
+        line = json.dumps(entry, ensure_ascii=True, default=str)
         with _LOG_LOCK:
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(line + "\n")
             if path.stat().st_size > 400_000:  # keep the file small: trim to the newest lines
-                lines = path.read_text(encoding="utf-8").splitlines()[-_MAX_LOG_LINES:]
+                lines = [ln for ln in path.read_text(encoding="utf-8").split("\n") if ln][-_MAX_LOG_LINES:]
                 path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     except Exception as exc:  # the log must never break a send
         logger.warning("Could not write the email delivery log: %s", exc)
@@ -615,7 +662,7 @@ def read_delivery_log(log_path: Optional[Path], limit: int = 50) -> List[Dict[st
         if not path.exists():
             return []
         with _LOG_LOCK:
-            lines = path.read_text(encoding="utf-8").splitlines()
+            lines = path.read_text(encoding="utf-8").split("\n")
     except Exception:
         return []
     entries: List[Dict[str, Any]] = []
@@ -643,12 +690,19 @@ def deliver(
     kind: str = "email",
     log_path: Optional[Path] = None,
     max_attempts: int = 3,
+    backoff_s: Sequence[float] = (2.0, 6.0),
+    deadline_s: float = 120.0,
     smtp_factory: Optional[Callable[..., Any]] = None,
     sleep: Callable[[float], None] = time.sleep,
     extra_headers: Optional[Dict[str, str]] = None,
 ) -> DeliveryResult:
-    """Build, size-fit, send (with retries) and log one email. Never raises."""
+    """Build, size-fit, send (with retries) and log one email. Never raises.
+
+    When the server rejects the size, the budget is halved once; if that fails too, a last message
+    without attachments goes out so the text still arrives."""
     recipients = list(recipients)
+    subject, body_text = _scrub_text(subject), _scrub_text(body_text)
+    body_html = _scrub_text(body_html) if body_html else body_html
     omitted: List[Dict[str, Any]] = []
     try:
         if not config.configured:
@@ -660,10 +714,14 @@ def deliver(
                                     error_class="NoRecipient", error_detail="the recipient secret is empty or invalid")
         else:
             budget = config.max_message_bytes
-            tried_smaller = False
+            stage = 0  # 0 normal, 1 halved budget, 2 body only
             while True:
                 fixed = estimate_message_bytes(body_text, body_html, [])
-                kept, notes = fit_attachments(list(attachments), budget, fixed_bytes=fixed)
+                if stage >= 2:
+                    kept = []
+                    notes = [{"name": a.name, "action": "omitted", "bytes": len(a.data)} for a in attachments]
+                else:
+                    kept, notes = fit_attachments(list(attachments), budget, fixed_bytes=fixed)
                 omitted = notes
                 body, html_body = body_text, body_html
                 if notes:
@@ -677,14 +735,17 @@ def deliver(
                 msg = build_message(from_email=config.sender_address, from_name=config.from_name, recipients=recipients,
                                     subject=subject, body_text=body, body_html=html_body, attachments=kept,
                                     extra_headers=extra_headers)
-                result = send_with_retries(config, msg, recipients, max_attempts=max_attempts,
-                                           smtp_factory=smtp_factory, sleep=sleep)
+                result = send_with_retries(config, msg, recipients, max_attempts=max_attempts, backoff_s=backoff_s,
+                                           deadline_s=deadline_s, smtp_factory=smtp_factory, sleep=sleep)
                 result.attachments = [{"name": a.name, "bytes": len(a.data)} for a in kept]
                 result.omitted = omitted
-                if result.ok or result.error_kind != "size" or tried_smaller:
+                if result.ok or result.error_kind != "size" or stage >= 2:
                     break
-                tried_smaller = True  # the server's limit is lower than assumed: halve the budget once
-                budget = max(1_000_000, int(min(budget, result.message_bytes or budget) * 0.5))
+                if stage == 0 and kept:  # the server's limit is lower than assumed: halve the budget once
+                    budget = max(1_000_000, int(min(budget, result.message_bytes or budget) * 0.5))
+                    stage = 1
+                else:  # still too large (or nothing to shrink): send the text alone
+                    stage = 2
     except Exception as exc:  # noqa: BLE001 - delivery must never crash the caller
         logger.exception("Unexpected error while preparing an email")
         result = DeliveryResult(ok=False, message="Email could not be sent. Please check the configuration and try again.",
@@ -710,6 +771,12 @@ def _headline_effects(metadata: Dict[str, Any], limit: int = 6) -> List[Dict[str
     return sorted(pool, key=_abs_d, reverse=True)[:limit]
 
 
+def _clip(value: Any, limit: int) -> str:
+    """Bound student-typed text before it enters an email (one huge paste must not make the message undeliverable)."""
+    text = str(value or "")
+    return text if len(text) <= limit else text[:limit] + " [...]"
+
+
 def compose_instructor_notification(
     *,
     title: str,
@@ -731,6 +798,11 @@ def compose_instructor_notification(
     useful even when a mail filter strips every attachment. All user-controlled text is escaped
     in the HTML part and stripped of line breaks in the subject.
     """
+    title = _clip(title, 200)
+    team_name = _clip(team_name, 200)
+    team_members = _clip(team_members, 1500)
+    generation_label = _clip(generation_label, 120)
+    usage_summary = _clip(usage_summary, 4000)
     problem = _clean_header(str(report_problem or ""), 400)
     flag = "[REPORT ERROR] " if problem else ""
     subject = _clean_header(f"{flag}[Behavioral Simulation] Output ({mode or 'pilot'}) [{generation_label}] - {title}", 200)
@@ -813,6 +885,13 @@ class RateLimiter:
         self._events: Dict[str, List[float]] = {}
         self._lock = threading.Lock()
 
+    def remaining(self, key: str = "global") -> int:
+        """How many more events ``key`` may record right now. Records nothing."""
+        now = self._clock()
+        with self._lock:
+            used = len([t for t in self._events.get(key, []) if now - t < self.window_s])
+        return max(0, self.max_events - used)
+
     def allow(self, key: str = "global") -> bool:
         """Record an event for ``key`` and return True when it is within the limit."""
         now = self._clock()
@@ -828,6 +907,7 @@ class RateLimiter:
             return True
 
 
+_SEND_SLOTS = threading.BoundedSemaphore(2)  # at most two SMTP deliveries at a time; the rest wait holding only their bytes
 _APP_LIMITERS: Dict[str, RateLimiter] = {}
 _APP_LIMITERS_LOCK = threading.Lock()
 
@@ -861,19 +941,25 @@ def deliver_instructor_package(
     log_path: Optional[Path] = None,
     smtp_factory: Optional[Callable[..., Any]] = None,
     sleep: Callable[[float], None] = time.sleep,
+    max_attempts: int = 5,
+    backoff_s: Sequence[float] = (3.0, 10.0, 30.0, 90.0),
+    deadline_s: float = 420.0,
 ) -> List[DeliveryResult]:
     """Send the instructor notification; returns one result per message. Never raises.
 
     ``split`` (default): message 1 has NO attachments (headline numbers and the full analysis in
     the body, the kind of message mail filters rarely hold); message 2 carries the attachments and
     is threaded to the first. If a filter holds or quarantines the attachment message, the analysis
-    still arrives. ``single``: everything in one message.
+    still arrives. ``single``: everything in one message. The notification runs in a background
+    thread, so it retries for several minutes (a mail server that answers 421/450 for a while is
+    waited out) instead of the few seconds a student-facing button can afford.
     """
+    retry = dict(max_attempts=max_attempts, backoff_s=backoff_s, deadline_s=deadline_s)
     if str(mode).strip().lower() == "single":
         return [deliver(config, recipients, subject, text, body_html=html_body, attachments=slots, kind="instructor",
-                        log_path=log_path, smtp_factory=smtp_factory, sleep=sleep)]
+                        log_path=log_path, smtp_factory=smtp_factory, sleep=sleep, **retry)]
     first = deliver(config, recipients, subject, text, body_html=html_body, attachments=[], kind="instructor_summary",
-                    log_path=log_path, smtp_factory=smtp_factory, sleep=sleep)
+                    log_path=log_path, smtp_factory=smtp_factory, sleep=sleep, **retry)
     package_subject = f"{subject} [attachments]"
     if not first.ok and first.error_kind in _FATAL_KINDS:
         skipped = DeliveryResult(ok=False, message="Skipped: the summary message failed for a reason that would stop "
@@ -887,7 +973,7 @@ def deliver_instructor_package(
                 "The headline numbers and the full analysis are in the body of that message.\n")
     headers = {"In-Reply-To": first.message_id, "References": first.message_id} if first.message_id else None
     second = deliver(config, recipients, package_subject, pkg_text, attachments=slots, kind="instructor_package",
-                     log_path=log_path, smtp_factory=smtp_factory, sleep=sleep, extra_headers=headers)
+                     log_path=log_path, smtp_factory=smtp_factory, sleep=sleep, extra_headers=headers, **retry)
     return [first, second]
 
 
@@ -933,7 +1019,8 @@ def run_in_background(target: Callable[..., Any], *args: Any, name: str = "email
     """
     def _runner() -> None:
         try:
-            target(*args, **kwargs)
+            with _SEND_SLOTS:
+                target(*args, **kwargs)
         except Exception:  # noqa: BLE001
             logger.exception("Background email task failed")
 

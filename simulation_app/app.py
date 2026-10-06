@@ -101,6 +101,11 @@ try:  # reliable, observable email delivery (v1.2.9.1); the legacy sender below 
     from utils import email_delivery as _email_delivery
 except ImportError:  # partial deploy: keep the app loading
     _email_delivery = None  # type: ignore[assignment]
+try:  # neutralises active content in generated HTML files (v1.2.9.1)
+    from utils.html_safety import harden_report_html as _harden_report_html
+except ImportError:  # partial deploy: keep the app loading
+    def _harden_report_html(document: str) -> str:  # type: ignore[misc]
+        return document
 from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedCondition, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS, generate_qsf_from_design
 from utils.persona_library import PersonaLibrary, Persona
 from utils.enhanced_simulation_engine import (
@@ -310,7 +315,7 @@ def _markdown_to_html(markdown_text: str, title: str = "Study Summary") -> str:
         '<head>',
         '<meta charset="UTF-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
-        f'<title>{title}</title>',
+        f'<title>{html_escape(str(title))}</title>',
         '<style>',
         'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; ',
         '       max-width: 900px; margin: 40px auto; padding: 20px; line-height: 1.6; color: #333; }',
@@ -334,7 +339,8 @@ def _markdown_to_html(markdown_text: str, title: str = "Study Summary") -> str:
         '<body>',
     ]
 
-    content = markdown_text
+    # Study titles, condition names and other text come from users: escape first, then add our own markup.
+    content = html_escape(str(markdown_text), quote=False)
 
     # Convert headers
     content = re.sub(r'^### (.+)$', r'<h3>\1</h3>', content, flags=re.MULTILINE)
@@ -404,7 +410,25 @@ def _markdown_to_html(markdown_text: str, title: str = "Study Summary") -> str:
     html_parts.append('</body>')
     html_parts.append('</html>')
 
-    return '\n'.join(html_parts)
+    return _harden_report_html('\n'.join(html_parts))
+
+
+def _zip_without_prefix(zip_bytes: bytes, prefix: str) -> bytes:
+    """Copy of a ZIP without the entries under ``prefix`` (the original bytes when nothing changes or on any error)."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as src:
+            names = src.namelist()
+            if not any(n.startswith(prefix) for n in names):
+                return zip_bytes
+            out = io.BytesIO()
+            with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as dst:
+                for name in names:
+                    if not name.startswith(prefix):
+                        dst.writestr(name, src.read(name))
+            return out.getvalue()
+    except Exception as exc:  # noqa: BLE001 - fall back to the full ZIP rather than losing the email
+        _app_logging.getLogger(__name__).warning("Could not build a ZIP without %s: %s", prefix, exc)
+        return zip_bytes
 
 
 def _bytes_to_zip(files: Dict[str, bytes]) -> bytes:
@@ -3565,6 +3589,10 @@ def _send_email_with_smtp(
         _email_config(), recipients, subject, body_text, body_html=body_html, attachments=slots,
         kind=kind, log_path=EMAIL_DELIVERY_LOG,
     )
+    left_out = [o["name"] for o in (result.omitted or []) if o.get("action") == "omitted"]
+    if result.ok and left_out:  # the student asked for the attachment: do not report success without it
+        return False, (f"The attachment was too large to email ({', '.join(left_out)}). "
+                       "Please use the Download button instead.")
     return result.ok, result.message
 
 
@@ -3586,9 +3614,10 @@ def _send_email(
     return _send_email_with_smtp(to_email, subject, body_text, attachments, **kwargs)
 
 
-def _user_email_allowed() -> Tuple[bool, str]:
-    """Limit student-triggered emails (per session and app-wide) so they cannot use up the mail
-    account's daily quota, which the instructor notification depends on."""
+def _user_email_allowed(recipient: str = "") -> Tuple[bool, str]:
+    """Limit student-triggered emails (per session, per recipient and app-wide) so they cannot use up
+    the mail account's daily quota, which the instructor notification depends on, or be used to
+    mail-bomb a third party."""
     import time as _time_mod
     try:
         per_session = int(_secret("USER_EMAIL_MAX_PER_SESSION_PER_HOUR", 5) or 5)
@@ -3601,12 +3630,49 @@ def _user_email_allowed() -> Tuple[bool, str]:
         st.session_state["_user_email_times"] = times
         return False, "You have reached the email limit for this session. Please download the ZIP instead."
     if _email_delivery is not None:
-        # a limiter inside the imported module outlives Streamlit's per-interaction script reruns
+        # limiters inside the imported module outlive Streamlit's per-interaction script reruns (a new
+        # browser tab is a new session, so session counters alone prove nothing)
+        if recipient:
+            key = hashlib.sha256(recipient.strip().lower().encode("utf-8")).hexdigest()[:16]
+            if not _email_delivery.shared_limiter("user-emails-recipient", 2, 86400.0).allow(key):
+                return False, "That address already received the maximum number of emails today. Please download the ZIP instead."
+        try:
+            per_day = int(_secret("USER_EMAIL_MAX_PER_DAY", 100) or 100)
+        except (TypeError, ValueError):
+            per_day = 100
+        if not _email_delivery.shared_limiter("user-emails-day", per_day, 86400.0).allow("app"):
+            return False, "The email service is busy today. Please download the ZIP instead."
         if not _email_delivery.shared_limiter("user-emails", per_app).allow("app"):
             return False, "The email service is busy right now. Please download the ZIP instead."
     times.append(now)
     st.session_state["_user_email_times"] = times
     return True, ""
+
+
+def _instructor_email_blocked() -> str:
+    """Return a reason when this run's instructor notification must be skipped to protect the mail
+    account (one session looping, or the whole app over its daily budget); empty when allowed.
+    Limits (0 disables a limit): INSTRUCTOR_EMAIL_MAX_PER_SESSION_PER_HOUR (default 12) and
+    INSTRUCTOR_EMAIL_MAX_PER_DAY (default 300 runs, two messages each)."""
+    if _email_delivery is None:
+        return ""
+    try:
+        per_session = int(_secret("INSTRUCTOR_EMAIL_MAX_PER_SESSION_PER_HOUR", 12) or 0)
+        per_day = int(_secret("INSTRUCTOR_EMAIL_MAX_PER_DAY", 300) or 0)
+    except (TypeError, ValueError):
+        per_session, per_day = 12, 300
+    if per_session > 0:
+        session_key = st.session_state.get("_session_email_key")
+        if not session_key:
+            session_key = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
+            st.session_state["_session_email_key"] = session_key
+        if not _email_delivery.shared_limiter("instructor-emails-session", per_session, 3600.0).allow(session_key):
+            return (f"Not emailed: this session already triggered {per_session} instructor emails in the last hour "
+                    "(INSTRUCTOR_EMAIL_MAX_PER_SESSION_PER_HOUR). The analyses are in the stored packages.")
+    if per_day > 0 and not _email_delivery.shared_limiter("instructor-emails-day", per_day, 86400.0).allow("app"):
+        return (f"Not emailed: {per_day} instructor emails were already sent in the last 24 hours "
+                "(INSTRUCTOR_EMAIL_MAX_PER_DAY). The analyses are in the stored packages.")
+    return ""
 
 
 def _notify_instructor(
@@ -3633,6 +3699,16 @@ def _notify_instructor(
         label = metadata.get("generation_method_label", metadata.get("generation_method", "Unknown"))
         names = ["INSTRUCTOR_Statistical_Report.html", "INSTRUCTOR_Detailed_Analysis.md",
                  "simulation_output.zip", "User_Study_Summary.md"]
+        blocked = _instructor_email_blocked()
+        if blocked and _email_delivery is not None:
+            # Visible in the admin log; the run's analyses stay in the archive and can be re-sent from there.
+            _email_delivery.record_delivery(
+                EMAIL_DELIVERY_LOG,
+                _email_delivery.DeliveryResult(ok=False, message=blocked, error_kind="rate_limited",
+                                               error_class="RateLimited", error_detail=blocked),
+                kind="instructor_skipped", subject=f"Output - {title}", recipients=recipients,
+                host=_email_config().server)
+            return None
         if _email_delivery is None:  # legacy best effort
             body = f"Study: {title}\nGeneration Method: {label}\nSample Size: N={metadata.get('sample_size', 'N/A')}\n"
             _send_email_with_smtp_legacy(
@@ -3660,7 +3736,7 @@ def _notify_instructor(
             except Exception as _lean_err:  # noqa: BLE001
                 _app_logging.getLogger(__name__).warning("Lean ZIP for the instructor email failed: %s", _lean_err)
         slots = [
-            attach(names[0], html_bytes, protected=True),
+            attach(names[0], _email_delivery.harden_html_attachment(html_bytes), protected=True),
             attach(names[1], md_bytes),
             attach(names[2], zip_bytes, alternatives=lean),
             attach(names[3], summary_bytes),
@@ -7637,6 +7713,11 @@ def _access_code_matches(supplied: str, secret_name: str) -> bool:
     import hmac
     if not supplied:
         return False
+    # Guess limit shared by every session (a new browser tab is a new session): after 20 wrong codes in
+    # 10 minutes all access-code gates refuse everything, the right code included, until the window passes.
+    guard = _email_delivery.shared_limiter("access-code-failures", 20, 600.0) if _email_delivery is not None else None
+    if guard is not None and guard.remaining("app") <= 0:
+        return False
     plain, digest = "", ""
     for key, target in ((secret_name, "plain"), (secret_name + "_SHA256", "digest")):
         value = os.environ.get(key, "")
@@ -7653,6 +7734,8 @@ def _access_code_matches(supplied: str, secret_name: str) -> bool:
         return True
     if digest and hmac.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(), digest):
         return True
+    if guard is not None:
+        guard.allow("app")  # record the failed guess
     return False
 
 
@@ -7889,7 +7972,7 @@ def _resend_stored_instructor_package(pkg: Dict[str, Any]) -> Any:
     attach = _email_delivery.Attachment
     slots = []
     if pkg.get("html"):
-        slots.append(attach(pkg["html"].name, pkg["html"].read_bytes(), protected=True))
+        slots.append(attach(pkg["html"].name, _email_delivery.harden_html_attachment(pkg["html"].read_bytes()), protected=True))
     if pkg.get("md"):
         slots.append(attach(pkg["md"].name, pkg["md"].read_bytes()))
     data_csv = folder / "Simulated_Data.csv"
@@ -7897,6 +7980,12 @@ def _resend_stored_instructor_package(pkg: Dict[str, Any]) -> Any:
         slots.append(attach("Simulated_Data.csv", data_csv.read_bytes()))
     return _email_delivery.deliver(config, recipients, "[RE-SENT] " + subject, text, body_html=html_body,
                                    attachments=slots, kind="resend", log_path=EMAIL_DELIVERY_LOG)
+
+
+def _plain_label(text: Any, limit: int = 80) -> str:
+    """Text for a Streamlit label that renders Markdown: drop characters that would make links, images or emphasis."""
+    cleaned = re.sub(r"[\[\]()`*_~<>#|!\\\r\n\t]", " ", str(text or ""))
+    return re.sub(r"\s+", " ", cleaned).strip()[:limit]
 
 
 def _render_admin_email_tab() -> None:
@@ -7954,6 +8043,11 @@ def _render_admin_email_tab() -> None:
         rows = []
         for e in entries:
             problem = " ".join(str(x) for x in (e.get("error_kind"), e.get("smtp_code"), e.get("error")) if x)
+            if e.get("refused"):
+                problem = (problem + " " if problem else "") + "refused: " + "; ".join(
+                    f"{k} {v}" for k, v in e["refused"].items())
+            if e.get("possible_duplicate"):
+                problem = (problem + " " if problem else "") + "(a retry may have produced a second copy)"
             rows.append({
                 "time (UTC)": e.get("ts", ""), "kind": e.get("kind", ""), "ok": "yes" if e.get("ok") else "NO",
                 "attempts": e.get("attempts", 0), "seconds": e.get("elapsed_s", 0),
@@ -7973,7 +8067,7 @@ def _render_admin_email_tab() -> None:
     if not packages:
         st.info("No stored packages yet.")
     for idx, pkg in enumerate(packages):
-        with st.expander(f"{pkg['name']}  \u00b7  {pkg['study'] or 'untitled study'}"):
+        with st.expander(f"{pkg['name']}  \u00b7  {_plain_label(pkg['study'] or 'untitled study')}"):
             d1, d2, d3 = st.columns(3)
             if pkg.get("html"):
                 d1.download_button("Statistical report (HTML)", pkg["html"].read_bytes(), file_name=pkg["html"].name,
@@ -8016,7 +8110,7 @@ def _render_admin_dashboard() -> None:
                     st.session_state["_admin_authenticated"] = True
                     st.rerun()
                 else:
-                    st.error("Invalid password.")
+                    st.error("Invalid password, or too many wrong attempts in the last 10 minutes.")
         return
 
     # ── Top metrics bar ───────────────────────────────────────────────
@@ -8876,6 +8970,8 @@ _ADMIN_PRESERVE_KEYS = {
     "_admin_llm_exhaust_dialog_shown",
     "_admin_user_key_activations",
     "_admin_generation_errors",
+    "_user_email_times",  # "Start Over" must not reset the per-session email limit
+    "_session_email_key",
 }
 if st.session_state.pop("_pending_reset", False):
     for _k in list(st.session_state.keys()):
@@ -16087,7 +16183,7 @@ if active_page == 3:
                 # One address only: this button must not become a way to mail files to a list.
                 _zip_addrs = (_email_delivery.parse_recipients(to_email)[0] if _email_delivery is not None
                               else ([to_email.strip()] if to_email and "@" in to_email else []))
-                _zip_allowed, _zip_reason = _user_email_allowed() if len(_zip_addrs) == 1 else (True, "")
+                _zip_allowed, _zip_reason = _user_email_allowed(_zip_addrs[0]) if len(_zip_addrs) == 1 else (True, "")
                 if len(_zip_addrs) != 1:
                     st.error("Please enter one valid email address.")
                 elif not _zip_allowed:
@@ -16095,16 +16191,19 @@ if active_page == 3:
                 else:
                     # v1.1.0.7: Track user email in admin area
                     _track_user_email(_zip_addrs[0], source="zip_download")
-                    subject = f"[Behavioral Simulation] Output: {st.session_state.get('study_title','Untitled Study')}"
+                    # Fixed subject and no uploaded files: this message comes from the owner's mailbox, so a
+                    # visitor must not be able to choose its subject or attach documents of their own.
+                    subject = "[Behavioral Simulation] Your simulation output"
                     body = (
-                        "Attached is the simulation output ZIP (Simulated_Data.csv, Simulation_Diagnostics.csv, metadata, analysis scripts).\n\n"
+                        "Attached is the simulation output ZIP (Simulated_Data.csv, Simulation_Diagnostics.csv, metadata, analysis scripts).\n"
+                        "Files you uploaded to the app are not included in the emailed copy; the Download button has the full package.\n\n"
                         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
                     )
                     ok, msg = _send_email(
                         to_email=_zip_addrs[0],
                         subject=subject,
                         body_text=body,
-                        attachments=[("simulation_output.zip", zip_bytes)],
+                        attachments=[("simulation_output.zip", _zip_without_prefix(zip_bytes, "Source_Files/"))],
                         kind="user_zip",
                     )
                     if ok:
@@ -16117,11 +16216,12 @@ if active_page == 3:
             if instructor_email:
                 if st.button("Send to instructor too", key="send_to_instructor_btn"):
                     _inst_allowed, _inst_reason = _user_email_allowed()
-                    subject = f"[Behavioral Simulation] Output (team: {st.session_state.get('team_name','') or 'N/A'})"
+                    _clip = (lambda value, n: str(value or "")[:n])  # a pasted wall of text must not make the mail undeliverable
+                    subject = f"[Behavioral Simulation] Output (team: {_clip(st.session_state.get('team_name', ''), 100) or 'N/A'})"
                     body = (
-                        f"Team: {st.session_state.get('team_name','')}\n"
-                        f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
-                        f"Study: {st.session_state.get('study_title','')}\n"
+                        f"Team: {_clip(st.session_state.get('team_name', ''), 200)}\n"
+                        f"Members:\n{_clip(st.session_state.get('team_members_raw', ''), 1500)}\n\n"
+                        f"Study: {_clip(st.session_state.get('study_title', ''), 200)}\n"
                         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
                     )
                     if _inst_allowed:

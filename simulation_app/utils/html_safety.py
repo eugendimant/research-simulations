@@ -7,7 +7,8 @@ a condition named ``<iframe src=...>`` ended up as live markup in a file the own
 browser (and that mail filters inspect). ``sanitize_report_html`` is a safety net applied to the
 finished document: it re-emits the markup with dangerous elements and attributes turned into
 harmless visible text. The report's own markup (headings, tables, inline SVG charts, a style
-block, in-page anchors) passes through unchanged in meaning.
+block, in-page anchors) passes through unchanged in meaning. ``harden_report_html`` adds a
+Content-Security-Policy ``<meta>`` as a second line of defence enforced by the browser.
 
 Rules
 -----
@@ -28,6 +29,12 @@ from html.parser import HTMLParser
 from typing import List, Optional, Tuple
 
 __version__ = "1.2.9.1"
+
+# A second line of defence for the browser that opens the report: no script, no network, no frames,
+# no forms, inline styles and inline (data:) images only. Enforced by the browser itself, so it holds
+# even if a sanitiser bypass were ever found.
+CONTENT_SECURITY_POLICY = ("default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+                           "form-action 'none'; base-uri 'none'; frame-ancestors 'none'")
 
 _BLOCKED_TAGS = frozenset({
     "script", "iframe", "frame", "frameset", "object", "embed", "applet", "form", "input", "button", "select",
@@ -60,6 +67,9 @@ def _clean_css(css: str) -> str:
 
 
 def _meta_is_harmless(attrs: List[Tuple[str, Optional[str]]]) -> bool:
+    lowered = {name.lower(): (value or "") for name, value in attrs}
+    if set(lowered) == {"http-equiv", "content"}:  # our own policy tag survives a second pass; nothing else with http-equiv does
+        return lowered["http-equiv"].lower() == "content-security-policy" and lowered["content"] == CONTENT_SECURITY_POLICY
     names = {name.lower() for name, _ in attrs}
     if "http-equiv" in names or "content" in names and "name" not in names:
         return False
@@ -83,6 +93,9 @@ class _Sanitizer(HTMLParser):
 
     def _attr_text(self, name: str, value: Optional[str], tag: str) -> Optional[str]:
         lname = name.lower()
+        if lname == "http-equiv" and tag == "meta":
+            # _meta_is_harmless() only lets our own policy tag reach this point
+            return f' {name}="{html.escape(value or "", quote=True)}"'
         if lname.startswith("on") or lname in _DROPPED_ATTRS:
             self.changed = True
             return None
@@ -178,3 +191,23 @@ def sanitize_report_html(document: str) -> str:
     parser.close()
     # anything still open when the input ended is flushed as text by close(); nothing else to do
     return "".join(parser.out)
+
+
+_CSP_META = f'<meta http-equiv="Content-Security-Policy" content="{html.escape(CONTENT_SECURITY_POLICY, quote=True)}">'
+_HEAD_OPEN_RE = re.compile(r"<head(\s[^>]*)?>", re.IGNORECASE)
+_CSP_PRESENT_RE = re.compile(r"<meta\s[^>]*http-equiv\s*=\s*[\"']?content-security-policy", re.IGNORECASE)
+
+
+def add_content_security_policy(document: str) -> str:
+    """Insert the report's Content-Security-Policy as the first element of ``<head>`` (idempotent)."""
+    if _CSP_PRESENT_RE.search(document[:4000]):
+        return document
+    match = _HEAD_OPEN_RE.search(document)
+    if match:
+        return document[:match.end()] + _CSP_META + document[match.end():]
+    return _CSP_META + document
+
+
+def harden_report_html(document: str) -> str:
+    """Sanitise ``document`` and add the Content-Security-Policy. The one call for finished reports."""
+    return add_content_security_policy(sanitize_report_html(document))
