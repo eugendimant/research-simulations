@@ -593,3 +593,45 @@ def test_the_recall_audit_file_is_installed_and_well_formed():
             if not field.endswith(("_was", "_proposed_not_applied")):
                 assert f"{field}_was" in rec["corrected"], f"{key}.{field}"
     assert R.RECALL_AUDIT_COUNT > 0
+# ---------------------------------------------------------------------------
+# Within-person spread is a mixed-keying statistic
+# ---------------------------------------------------------------------------
+
+def test_within_person_spread_applies_only_to_mixed_keyed_blocks():
+    """The benchmark is measured on raw, un-recoded, mixed-keyed items.
+
+    A consistent respondent answering 5 to the positive items and 1 to the
+    reverse ones contributes the whole keying gap to their own spread, which is
+    why the real value (0.319 of span) exceeds the item SD (0.295) -- impossible
+    for recoded items on a single construct. Declared "any", it read as a 30%
+    shortfall against same-keyed blocks that is not there: measured on the engine
+    over four block shapes and two seeds, a mixed-keyed block sits at 0.314 and a
+    same-keyed one at 0.238.
+    """
+    from utils import design_signature, empirical_registry
+
+    mixed = design_signature.for_block(scale_min=1, scale_max=5, n_items=8,
+                                       keying="mixed")
+    same = design_signature.for_block(scale_min=1, scale_max=5, n_items=8,
+                                      keying="same")
+
+    hit = empirical_registry.lookup_best(
+        "item.likert.any", "within_person_sd_fraction_of_span", mixed)
+    assert hit is not None and 0.30 < hit.value < 0.34
+
+    assert empirical_registry.lookup_best(
+        "item.likert.any", "within_person_sd_fraction_of_span", same) is None
+
+
+def test_item_sd_stays_keying_free():
+    """Item SD is keying-invariant (0.2978 same vs 0.2966 mixed), so it applies
+    to both. Narrowing it along with within-person SD would be a guess, not a
+    measurement."""
+    from utils import design_signature, empirical_registry
+
+    for keying in ("mixed", "same"):
+        sig = design_signature.for_block(scale_min=1, scale_max=5, n_items=8,
+                                         keying=keying)
+        hit = empirical_registry.lookup_best(
+            "item.likert.any", "item_sd_fraction_of_span", sig)
+        assert hit is not None, "item SD must apply to %s-keyed blocks" % keying
