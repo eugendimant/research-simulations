@@ -2394,17 +2394,43 @@ def _merge_condition_sources(qsf_conditions: List[str], prereg_conditions: List[
     return conditions, sources
 
 
+# A real .qsf export is a few hundred KB (a very large survey a few MB). A ZIP that inflates beyond
+# this limit is refused before anything is decompressed, so a small upload cannot expand into
+# hundreds of MB of memory (a "zip bomb"). The member count bounds the directory scan the same way.
+MAX_QSF_UNZIPPED_BYTES = 25 * 1024 * 1024
+MAX_QSF_ZIP_MEMBERS = 1000
+
+
 def _extract_qsf_payload(uploaded_bytes: bytes) -> Tuple[bytes, str]:
     """
     Return JSON bytes from a QSF upload (supports raw JSON or ZIP wrappers).
+
+    Raises ValueError (shown to the user as "QSF parsing failed: ...") for a ZIP without a survey
+    file, with more than MAX_QSF_ZIP_MEMBERS entries, or whose survey file would inflate beyond
+    MAX_QSF_UNZIPPED_BYTES.
     """
     if zipfile.is_zipfile(io.BytesIO(uploaded_bytes)):
         with zipfile.ZipFile(io.BytesIO(uploaded_bytes)) as zf:
-            candidates = [n for n in zf.namelist() if n.lower().endswith((".qsf", ".json"))]
+            members = zf.infolist()
+            if len(members) > MAX_QSF_ZIP_MEMBERS:
+                raise ValueError(
+                    f"The ZIP holds {len(members):,} files; a QSF upload should contain a single survey file."
+                )
+            candidates = [m for m in members if m.filename.lower().endswith((".qsf", ".json")) and not m.is_dir()]
             if not candidates:
                 raise ValueError("ZIP did not contain a .qsf or .json file.")
             selected = candidates[0]
-            return zf.read(selected), selected
+            limit_mb = MAX_QSF_UNZIPPED_BYTES // (1024 * 1024)
+            if selected.file_size > MAX_QSF_UNZIPPED_BYTES:
+                raise ValueError(
+                    f"{selected.filename} would expand to {selected.file_size / (1024 * 1024):,.0f} MB; a survey "
+                    f"file is far smaller (limit {limit_mb} MB). Upload the .qsf file itself."
+                )
+            with zf.open(selected) as handle:
+                data = handle.read(MAX_QSF_UNZIPPED_BYTES + 1)  # bounded even if the header understates the size
+            if len(data) > MAX_QSF_UNZIPPED_BYTES:
+                raise ValueError(f"{selected.filename} expands beyond the {limit_mb} MB limit for a survey file.")
+            return data, selected.filename
     return uploaded_bytes, "uploaded.qsf"
 
 

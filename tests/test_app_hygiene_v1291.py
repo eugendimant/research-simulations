@@ -680,3 +680,73 @@ def test_non_ascii_file_names_stay_distinct_and_ascii_names_are_unchanged():
                           "../../etc/passwd.qsf": "etc_passwd.qsf", "report.qsf.exe": "report.qsf.exe.qsf",
                           "": "survey.qsf", "2026_10_06___.qsf": "2026_10_06_.qsf", "name.qsf.": "name.qsf"}.items():
         assert coll._sanitize_filename(before) == after, before
+
+
+# ---- 8. a ZIP upload cannot inflate into hundreds of MB ------------------------------------------
+def _zip_bytes(members: dict) -> bytes:
+    import zipfile as _zf
+
+    buffer = io.BytesIO()
+    with _zf.ZipFile(buffer, "w", _zf.ZIP_DEFLATED, compresslevel=9) as archive:
+        for name, body in members.items():
+            archive.writestr(name, body)
+    return buffer.getvalue()
+
+
+def test_zip_that_inflates_beyond_the_cap_is_refused_before_anything_is_read(monkeypatch):
+    import zipfile as _zf
+
+    app = _load_app_module("_app_hygiene_zip")
+    bomb = _zip_bytes({"bomb.qsf": b"0" * (30 * 1024 * 1024)})
+    assert len(bomb) < 200 * 1024  # a small upload that claims 30 MB
+
+    def _never(*args, **kwargs):
+        raise AssertionError("the member must not be opened once its declared size is over the limit")
+
+    monkeypatch.setattr(_zf.ZipFile, "open", _never)
+    monkeypatch.setattr(_zf.ZipFile, "read", _never)
+    with pytest.raises(ValueError, match=r"would expand to 30 MB.*limit 25 MB"):
+        app._extract_qsf_payload(bomb)
+
+
+def test_a_header_that_understates_the_size_still_cannot_force_a_large_read():
+    import struct
+    import zipfile as _zf
+
+    app = _load_app_module("_app_hygiene_zip")
+    raw = bytearray(_zip_bytes({"bomb.qsf": b"0" * (30 * 1024 * 1024)}))
+    central = raw.index(b"PK\x01\x02")
+    raw[central + 24:central + 28] = struct.pack("<I", 100)  # the central directory says: 100 bytes
+    with pytest.raises((ValueError, _zf.BadZipFile)):
+        app._extract_qsf_payload(bytes(raw))
+
+
+def test_zip_with_a_huge_member_count_is_refused_and_normal_uploads_still_work():
+    import zipfile as _zf
+
+    app = _load_app_module("_app_hygiene_zip")
+    many = _zip_bytes({f"f{i}.txt": b"x" for i in range(app.MAX_QSF_ZIP_MEMBERS + 1)})
+    with pytest.raises(ValueError, match="should contain a single survey file"):
+        app._extract_qsf_payload(many)
+    survey = _QSF_A
+    assert app._extract_qsf_payload(survey) == (survey, "uploaded.qsf")  # a raw .qsf is passed through
+    assert app._extract_qsf_payload(_zip_bytes({"folder/Survey.qsf": survey, "readme.txt": b"x"})) == (survey, "folder/Survey.qsf")
+    with pytest.raises(ValueError, match="did not contain a .qsf or .json"):
+        app._extract_qsf_payload(_zip_bytes({"readme.txt": b"x"}))
+    assert issubclass(_zf.BadZipFile, Exception)
+
+
+def test_uploading_a_zip_bomb_shows_a_clear_error_and_does_not_start_the_design(apptest_env):
+    from streamlit.testing.v1 import AppTest
+
+    bomb = _zip_bytes({"bomb.qsf": b"0" * (30 * 1024 * 1024)})
+    at = AppTest.from_file(str(_APP_DIR / "app.py"), default_timeout=300)
+    for key, value in {"active_page": 1, "study_input_mode": "upload_qsf", "study_title": "T", "study_description": "D study"}.items():
+        at.session_state[key] = value
+    at.run()
+    at.file_uploader[0].set_value(("bomb.zip", bomb, "application/zip"))
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    errors = [e.value for e in at.error if "QSF parsing failed" in e.value]
+    assert errors and "would expand to 30 MB" in errors[0], [e.value[:80] for e in at.error]
+    assert not at.session_state["qsf_preview"] if "qsf_preview" in at.session_state else True
