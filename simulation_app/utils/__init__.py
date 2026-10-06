@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.8.7 - Free-LLM provider model migration + decommission resilience: Groq retired llama-3.3-70b-versatile on 2026-08-16 and Cerebras retired llama-3.3-70b on 2026-02-16, leaving two dead links in the free failover chain. Migrated Groq to GPT-OSS 120B with a Qwen3.6 27B second line (two independent models behind one key) and Cerebras to GPT-OSS 120B; damped reasoning tokens on GPT-OSS; a provider whose model 404s is now retired instantly for the run instead of burning the 3-strike retry budget on every call
+Version: 1.2.8.8 - Effect-size calibration: observed Cohen's d now tracks the configured d (was 2-4x inflated; shift applied to both levels with an SD-blind constant, persona multiplier mean 1.12, composite d not item-count aware). Reverse-keyed scales fixed: raw reverse items now correlate negatively with the scale (alpha after recoding 0.86, was -0.40), composites recode reverse items, alpha audit is reverse-aware, missing-data repair no longer crashes or leaves composites stale
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -65,7 +65,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.8.7"
+__version__ = "1.2.8.8"
 
 
 # =============================================================================

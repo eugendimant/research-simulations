@@ -1386,8 +1386,15 @@ def _inject_inter_item_correlation(
     scale_min: int,
     scale_max: int,
     seed: Optional[int] = None,
+    reverse_items: Optional[Any] = None,
 ) -> np.ndarray:
     """Inject inter-item correlation into independently generated scale items.
+
+    Reverse-keyed items (``reverse_items``, 1-indexed) are recoded to the
+    construct's direction before blending and flipped back afterwards. Without
+    this, blending toward the RAW row mean forced reverse-keyed items to correlate
+    POSITIVELY with the rest of the scale, so a researcher who recodes them (as
+    anyone would) got a negative Cronbach's alpha.
 
     Uses a mixing approach: blend each item with a common factor (the
     participant's row mean) to achieve the target Cronbach's alpha, then
@@ -1410,6 +1417,17 @@ def _inject_inter_item_correlation(
     n, k = item_matrix.shape
     if k <= 1 or n <= 1:
         return item_matrix
+
+    _rev_idx = sorted({int(r) - 1 for r in (reverse_items or [])
+                       if str(r).lstrip("-").isdigit() and 1 <= int(r) <= k})
+    if _rev_idx:
+        _flip = float(scale_min) + float(scale_max)
+        _recoded = np.asarray(item_matrix, dtype=float).copy()
+        _recoded[:, _rev_idx] = _flip - _recoded[:, _rev_idx]
+        _out = _inject_inter_item_correlation(_recoded, target_alpha, scale_min, scale_max, seed=seed)
+        _out = np.asarray(_out, dtype=float).copy()
+        _out[:, _rev_idx] = _flip - _out[:, _rev_idx]
+        return np.clip(np.round(_out), scale_min, scale_max).astype(int)
 
     # Target average inter-item correlation from Spearman-Brown
     denom = k - target_alpha * (k - 1)
@@ -2855,6 +2873,10 @@ class ExclusionCriteria:
     exclude_careless_responders: bool = False  # If True, flags but doesn't exclude
 
 
+# Population mean of the persona x condition interaction multiplier in
+# _generate_scale_response (measured empirically; see tests/test_effect_size_recovery.py).
+_INTERACTION_MULTIPLIER_POP_MEAN = 1.12
+
 class EnhancedSimulationEngine:
     """
     Advanced simulation engine for generating synthetic behavioral experiment data.
@@ -3458,12 +3480,23 @@ class EnhancedSimulationEngine:
                 prefix = col[:-5]  # Remove "_mean"
                 item_cols = [c for c in eligible_cols if c.startswith(prefix + "_") and c != col]
                 if item_cols:
+                    # Keep composites consistent with generate(): recode reverse-coded
+                    # items before averaging (see composite construction there).
+                    _rev, _flip = set(), 0.0
+                    for _le in (getattr(self, "_scale_generation_log", None) or []):
+                        _cols = _le.get("columns_generated") or []
+                        if _cols and _cols[0].rsplit("_", 1)[0] == prefix:
+                            _rev = set(_le.get("reverse_items") or [])
+                            _flip = float(_le.get("scale_min", 0)) + float(_le.get("scale_max", 0))
+                            break
                     for i in range(n):
                         item_vals = []
                         for ic in item_cols:
                             v = data[ic][i]
                             if v is not None and not (isinstance(v, float) and np.isnan(v)):
-                                item_vals.append(float(v))
+                                _idx = ic.rsplit("_", 1)[-1]
+                                _is_rev = _idx.isdigit() and int(_idx) in _rev
+                                item_vals.append(_flip - float(v) if _is_rev else float(v))
                         if item_vals:
                             data[col][i] = round(float(np.nanmean(item_vals)), 2)
                         else:
@@ -3798,21 +3831,52 @@ class EnhancedSimulationEngine:
         if _cache is None:
             _cache = {}
             self._effect_cache = _cache
-        _cache_key = (str(condition), str(variable))
+        _cache_key = (str(condition), str(variable), getattr(self, "_scale_effect_meta", {}).get(str(variable)))
         if _cache_key in _cache:
             return _cache[_cache_key]
         _result = self._compute_effect_for_condition(condition, variable)
         _cache[_cache_key] = _result
         return _result
 
+    # Effective between-item correlation of the simulated response pipeline used
+    # to relate single-item d to scale-mean d (fitted on a 5/7/11-pt, k=1..8 grid).
+    _EFFECT_ITEM_RHO = 0.24
+
+    def _explicit_effect_scale(self, variable: str) -> float:
+        """Multiplier that makes a configured Cohen's d refer to the scale MEAN.
+
+        Averaging k items shrinks the within-condition SD by sqrt((1+(k-1)rho)/k)
+        while the condition gap is unchanged, so composite d exceeds item d by
+        sqrt(k/(1+(k-1)rho)). Dividing the shift by that factor keeps the
+        recovered composite d on target. Very wide numeric scales (>= 50 points,
+        e.g. 0-100 sliders) recover ~10% low, so they get a 1.10 boost.
+        Returns 1.0 when the scale geometry is unknown (e.g. direct callers).
+        """
+        meta = getattr(self, "_scale_effect_meta", {}).get(str(variable))
+        if not meta:
+            return 1.0
+        k, smin, smax = meta
+        k = max(1, int(k))
+        rho = self._EFFECT_ITEM_RHO
+        factor = 1.0 / float(np.sqrt(k / (1.0 + (k - 1) * rho)))
+        if (smax - smin) >= 50:
+            factor *= 1.10
+        return factor
+
     def _compute_effect_for_condition(self, condition: str, variable: str) -> float:
         """v1.2.6.4: Uncached implementation of effect computation (see
         _get_effect_for_condition for memoization wrapper and docs)."""
-        # v1.4.11: Recalibrated effect multiplier for accuracy
-        # Converts Cohen's d to a 0-1 normalized shift
-        # d=0.5 -> 0.15 shift -> ~0.9 points on 7-point scale (observed d ≈ 0.5-0.7)
-        # Previous value of 0.40 produced observed d ~1.6x the specified d
-        COHENS_D_TO_NORMALIZED = 0.30
+        # Cohen's d is defined on the GAP between the two levels, in units of the
+        # within-condition SD. The gap is applied symmetrically (+d/2 / -d/2), and
+        # the empirical end-to-end gain of the response pipeline is calibrated so
+        # that the recovered d on a SINGLE ITEM equals the configured d:
+        #   0.125 = (per-side shift in scale-range units) / d, fitted on 7pt/5pt/11pt
+        #   single-item scales (recovered/target = 1.00 +/- 0.05, tests/
+        #   test_effect_size_recovery.py). Multi-item scales are then corrected by
+        #   _explicit_effect_scale() so d refers to the scale MEAN.
+        # Earlier values (0.30-0.40 per side) ignored the two-sided application and
+        # the real SD, inflating observed d ~4x (d=0.5 -> ~2.1).
+        COHENS_D_TO_NORMALIZED = 0.125
 
         # Check explicit effect size specifications -- accumulate ALL matching effects
         # for factorial designs where multiple effect specs may apply to one condition
@@ -3877,7 +3941,7 @@ class EnhancedSimulationEngine:
 
         if matched_effects:
             # Average matched effects so they don't stack unreasonably
-            return sum(matched_effects) / len(matched_effects)
+            return (sum(matched_effects) / len(matched_effects)) * self._explicit_effect_scale(variable)
 
         # AUTO-GENERATE effect if no explicit specification
         # This ensures conditions ALWAYS produce different means
@@ -8236,6 +8300,11 @@ class EnhancedSimulationEngine:
             )
             # Clamp to prevent extreme distortions
             _interaction_multiplier = float(np.clip(_interaction_multiplier, 0.25, 1.80))
+            # The persona factors above are NOT mean-1 in the simulated population
+            # (measured mean ~1.12 with default persona mix: processing depth alone
+            # averages ~1.1). Dividing by the population mean keeps the heterogeneity
+            # (SD ~0.13) but stops it from inflating the average effect.
+            _interaction_multiplier /= _INTERACTION_MULTIPLIER_POP_MEAN
 
             condition_effect *= _interaction_multiplier
 
@@ -9146,6 +9215,14 @@ class EnhancedSimulationEngine:
                 )
                 if item_matrix.shape[0] < 3 or item_matrix.shape[1] < 5:
                     continue
+                # Judge reliability in the construct direction (recode reverse items).
+                _audit_rev = [r - 1 for r in (log_entry.get("reverse_items") or [])
+                              if 1 <= r <= item_matrix.shape[0]]
+                if _audit_rev:
+                    item_matrix[_audit_rev, :] = (
+                        float(log_entry.get("scale_min", 1)) + float(log_entry.get("scale_max", 7))
+                        - item_matrix[_audit_rev, :]
+                    )
 
                 # Compute Cronbach's alpha
                 k = item_matrix.shape[0]
@@ -9172,12 +9249,23 @@ class EnhancedSimulationEngine:
                         _iic_seed = _stable_int_hash(f"{scale_name}|iic_loadings")
                         _repaired = _inject_inter_item_correlation(
                             _item_mat, target_alpha, scale_min, scale_max,
-                            seed=_iic_seed,
+                            seed=_iic_seed, reverse_items=log_entry.get("reverse_items"),
                         )
                         for j, c in enumerate(cols):
                             data[c] = _repaired[:, j].tolist()
                             if c in df.columns:
                                 df[c] = _repaired[:, j]
+                        # Items changed -> refresh this scale's composite (reverse-aware)
+                        _mcol = f"{cols[0].rsplit('_', 1)[0]}_mean"
+                        if _mcol in df.columns:
+                            _rv0 = [r - 1 for r in (log_entry.get("reverse_items") or []) if 1 <= r <= len(cols)]
+                            _sc = _repaired.astype(float).copy()
+                            if _rv0:
+                                _sc[:, _rv0] = (float(scale_min) + float(scale_max)) - _sc[:, _rv0]
+                            _newmeans = np.round(_sc.mean(axis=1), 2)
+                            df[_mcol] = _newmeans
+                            if _mcol in data:
+                                data[_mcol] = _newmeans.tolist()
                         audit_report["repairs_performed"] += 1
                         self._log(f"AUDIT REPAIR: Re-correlated '{scale_name}' "
                                   f"(alpha {alpha:.2f} → target {target_alpha:.2f})")
@@ -9236,10 +9324,10 @@ class EnhancedSimulationEngine:
                         if attn > 0.5:
                             # This participant shouldn't be straight-lining
                             # Mild repair: add small noise to 2-3 items
-                            # Only jitter items this participant actually answered:
-                            # missing-data simulation leaves NaN cells that cannot be
-                            # cast to int (crashed generation with missingness > 0).
-                            _answered_cols = [c for c in existing_cols if pd.notna(df.iloc[i][c])]
+                            # Only jitter cells that were actually answered: missing
+                            # data is applied before this audit, and int(NaN) used to
+                            # crash the whole run for studies with missingness enabled.
+                            _answered_cols = [c for c in existing_cols if pd.notna(df.at[i, c])]
                             _items_to_jitter = min(3, len(_answered_cols))
                             if _items_to_jitter == 0:
                                 continue
@@ -9254,6 +9342,22 @@ class EnhancedSimulationEngine:
                                     df.at[i, jc] = _new_val
                                 data[jc][i] = _new_val
                             audit_report["repairs_performed"] += 1
+                            # Keep each scale composite consistent with its (now
+                            # edited) items: recode reverse items, skip missing cells.
+                            for _le in scale_generation_log:
+                                _lc = _le.get("columns_generated") or []
+                                _mc = f"{_lc[0].rsplit('_', 1)[0]}_mean" if _lc else ""
+                                if len(_lc) < 2 or _mc not in df.columns or not any(c in _jitter_cols for c in _lc):
+                                    continue
+                                _rv = set(_le.get("reverse_items") or [])
+                                _fl = float(_le.get("scale_min", 0)) + float(_le.get("scale_max", 0))
+                                _vs = [(_fl - float(df.at[i, c])) if (j + 1) in _rv else float(df.at[i, c])
+                                       for j, c in enumerate(_lc) if c in df.columns and pd.notna(df.at[i, c])]
+                                if _vs:
+                                    _newmean = round(float(np.mean(_vs)), 2)
+                                    df.at[i, _mc] = _newmean
+                                    if _mc in data:
+                                        data[_mc][i] = _newmean
 
         return audit_report
 
@@ -11788,6 +11892,7 @@ class EnhancedSimulationEngine:
                 "scale_min": scale_min,
                 "scale_max": scale_max,
                 "num_items": num_items,
+                "reverse_items": sorted(i for i in reverse_items if 1 <= i <= num_items),
                 "type": str(scale.get("type", "")).lower(),
                 "question_text": str(scale.get("question_text", "")),
                 "dv_description": str(scale.get("dv_description", "")),
@@ -11798,6 +11903,10 @@ class EnhancedSimulationEngine:
                 "item_names": scale.get("item_names", []) or [],
                 "columns_generated": [],
             })
+
+            if not hasattr(self, "_scale_effect_meta"):
+                self._scale_effect_meta = {}
+            self._scale_effect_meta[str(scale_name)] = (num_items, scale_min, scale_max)
 
             for item_num in range(1, num_items + 1):
                 col_name = f"{scale_name}_{item_num}"
@@ -11880,10 +11989,16 @@ class EnhancedSimulationEngine:
                     _item_matrix = np.array(
                         [data[c] for c in item_col_names], dtype=float
                     ).T  # shape (n, num_items)
+                    # Alpha/correlation must be judged in the CONSTRUCT direction:
+                    # recode reverse-keyed columns on a working copy.
+                    _rev_idx0 = [r - 1 for r in sorted(reverse_items) if 1 <= r <= num_items]
+                    _item_matrix_cd = _item_matrix.copy()
+                    if _rev_idx0:
+                        _item_matrix_cd[:, _rev_idx0] = (scale_min + scale_max) - _item_matrix_cd[:, _rev_idx0]
                     # v1.2.6.6: Check existing alpha before injection. Items
                     # already share condition effects + traits + tendency, so
                     # they often exceed the target. Skip to avoid alpha > 0.95.
-                    _existing_corr = np.corrcoef(_item_matrix.T)
+                    _existing_corr = np.corrcoef(_item_matrix_cd.T)
                     _existing_r_bar = np.mean(_existing_corr[np.triu_indices_from(_existing_corr, k=1)])
                     _existing_alpha = (num_items * _existing_r_bar) / (1 + (num_items - 1) * _existing_r_bar) if _existing_r_bar > 0 else 0
                     if _existing_alpha < target_alpha:
@@ -11892,7 +12007,7 @@ class EnhancedSimulationEngine:
                         _iic_seed = _stable_int_hash(f"{scale_name}|iic_loadings")
                         _correlated = _inject_inter_item_correlation(
                             _item_matrix, target_alpha, scale_min, scale_max,
-                            seed=_iic_seed,
+                            seed=_iic_seed, reverse_items=sorted(reverse_items),
                         )
                         for j, c in enumerate(item_col_names):
                             data[c] = _correlated[:, j].tolist()
@@ -11968,9 +12083,19 @@ class EnhancedSimulationEngine:
                     self._log(f"WARNING: Skipping composite mean — some columns have < {n} rows")
                     continue
                 # Compute row-wise mean across all items for this scale
+                # Reverse-coded items are exported RAW (as in a real Qualtrics
+                # export) but the composite is a SCORED scale: recode them
+                # (min + max - x) before averaging, otherwise items pointing in
+                # opposite directions cancel and the composite stops measuring
+                # the construct (and under-recovers configured effects).
+                _rev = set(log_entry.get("reverse_items") or [])
+                _flip = log_entry["scale_min"] + log_entry["scale_max"]
                 mean_values: List[float] = []
                 for i in range(n):
-                    item_sum = sum(data[col][i] for col in item_cols)
+                    item_sum = sum(
+                        (_flip - data[col][i]) if (j + 1) in _rev else data[col][i]
+                        for j, col in enumerate(item_cols)
+                    )
                     mean_values.append(round(item_sum / len(item_cols), 2))
                 # Derive clean composite column name from the first item column
                 # e.g., "Trust_1" -> "Trust_mean"
@@ -11979,7 +12104,8 @@ class EnhancedSimulationEngine:
                 data[mean_col_name] = mean_values
                 scale_raw_name = log_entry["name"]
                 self.column_info.append(
-                    (mean_col_name, f"{scale_raw_name} composite mean ({log_entry['scale_min']}-{log_entry['scale_max']})")
+                    (mean_col_name, f"{scale_raw_name} composite mean ({log_entry['scale_min']}-{log_entry['scale_max']})"
+                     + (f"; reverse-coded items {sorted(_rev)} recoded before averaging" if _rev else ""))
                 )
                 self._log(f"Generated composite mean column '{mean_col_name}' from {len(item_cols)} items")
 
