@@ -614,7 +614,7 @@ def test_every_4xx_reply_is_retried_and_other_failures_are_not():
 def test_when_every_size_attempt_fails_the_text_still_goes_out_without_attachments(tmp_path):
     big = ed.Attachment("report.html", b"x" * 1_200_000, protected=True)  # a protected file is never dropped by fitting
     too_big = smtplib.SMTPDataError(552, b"5.3.4 Message size exceeds fixed limit")
-    FakeServer.plan = [too_big, too_big, None]
+    FakeServer.plan = [too_big, None]  # a protected file cannot shrink, so the halved-budget and protected-only stages would resend the same message
     result = ed.deliver(CONFIG, ["owner@example.edu"], "S", "The analysis text", attachments=[big], smtp_factory=FakeServer,
                         sleep=_no_sleep, log_path=tmp_path / "l.jsonl")
     assert result.ok and result.omitted and result.omitted[0]["action"] == "omitted"
@@ -685,4 +685,54 @@ def test_the_instructor_package_retries_for_minutes_not_seconds(tmp_path):
                                             smtp_factory=FakeServer, sleep=waits.append, log_path=tmp_path / "l.jsonl")
     assert results[0].ok and results[0].attempts == 5 and results[1].ok
     assert waits == [3.0, 10.0, 30.0, 90.0]
+
+
+def test_the_size_fallback_walks_through_halved_budget_protected_only_and_text_only():
+    too_big = smtplib.SMTPDataError(552, b"5.3.4 Message size exceeds fixed limit")
+    html = ed.Attachment("report.html", b"h" * 200_000, protected=True)
+    notes = ed.Attachment("notes.md", b"m" * 50_000)
+    FakeServer.plan = [too_big, too_big, None]  # full message, then protected-only (the halved budget changes nothing), then text only
+    result = ed.deliver(CONFIG, ["owner@example.edu"], "S", "Body", attachments=[html, notes], smtp_factory=FakeServer, sleep=_no_sleep)
+    assert result.ok and len(FakeServer.delivered) == 1
+    assert not [p for p in FakeServer.delivered[0][0].walk() if p.get_filename()]
+    assert {o["name"] for o in result.omitted} == {"report.html", "notes.md"}
+
+
+def test_a_halved_budget_that_drops_the_big_file_is_enough():
+    too_big = smtplib.SMTPDataError(552, b"5.3.4 Message size exceeds fixed limit")
+    html = ed.Attachment("report.html", b"h" * 100_000, protected=True)
+    big = ed.Attachment("pack.zip", __import__("os").urandom(5_000_000))
+    FakeServer.plan = [too_big, None]
+    result = ed.deliver(CONFIG, ["owner@example.edu"], "S", "Body", attachments=[html, big], smtp_factory=FakeServer, sleep=_no_sleep)
+    assert result.ok
+    (msg, _f, _t), = FakeServer.delivered
+    assert [p.get_filename() for p in msg.walk() if p.get_filename()] == ["report.html"]
+
+
+def test_a_connection_that_drops_before_the_message_is_handed_over_cannot_have_produced_a_copy():
+    class FlakyLogin(FakeServer):
+        logins = 0
+
+        def login(self, user, password):
+            type(self).logins += 1
+            if type(self).logins == 1:
+                raise smtplib.SMTPServerDisconnected("dropped during AUTH")
+            super().login(user, password)
+
+    result = ed.deliver(CONFIG, ["owner@example.edu"], "S", "B", smtp_factory=FlakyLogin, sleep=_no_sleep)
+    assert result.ok and result.attempts == 2 and result.possible_duplicate is False
+
+
+def test_bidirectional_overrides_are_removed_from_headers():
+    cleaned = ed._clean_header("Invoice \u202egnp.exe\u202c \u2066x\u2069")
+    assert not any(ch in cleaned for ch in "\u202e\u202c\u2066\u2069")
+
+
+def test_the_attachments_message_repeats_the_headline_facts():
+    subject, text, html = _compose(title="Coffee study")
+    slots = [ed.Attachment("report.html", b"<html/>", protected=True)]
+    ed.deliver_instructor_package(CONFIG, ["owner@example.edu"], subject=subject, text=text, html_body=html, slots=slots,
+                                  smtp_factory=FakeServer, sleep=_no_sleep)
+    package = FakeServer.delivered[1][0].get_body(preferencelist=("plain",)).get_content()
+    assert "N=120" in package and "RUN123" in package and "FULL ANALYSIS" not in package  # facts yes, the long analysis no
 
