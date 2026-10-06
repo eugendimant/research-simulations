@@ -216,7 +216,12 @@ def _script_factor_map(
         mapping: Dict[str, str] = {}
         for cond in conditions:
             c = str(cond)
-            hits = [l for l in levels if l.lower() in c.lower()]
+            parts = [x.strip().lower() for x in re.split(
+                r"\s+[x\u00d7]\s+|\s*[|,;/+&]\s*|\s+-\s+|\s*_\s*", c) if x.strip()]
+            hits = [l for l in levels if l.lower() in parts]  # whole-part match first
+            if not hits:
+                hits = [l for l in levels
+                        if re.search(r"(?<![A-Za-z0-9])" + re.escape(l) + r"(?![A-Za-z0-9])", c, flags=re.I)]
             if len(hits) > 1:  # prefer the longest match
                 hits = [max(hits, key=len)]
             if len(hits) != 1:
