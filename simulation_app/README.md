@@ -21,11 +21,13 @@ All three use the same behavioral engine for numeric data. They differ only in w
 
 | Method | Open-ended text | Sample size |
 |---|---|---|
-| **Adaptive Behavioral Engine 3.0** (listed first; no method is pre-selected) | Offline template engine — no API calls | up to 10,000 |
-| **Built-in AI** | Free LLM providers, built-in keys, no setup | **LLM text for the first 100 participants; ABE 3.0 for the rest** |
+| **Adaptive Behavioral Engine 3.0** (listed first; no method is pre-selected) | ABE 3.0's own narrative engine, offline — no API calls | up to 10,000 |
+| **Built-in AI** | Free LLM providers, built-in keys, no setup | **LLM text for the first 100 participants; the compositional template engine for the rest** |
 | **Your API Key** | Your own provider key | up to 10,000 |
 
 The 100-participant cap on Built-in AI exists to keep shared free-tier keys from being exhausted. The app warns before generating and tells you the split afterwards. Use your own key for larger runs with AI text throughout.
+
+Note which engine covers the remainder: picking Built-in AI or Your API Key sets `_use_abe_v2 = False` (`app.py:12836`, `:13022`), so participants past the cap get text from the compositional template engine (`ComprehensiveResponseGenerator`), not from ABE 3.0. ABE 3.0 generates the text only when you select its own tile, or if you re-select it in the recovery prompt after a mid-run fallback.
 
 Built-in provider chain, tried in order until one responds: Google Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Gemini 2.5 Flash Lite → Groq GPT-OSS 120B → Groq Qwen3.6 27B → Cerebras GPT-OSS 120B → SambaNova Llama 3.3 70B → Mistral Small → OpenRouter Mistral Small 3.1.
 
