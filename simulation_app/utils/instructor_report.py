@@ -731,14 +731,6 @@ def _fmt(value: Any, digits: int = 3, signed: bool = False) -> str:
     return f"{number:+.{digits}f}" if signed else f"{number:.{digits}f}"
 
 
-def _fmt_p(p_value: Any) -> str:
-    """p-value text: "< .001" below one in a thousand, otherwise three decimals; "n/a" if missing."""
-    number = _finite(p_value)
-    if number is None:
-        return "n/a"
-    return "< .001" if number < 0.001 else f"{number:.3f}"
-
-
 def _norm_label(value: Any) -> str:
     """Case- and punctuation-insensitive key for matching names (conditions, variables, levels)."""
     return re.sub(r"[^a-z0-9]+", "_", str(value).lower()).strip("_")
@@ -3935,7 +3927,7 @@ class ComprehensiveInstructorReport:
                 lines.append(f"| {cell(row['dv'])} | not computed: {cell(row['error'])} | n/a | n/a | n/a | n/a | n/a |")
                 continue
             lines.append(f"| {cell(row['dv'])} | {cell(row['contrast'])} ({row['test']}) | {row['statistic']} | {row['df']} | "
-                         f"{_fmt_p(row['p'])} | {row['effect']} | {row['label']} |")
+                         f"{_report_p_cell(row['p'])} | {row['effect']} | {row['label']} |")
         lines += ["",
                   "Two-sided tests on each DV's composite score in the full sample (no exclusions applied); p-values are not "
                   "corrected for the number of DVs. For two conditions the contrast is the first condition minus the second, "
