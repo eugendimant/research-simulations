@@ -20,13 +20,19 @@ revoked. This page exists so that cannot happen a second time.
 
 3. **Never put a key in chat, an issue, a PR description or a commit message.**
    Those are as public as the code, and GitHub's secret-scanning partners
-   notify providers on detection — Google, Mistral and OpenRouter auto-revoke.
+   notify providers on detection — Google and OpenRouter auto-revoke.
    A key that reaches any of these places is burned: rotate it, do not reuse it.
 
 4. **Never remove a provider from the chain without a replacement.** The chain
    in `simulation_app/utils/llm_response_generator.py` is the app's redundancy.
    Dropping an entry narrows it silently; the next rate limit then has nothing
    to fall through to. Removing one means adding one.
+
+   The one exception is a provider whose free tier no longer exists, because a
+   slot nobody can obtain a key for is not redundancy — it is a row that always
+   reads "not configured". Cerebras (payment card now required) and Mistral AI
+   (no longer issues free API keys) were removed on this ground in v1.3.0.0. If
+   either reopens a free tier, add it back rather than leaving the chain short.
 
 5. **After any change to the LLM chain, run "Test providers now".** It is on the
    admin page (`?admin=1` → **LLM** tab) and sends one minimal request per

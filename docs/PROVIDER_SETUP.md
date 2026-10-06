@@ -57,7 +57,7 @@ than a fault, and the next five providers still work.
 
 ## Step 2 — Groq
 
-Very high daily volume, and the fastest responses of the six.
+Very high daily volume, and the fastest responses in the chain.
 
 1. Go to **https://console.groq.com/keys**
 2. Sign in (Google or GitHub works).
@@ -73,25 +73,7 @@ back later — if it is not in your password manager, create a new one.
 
 ---
 
-## Step 3 — Cerebras
-
-1. Go to **https://cloud.cerebras.ai**
-2. Sign up / sign in.
-3. Open **API Keys** in the left sidebar.
-4. Click **Generate API key**, name it, confirm.
-5. Copy the key (starts with `csk-`) and save it.
-
-Secret name: **`CEREBRAS_API_KEY`**
-
-Free tier: ~1M tokens/day, ~30 requests/minute. No card required.
-
-Caveat: the per-minute limit is tight and is enforced hard rather than queued,
-so Cerebras is the first provider to start refusing on a large run. That is
-expected; the chain moves on.
-
----
-
-## Step 4 — SambaNova Cloud
+## Step 3 — SambaNova Cloud
 
 1. Go to **https://cloud.sambanova.ai/apis**
 2. Sign up / sign in.
@@ -108,26 +90,7 @@ merely rate-limit.
 
 ---
 
-## Step 5 — Mistral AI
-
-Huge monthly token budget, but a **low rate limit** (2 requests/minute), so it
-works as a deep fallback rather than a primary.
-
-1. Go to **https://console.mistral.ai/api-keys**
-2. Sign up / sign in. Choose the **free ("Experiment")** plan if asked.
-3. Click **Create new key**.
-4. Copy the key and save it.
-
-Secret name: **`MISTRAL_API_KEY`**
-
-Caveats: the free "Experiment" plan requires **phone-number verification** and
-accepting the data-use terms before a key can be created — it is the only one of
-the six that asks for a phone number. The rate limit is about 1 request/second,
-which is why it sits late in the chain.
-
----
-
-## Step 6 — OpenRouter
+## Step 4 — OpenRouter
 
 Last resort in the chain; useful because it fronts several free models.
 
@@ -161,9 +124,7 @@ repository, by design.
 ```toml
 GOOGLE_API_KEY = "AIzaSy..."
 GROQ_API_KEY = "gsk_..."
-CEREBRAS_API_KEY = "csk-..."
 SAMBANOVA_API_KEY = "..."
-MISTRAL_API_KEY = "..."
 OPENROUTER_API_KEY = "sk-or-v1-..."
 ```
 

@@ -22,9 +22,8 @@ _ALL_KEY_VARS = sorted(
 def no_keys(monkeypatch):
     for var in _ALL_KEY_VARS:
         monkeypatch.delenv(var, raising=False)
-    for const in ("_DEFAULT_GROQ_KEY", "_DEFAULT_CEREBRAS_KEY",
-                  "_DEFAULT_GOOGLE_AI_KEY", "_DEFAULT_OPENROUTER_KEY",
-                  "_DEFAULT_MISTRAL_KEY", "_DEFAULT_SAMBANOVA_KEY",
+    for const in ("_DEFAULT_GROQ_KEY", "_DEFAULT_GOOGLE_AI_KEY",
+                  "_DEFAULT_OPENROUTER_KEY", "_DEFAULT_SAMBANOVA_KEY",
                   "_DEFAULT_API_KEY"):
         monkeypatch.setattr(lrg, const, "", raising=False)
     return None

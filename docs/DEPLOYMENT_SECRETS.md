@@ -16,10 +16,8 @@ rate-limits or fails.
 |-------|----------|-------------|-------------------------|
 | 1 | Google AI Studio (Gemini) | `GOOGLE_API_KEY` (or `GEMINI_API_KEY`) | https://aistudio.google.com/apikey |
 | 2 | Groq | `GROQ_API_KEY` | https://console.groq.com/keys |
-| 3 | Cerebras | `CEREBRAS_API_KEY` | https://cloud.cerebras.ai |
-| 4 | SambaNova Cloud | `SAMBANOVA_API_KEY` | https://cloud.sambanova.ai/apis |
-| 5 | Mistral AI | `MISTRAL_API_KEY` | https://console.mistral.ai/api-keys |
-| 6 | OpenRouter | `OPENROUTER_API_KEY` | https://openrouter.ai/keys |
+| 3 | SambaNova Cloud | `SAMBANOVA_API_KEY` | https://cloud.sambanova.ai/apis |
+| 4 | OpenRouter | `OPENROUTER_API_KEY` | https://openrouter.ai/keys |
 
 **Step-by-step instructions** — which page to open, what to click, which plan to
 pick, and where to paste the result — are in
@@ -85,9 +83,7 @@ default: no secret, no access.
    ```toml
    GOOGLE_API_KEY = "..."
    GROQ_API_KEY = "..."
-   CEREBRAS_API_KEY = "..."
    SAMBANOVA_API_KEY = "..."
-   MISTRAL_API_KEY = "..."
    OPENROUTER_API_KEY = "..."
    ADMIN_PASSWORD = "..."
    ANALYTICS_DASHBOARD_PASSWORD = "..."

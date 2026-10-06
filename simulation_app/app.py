@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.9.9"
-BUILD_ID = "20261006-v12099-codex-round-two"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.0.0"
+BUILD_ID = "20261006-v13000-drop-cerebras-mistral"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.9.9"  # v1.2.9.9: the free-provider key workflow and the literature-grounded realism layer in one release
+APP_VERSION = "1.3.0.0"  # v1.3.0.0: Cerebras and Mistral AI removed from the free-provider chain (neither free tier still exists)
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -7774,9 +7774,7 @@ def _render_admin_dashboard() -> None:
             _SLOT_LABELS = {
                 "google_ai": "Google AI Studio (Gemini)",
                 "groq": "Groq",
-                "cerebras": "Cerebras",
                 "sambanova": "SambaNova",
-                "mistral": "Mistral",
                 "openrouter": "OpenRouter",
             }
             _key_rows = [
@@ -8258,8 +8256,6 @@ def _render_admin_dashboard() -> None:
             {"Provider": "Google AI Studio (Gemini 2.5 Flash)", "Daily request cap": 14400, "Daily token cap": 216_000_000},
             {"Provider": "Google AI Studio (Gemini 2.5 Flash Lite)", "Daily request cap": 20, "Daily token cap": 5_000_000},
             {"Provider": "Groq (free defaults)", "Daily request cap": 14400, "Daily token cap": 500_000},
-            {"Provider": "Cerebras", "Daily request cap": 1000, "Daily token cap": 1_000_000},
-            {"Provider": "Mistral AI", "Daily request cap": 2880, "Daily token cap": 33_000_000},
             {"Provider": "SambaNova", "Daily request cap": 28800, "Daily token cap": 200_000},
             {"Provider": "OpenRouter", "Daily request cap": 1000, "Daily token cap": 1_000_000},
         ]
@@ -12966,8 +12962,6 @@ if active_page == 3:
                 "|----------|-----------|--------|\n"
                 "| **Google AI Studio** | Free Gemini | [aistudio.google.com](https://aistudio.google.com) |\n"
                 "| **Groq** | 14,400 req/day | [console.groq.com](https://console.groq.com) |\n"
-                "| **Cerebras** | 1M tokens/day | [cloud.cerebras.ai](https://cloud.cerebras.ai) |\n"
-                "| **Mistral AI** | 1B tokens/month | [console.mistral.ai](https://console.mistral.ai) |\n"
                 "| **SambaNova** | Free 200K tokens/day | [cloud.sambanova.ai](https://cloud.sambanova.ai) |\n"
                 "| **OpenRouter** | Free models | [openrouter.ai](https://openrouter.ai) |\n"
                 "| **OpenAI** | Paid (~$0.15/1M tokens) | [platform.openai.com](https://platform.openai.com) |\n"
@@ -12977,8 +12971,6 @@ if active_page == 3:
                 "Auto-detect from key (recommended)",
                 "Google AI (Gemini Flash) — Free",
                 "Groq (GPT-OSS 120B) — Free",
-                "Cerebras (GPT-OSS 120B) — Free",
-                "Mistral AI (Mistral Small) — Free",
                 "SambaNova (Llama 3.3 70B) — Free",
                 "OpenRouter (Mistral) — Free tier",
                 "OpenAI (GPT-4o-mini)",
@@ -13014,7 +13006,7 @@ if active_page == 3:
                 st.session_state["user_llm_api_key"] = _user_key_input.strip() if _user_key_input else ""
                 st.session_state["_user_llm_provider_choice"] = _selected_provider
                 # v1.2.1.3: Pass dropdown selection to LLM generator for
-                # providers without distinctive key prefixes (e.g. Mistral AI)
+                # providers without distinctive key prefixes (e.g. SambaNova)
                 if _selected_provider and _selected_provider != "Auto-detect from key (recommended)":
                     os.environ["LLM_PROVIDER_HINT"] = _selected_provider
                 else:
@@ -13033,9 +13025,6 @@ if active_page == 3:
                 elif _key_val.startswith("gsk_"):
                     _detected_provider = "Groq"
                     _key_valid_format = len(_key_val) >= 20
-                elif _key_val.startswith("csk-"):
-                    _detected_provider = "Cerebras"
-                    _key_valid_format = len(_key_val) >= 20
                 elif _key_val.startswith("sk-or-"):
                     _detected_provider = "OpenRouter"
                     _key_valid_format = len(_key_val) >= 20
@@ -13046,10 +13035,6 @@ if active_page == 3:
                       or re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', _key_val)):
                     _detected_provider = "SambaNova"
                     _key_valid_format = len(_key_val) >= 10
-                elif re.match(r'^[a-zA-Z0-9]{32}$', _key_val):
-                    # v1.2.1.3: Mistral keys are 32-char alphanumeric with no prefix
-                    _detected_provider = "Mistral AI"
-                    _key_valid_format = True
                 else:
                     _key_valid_format = len(_key_val) >= 10
 

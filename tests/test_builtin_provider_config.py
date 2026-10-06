@@ -45,9 +45,8 @@ def no_keys(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     # The module-level constants are resolved at import time; a developer
     # machine with keys exported would otherwise leak them into the test.
-    for const in ("_DEFAULT_GROQ_KEY", "_DEFAULT_CEREBRAS_KEY",
-                  "_DEFAULT_GOOGLE_AI_KEY", "_DEFAULT_OPENROUTER_KEY",
-                  "_DEFAULT_MISTRAL_KEY", "_DEFAULT_SAMBANOVA_KEY",
+    for const in ("_DEFAULT_GROQ_KEY", "_DEFAULT_GOOGLE_AI_KEY",
+                  "_DEFAULT_OPENROUTER_KEY", "_DEFAULT_SAMBANOVA_KEY",
                   "_DEFAULT_API_KEY"):
         monkeypatch.setattr(lrg, const, "", raising=False)
     return None
@@ -148,9 +147,7 @@ _EXPECTED_ORDER = [
     "google_ai_lite",
     "groq_builtin",
     "groq_qwen_builtin",
-    "cerebras_builtin",
     "sambanova_builtin",
-    "mistral_builtin",
     "openrouter_builtin",
 ]
 
@@ -291,8 +288,8 @@ def test_env_and_secrets_are_interchangeable(no_keys, monkeypatch, slot):
 
 def test_identical_key_from_both_sources_is_not_duplicated(no_keys, monkeypatch):
     """Same key in env and st.secrets must not be added to the chain twice."""
-    monkeypatch.setenv("MISTRAL_API_KEY", "same-key")
-    _install_fake_streamlit_secrets(monkeypatch, MISTRAL_API_KEY="same-key")
+    monkeypatch.setenv("SAMBANOVA_API_KEY", "same-key")
+    _install_fake_streamlit_secrets(monkeypatch, SAMBANOVA_API_KEY="same-key")
 
     gen = LLMResponseGenerator()
     assert [p.api_key for p in gen._providers].count("same-key") == 1
@@ -303,7 +300,7 @@ def test_identical_key_from_both_sources_is_not_duplicated(no_keys, monkeypatch)
 # ---------------------------------------------------------------------------
 
 def test_verify_reports_every_slot_when_nothing_is_configured(no_keys):
-    """With no keys the sweep still names all six slots and their secrets."""
+    """With no keys the sweep still names every slot and its secret."""
     results = LLMResponseGenerator().verify_providers(timeout=1)
 
     assert [r["slot"] for r in results] == list(BUILTIN_PROVIDER_SECRETS)
@@ -331,7 +328,7 @@ def test_verify_reports_ok_for_a_working_key(no_keys, monkeypatch):
 
     assert results["groq"]["status"] == "ok"
     assert results["groq"]["latency_ms"] is not None
-    assert results["mistral"]["status"] == "not_configured"
+    assert results["sambanova"]["status"] == "not_configured"
 
 
 def test_verify_reports_failed_for_a_rejected_key(no_keys, monkeypatch):

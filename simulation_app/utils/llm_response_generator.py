@@ -6,12 +6,13 @@ realistic, question-specific, persona-aligned open-ended survey responses.
 
 Architecture:
 - Multi-provider: Google AI Studio (Gemini 3.1 Flash Lite + Gemini 2.5 Flash/Lite),
-  Groq (GPT-OSS 120B + Qwen3.6 27B), Cerebras (GPT-OSS 120B),
-  Mistral AI (Mistral Small), SambaNova (Llama 3.3 70B),
+  Groq (GPT-OSS 120B + Qwen3.6 27B), SambaNova (Llama 3.3 70B),
   OpenRouter (Mistral Small 3.1) — with automatic key detection, per-provider
   rate limiting, and intelligent failover. Google AI prioritized for reliability.
-  v1.2.8.7: migrated BOTH Llama-3.3-70B endpoints off retired model IDs —
-  Groq (decommissioned 2026-08-16) and Cerebras (retired 2026-02-16).
+  v1.3.0.0: Cerebras and Mistral AI were removed from the chain — neither
+  offers a usable free tier any more (Cerebras requires a payment card,
+  Mistral no longer issues free API keys), so a slot for either could only
+  ever report "not configured".
 - Large batch sizes: 20 responses per API call (within 32K context)
 - Smart pool scaling: calculates exact pool size needed from sample_size
 - Draw-with-replacement + deep variation: a pool of 50 base responses
@@ -74,23 +75,11 @@ GOOGLE_AI_MODEL_PRIMARY = "gemini-3.1-flash-lite"   # newest free lite — prima
 GOOGLE_AI_MODEL = "gemini-2.5-flash-lite"           # 30 RPM, 250K TPM (cost-efficient fallback)
 GOOGLE_AI_MODEL_HIGHVOL = "gemini-2.5-flash"        # 15 RPM, 1M TPM (high-quality volume fallback)
 
-CEREBRAS_API_URL = "https://api.cerebras.ai/v1/chat/completions"
-# v1.2.8.7: Cerebras retired `llama-3.3-70b` on 2026-02-16 — this entry had been
-# silently dead for months (found while migrating Groq off the same base model).
-# Cerebras' own recommended successor is GPT-OSS 120B; note Cerebras uses bare
-# model IDs (no vendor prefix), unlike Groq's `openai/gpt-oss-120b`.
-CEREBRAS_MODEL = "gpt-oss-120b"
-
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODEL = "mistralai/mistral-small-3.1-24b-instruct:free"
 
 SAMBANOVA_API_URL = "https://api.sambanova.ai/v1/chat/completions"
 SAMBANOVA_MODEL = "Meta-Llama-3.3-70B-Instruct"  # v1.2.1.8: Migrated from 3.1 (deprecated April 2025)
-
-# v1.2.1.1: Mistral AI — direct API access, generous free tier
-# Free tier: 1B tokens/month, no credit card required, 2 RPM limit
-MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
-MISTRAL_MODEL = "mistral-small-latest"  # Free tier model
 
 # v1.0.5.8: Additional user-selectable providers for fallback API key entry
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
@@ -133,9 +122,7 @@ def _load_deployment_key(*names: str) -> str:
 BUILTIN_PROVIDER_SECRETS: Dict[str, Tuple[str, ...]] = {
     "google_ai": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
     "groq": ("GROQ_API_KEY",),
-    "cerebras": ("CEREBRAS_API_KEY",),
     "sambanova": ("SAMBANOVA_API_KEY",),
-    "mistral": ("MISTRAL_API_KEY",),
     "openrouter": ("OPENROUTER_API_KEY",),
 }
 
@@ -164,10 +151,8 @@ def missing_builtin_provider_secrets() -> List[str]:
 
 
 _DEFAULT_GROQ_KEY = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["groq"])
-_DEFAULT_CEREBRAS_KEY = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["cerebras"])
 _DEFAULT_GOOGLE_AI_KEY = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["google_ai"])
 _DEFAULT_OPENROUTER_KEY = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["openrouter"])
-_DEFAULT_MISTRAL_KEY = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["mistral"])
 _DEFAULT_SAMBANOVA_KEY = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["sambanova"])
 
 # Legacy alias
@@ -591,11 +576,11 @@ class _RateLimiter:
     def __init__(self, max_rpm: int = 28) -> None:
         self._max_rpm = max_rpm
         self._timestamps: List[float] = []
-        # v1.2.1.5: Dynamic cap based on RPM — low-RPM providers (e.g. Mistral at
-        # 2 RPM) need longer waits between calls by design.  After 2 rapid calls
+        # v1.2.1.5: Dynamic cap based on RPM — low-RPM providers need longer
+        # waits between calls by design.  After 2 rapid calls
         # the 3rd can need up to ~60s sleep (full window).  Cap = 2.1× inter-call
         # interval (clamped to 61s) so the full sliding window is respected.
-        _inter_call_secs = 60.0 / max(1, max_rpm)  # e.g. 30s for 2 RPM
+        _inter_call_secs = 60.0 / max(1, max_rpm)  # e.g. 2.1s at 28 RPM
         self._max_wait_cap = min(61.0, max(15.0, _inter_call_secs * 2.1))
 
     def wait_if_needed(self) -> bool:
@@ -2068,7 +2053,7 @@ def detect_provider_from_key(api_key: str, provider_hint: str = "") -> Optional[
     Args:
         api_key: The API key to detect.
         provider_hint: Optional display name from dropdown selection (e.g.
-            "Mistral AI (Mistral Small) — Free") used when key format alone
+            "SambaNova (Llama 3.3 70B) — Free") used when key format alone
             is ambiguous.
 
     Returns dict with 'name', 'api_url', 'model' or None if unrecognized.
@@ -2078,8 +2063,6 @@ def detect_provider_from_key(api_key: str, provider_hint: str = "") -> Optional[
     key = api_key.strip()
     if key.startswith("gsk_"):
         return {"name": "groq", "api_url": GROQ_API_URL, "model": GROQ_MODEL}
-    elif key.startswith("csk-"):
-        return {"name": "cerebras", "api_url": CEREBRAS_API_URL, "model": CEREBRAS_MODEL}
     elif key.startswith("sk-or-"):
         return {"name": "openrouter", "api_url": OPENROUTER_API_URL, "model": OPENROUTER_MODEL}
     elif key.startswith("AIza"):
@@ -2095,14 +2078,8 @@ def detect_provider_from_key(api_key: str, provider_hint: str = "") -> Optional[
 
     # v1.2.1.3: Use dropdown hint for providers without distinctive key prefixes
     _hint_lower = (provider_hint or "").lower()
-    if "mistral" in _hint_lower and "openrouter" not in _hint_lower:
-        return {"name": "mistral", "api_url": MISTRAL_API_URL, "model": MISTRAL_MODEL}
-    elif "sambanova" in _hint_lower:
+    if "sambanova" in _hint_lower:
         return {"name": "sambanova", "api_url": SAMBANOVA_API_URL, "model": SAMBANOVA_MODEL}
-
-    # v1.2.1.3: Heuristic — Mistral keys are exactly 32 alphanumeric chars, no prefix
-    if re.match(r'^[a-zA-Z0-9]{32}$', key):
-        return {"name": "mistral", "api_url": MISTRAL_API_URL, "model": MISTRAL_MODEL}
 
     if len(key) > 30:
         # Default to Groq for unrecognized long keys
@@ -2121,13 +2098,6 @@ def get_supported_providers() -> List[Dict[str, str]]:
             "recommended": True,
         },
         {
-            "name": "Cerebras",
-            "prefix": "csk-...",
-            "url": "https://cloud.cerebras.ai",
-            "free_tier": "1M tokens/day",
-            "recommended": False,
-        },
-        {
             "name": "OpenRouter",
             "prefix": "sk-or-...",
             "url": "https://openrouter.ai",
@@ -2140,13 +2110,6 @@ def get_supported_providers() -> List[Dict[str, str]]:
             "url": "https://aistudio.google.com",
             "free_tier": "Gemini 2.5 Flash (15 RPM, 1M TPM) + Flash Lite (30 RPM, 250K TPM)",
             "recommended": True,
-        },
-        {
-            "name": "Mistral AI",
-            "prefix": "32-char alphanumeric",
-            "url": "https://console.mistral.ai",
-            "free_tier": "1B tokens/month (2 RPM)",
-            "recommended": False,
         },
         {
             "name": "SambaNova",
@@ -2352,9 +2315,9 @@ class LLMResponseGenerator:
     """Generate open-ended survey responses using free LLM APIs.
 
     Multi-provider architecture with automatic failover:
-    1. Built-in keys: Gemini Flash, Groq, Cerebras, SambaNova, Mistral AI, OpenRouter (seamless)
-    2. User-provided key (auto-detected: Groq, Cerebras, Google AI, SambaNova, Mistral AI, OpenRouter, OpenAI)
-    3. Environment variable overrides (Google AI, Cerebras, Mistral AI, SambaNova, OpenRouter)
+    1. Built-in keys: Gemini Flash, Groq, SambaNova, OpenRouter (seamless)
+    2. User-provided key (auto-detected: Groq, Google AI, SambaNova, OpenRouter, OpenAI)
+    3. Environment variable overrides (Google AI, Groq, SambaNova, OpenRouter)
     4. Template fallback (always works)
 
     Draw-with-replacement + deep variation means a pool of ~50 base
@@ -2434,7 +2397,7 @@ class LLMResponseGenerator:
         self._max_recent_starts: int = 200  # Rolling window size
 
         # Build provider chain with per-provider rate limits.
-        # Priority: Gemini Flash → Gemini Lite → Groq → Cerebras → SambaNova → Mistral → OpenRouter
+        # Priority: Gemini Flash → Gemini Lite → Groq → SambaNova → OpenRouter
         self._providers: List[_LLMProvider] = []
         user_key = api_key or os.environ.get("LLM_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
         # v1.2.9.1: Resolve deployment keys HERE rather than relying on the
@@ -2450,25 +2413,23 @@ class LLMResponseGenerator:
             return _load_deployment_key(*BUILTIN_PROVIDER_SECRETS[_slot]) or _fallback
 
         _k_groq = _resolve("groq", _DEFAULT_GROQ_KEY)
-        _k_cerebras = _resolve("cerebras", _DEFAULT_CEREBRAS_KEY)
         _k_google = _resolve("google_ai", _DEFAULT_GOOGLE_AI_KEY)
         _k_openrouter = _resolve("openrouter", _DEFAULT_OPENROUTER_KEY)
-        _k_mistral = _resolve("mistral", _DEFAULT_MISTRAL_KEY)
         _k_sambanova = _resolve("sambanova", _DEFAULT_SAMBANOVA_KEY)
-        _all_builtin_keys = {k for k in (_k_groq, _k_cerebras, _k_google,
-                                         _k_openrouter, _k_mistral, _k_sambanova) if k}
+        _all_builtin_keys = {k for k in (_k_groq, _k_google,
+                                         _k_openrouter, _k_sambanova) if k}
 
         # Built-in providers (in priority order) — ranked by free-tier generosity:
         # 1. Google AI Gemini 2.5 Flash:      15 RPM, 1M TPM (high-quality volume)
         # 2. Google AI Gemini 2.5 Flash Lite: 30 RPM, 250K TPM (cost-efficient)
-        # 3. Groq Llama 3.3 70B:              ~30 RPM, 14,400 RPD (very generous)
-        # 4. Cerebras Llama 3.3 70B:          ~30 RPM, 1M tokens/day
-        # 5. SambaNova Llama 3.3 70B:         20 RPM, persistent free tier
-        # 6. Mistral AI Mistral Small:        2 RPM, 1B tokens/month (huge budget, low rate)
-        # 7. OpenRouter Mistral Small 3.1:    varies by model (last resort)
+        # 3. Groq GPT-OSS 120B / Qwen3.6 27B: ~28 RPM, generous daily allowance
+        # 4. SambaNova Llama 3.3 70B:         20 RPM, persistent free tier
+        # 5. OpenRouter Mistral Small 3.1:    varies by model (last resort)
         # NOTE: Google AI at top — confirmed accessible and reliable on OpenAI-compat endpoint.
         # v1.1.0.7: Replaced gemma-3-27b-it (404 on OpenAI endpoint) with gemini-2.5-flash.
-        # v1.2.1.2: Added SambaNova + Mistral AI as built-in; reordered by free-tier value.
+        # v1.3.0.0: Dropped the Cerebras and Mistral AI slots — both free tiers
+        # are gone (card required / no free keys issued), so neither could be
+        # configured. Four distinct keys across three vendors remain.
         _builtin_providers = [
             # v1.2.7.7: newest free lite model first (best free-tier value, fewest
             # wasted tokens), then 2.5 flash/lite as fallback within Google.
@@ -2487,12 +2448,8 @@ class LLMResponseGenerator:
              _k_groq, 28, 1000, 20),
             ("groq_qwen_builtin", GROQ_API_URL, GROQ_MODEL_FALLBACK,
              _k_groq, 28, 0, 20),
-            ("cerebras_builtin", CEREBRAS_API_URL, CEREBRAS_MODEL,
-             _k_cerebras, 28, 0, 20),
             ("sambanova_builtin", SAMBANOVA_API_URL, SAMBANOVA_MODEL,
              _k_sambanova, 20, 0, 20),
-            ("mistral_builtin", MISTRAL_API_URL, MISTRAL_MODEL,
-             _k_mistral, 2, 0, 20),
             ("openrouter_builtin", OPENROUTER_API_URL, OPENROUTER_MODEL,
              _k_openrouter, 20, 0, 20),
         ]
@@ -2542,20 +2499,8 @@ class LLMResponseGenerator:
                 max_rpm=20, max_rpd=0, max_batch_size=20,
             ))
 
-        # Mistral AI — deployment/env override (may have different limits)
-        _mistral_key = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["mistral"])
-        if _mistral_key and _mistral_key != _k_mistral:
-            _or_idx = next((i for i, p in enumerate(self._providers)
-                           if p.name == "openrouter_builtin"), len(self._providers))
-            self._providers.insert(_or_idx, _LLMProvider(
-                name="mistral_env", api_url=MISTRAL_API_URL,
-                model=MISTRAL_MODEL, api_key=_mistral_key,
-                max_rpm=2, max_rpd=0, max_batch_size=20,
-            ))
-
         # Extra deployment-configured providers (env vars or st.secrets)
         for _slot, name, url, model in [
-            ("cerebras", "cerebras_env", CEREBRAS_API_URL, CEREBRAS_MODEL),
             ("openrouter", "openrouter_env", OPENROUTER_API_URL, OPENROUTER_MODEL),
         ]:
             env_key = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS[_slot])
@@ -2567,9 +2512,9 @@ class LLMResponseGenerator:
         # User-provided key (appended AFTER all built-ins and env-vars so it's
         # tried last — we want to use the tool's own capacity first)
         # v1.2.1.4: Provider-specific RPM for user keys — prevents rate limit
-        # mismatches (e.g. Mistral at 2 RPM being configured as 28 RPM).
-        _PROVIDER_RPM = {"mistral": 2, "sambanova": 20, "groq": 28,
-                         "cerebras": 28, "google_ai": 14, "openrouter": 20, "openai": 20}
+        # mismatches (e.g. a 14 RPM provider being configured as 28 RPM).
+        _PROVIDER_RPM = {"sambanova": 20, "groq": 28,
+                         "google_ai": 14, "openrouter": 20, "openai": 20}
         if user_key and user_key not in _all_builtin_keys:
             _provider_hint = os.environ.get("LLM_PROVIDER_HINT", "")
             detected = detect_provider_from_key(user_key, provider_hint=_provider_hint)
@@ -3149,8 +3094,8 @@ class LLMResponseGenerator:
         self._providers = [p for p in self._providers if "user_runtime" not in p.name]
 
         # v1.2.1.4: Provider-specific RPM to avoid rate limit mismatches
-        _rpm_map = {"mistral": 2, "sambanova": 20, "groq": 28,
-                    "cerebras": 28, "google_ai": 14, "openrouter": 20, "openai": 20}
+        _rpm_map = {"sambanova": 20, "groq": 28,
+                    "google_ai": 14, "openrouter": 20, "openai": 20}
         _detected_name = (detected["name"] if detected else "").lower()
         _runtime_rpm = _rpm_map.get(_detected_name, 20)
 
