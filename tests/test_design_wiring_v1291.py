@@ -373,6 +373,28 @@ def test_values_outside_the_old_number_boxes_open_without_an_error(app_test):
     assert final["Points"]["scale_max"] == 1000 and final["Battery"]["num_items"] == 60
 
 
+def test_a_seeded_range_can_be_lowered_and_raised_again(app_test):
+    at = app_test
+    _start(at)
+    _upload(at, "survey_a.qsf", survey_a())
+    _open_design(at)
+    budget = [r for r in _dv_rows(at) if r[0] == "Budget"][0]
+    assert budget[4] == 150                                  # arrived as a 0-150 slider
+    index = [r[0] for r in _dv_rows(at)].index("Budget")
+    at.number_input(key=f"dv_max_v0_{index}").set_value(120)
+    at.run()
+    _no_exception(at)
+    assert at.number_input(key=f"dv_max_v0_{index}").value == 120
+    at.number_input(key=f"dv_max_v0_{index}").set_value(150)  # the box must not have shrunk to the edited value
+    at.run()
+    _no_exception(at)
+    assert at.number_input(key=f"dv_max_v0_{index}").value == 150
+    assert at.session_state["confirmed_scales"][index]["scale_max"] == 150
+    _confirm(at)
+    final = [s for s in at.session_state["inferred_design"]["scales"] if s["variable_name"] == "Budget"][0]
+    assert (final["scale_min"], final["scale_max"]) == (0, 150) and "_seed_scale_max" not in final
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # 2. Edits persist and drive generation; a different upload starts over
 # ---------------------------------------------------------------------------------------------------------------------

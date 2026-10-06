@@ -4963,6 +4963,9 @@ def _qsf_design_scales(preview: Optional[QSFPreviewResult]) -> List[Dict[str, An
         is_numeric = dv["type"] == "numeric_input"
         dv["scale_min"] = _design_page_bound(dv.get("scale_min"), 0 if is_numeric else 1)
         dv["scale_max"] = _design_page_bound(dv.get("scale_max"), _design_page_bound(dv.get("scale_points"), 7))
+        # The Design page's Min/Max boxes stay wide enough for the range the DV arrived with, even after the
+        # user edits it downwards (the engine never reads these two keys).
+        dv["_seed_scale_min"], dv["_seed_scale_max"] = dv["scale_min"], dv["scale_max"]
         scales.append(dv)
     if (len(scales) == 1 and scales[0].get("variable_name") == "Main_DV"
             and not scales[0].get("detected_from_qsf")):
@@ -10982,14 +10985,15 @@ if active_page == 2:
                     with col3a:
                         # Get current min, default to 1
                         current_min = int(scale_min) if scale_min is not None else 1
+                        _seed_min = _design_page_bound(scale.get("_seed_scale_min"), current_min)
                         if dv_type == 'numeric_input':
                             # Numeric inputs can have any range (incl. negative for games with taking)
                             # v1.2.9.1: bounds widen to hold a seeded value (e.g. a year-of-birth
                             # range starting at 1900) instead of raising on the first render.
                             new_scale_min = st.number_input(
                                 "Min",
-                                min_value=min(-1000, current_min),
-                                max_value=max(1000, current_min),
+                                min_value=min(-1000, current_min, _seed_min),
+                                max_value=max(1000, current_min, _seed_min),
                                 value=current_min,
                                 key=f"dv_min_v{dv_version}_{i}",
                                 help="Minimum value (e.g., 0 for slider, -10 for games with taking option)"
@@ -10997,8 +11001,8 @@ if active_page == 2:
                         else:
                             new_scale_min = st.number_input(
                                 "Min",
-                                min_value=min(-1000, current_min),
-                                max_value=max(100, current_min),
+                                min_value=min(-1000, current_min, _seed_min),
+                                max_value=max(100, current_min, _seed_min),
                                 value=current_min,
                                 key=f"dv_min_v{dv_version}_{i}",
                                 help="Minimum scale value (e.g., 0 or 1, negative for bipolar scales)"
@@ -11007,12 +11011,13 @@ if active_page == 2:
                     with col3b:
                         # Get current max from scale_max or scale_points
                         current_max = int(scale_max) if scale_max is not None else (int(scale.get("scale_points", 7)) if scale.get("scale_points") else 7)
+                        _seed_max = _design_page_bound(scale.get("_seed_scale_max"), current_max)
                         if dv_type == 'numeric_input':
                             # Numeric inputs can have any range
                             new_scale_max = st.number_input(
                                 "Max",
-                                min_value=min(1, current_max),
-                                max_value=max(10000, current_max),
+                                min_value=min(1, current_max, _seed_max),
+                                max_value=max(10000, current_max, _seed_max),
                                 value=current_max,
                                 key=f"dv_max_v{dv_version}_{i}",
                                 help="Maximum value (e.g., 100 for percentage, 1000 for WTP)"
@@ -11023,8 +11028,8 @@ if active_page == 2:
                             # its range instead of being cut to 0-100 on first render)
                             new_scale_max = st.number_input(
                                 "Max",
-                                min_value=min(1, current_max),
-                                max_value=max(100, current_max),
+                                min_value=min(1, current_max, _seed_max),
+                                max_value=max(100, current_max, _seed_max),
                                 value=current_max,
                                 key=f"dv_max_v{dv_version}_{i}",
                                 help="Maximum scale value (e.g., 1 for binary, 5, 7, 10, 100)"
@@ -11159,6 +11164,8 @@ if active_page == 2:
                         # v1.2.0: Save user-specified min/max for accurate simulation
                         "scale_min": new_scale_min,
                         "scale_max": new_scale_max,
+                        "_seed_scale_min": scale.get("_seed_scale_min"),   # v1.2.9.1: range the DV arrived with
+                        "_seed_scale_max": scale.get("_seed_scale_max"),
                         # v1.2.5.3: DV description/context for simulation intelligence
                         "dv_description": scale.get("dv_description", ""),
                     })
