@@ -137,3 +137,214 @@ def test_reverse_keyed_composite_recovers_effect():
     pooled = np.sqrt(((len(a) - 1) * a.var() + (len(b) - 1) * b.var()) / (len(a) + len(b) - 2))
     d = float((a.mean() - b.mean()) / pooled)
     assert 0.6 * 0.5 <= d <= 1.3 * 0.5, f"reverse-keyed composite d={d:.2f} vs target 0.5"
+
+
+# ---------------------------------------------------------------------------
+# Condition NAMES must not create effects of their own.
+# ---------------------------------------------------------------------------
+def _named_run(cond_hi, cond_lo, target_d, extra_conds=(), n=1200, seed=3, with_spec=True):
+    scales = [{"name": "Attitude", "variable_name": "Attitude", "num_items": 4,
+               "scale_points": 7, "scale_min": 1, "scale_max": 7,
+               "reverse_items": [], "type": "likert"}]
+    specs = [EffectSizeSpec(variable="Attitude", factor="condition", level_high=cond_hi,
+                            level_low=cond_lo, cohens_d=target_d, direction="positive")] if with_spec else []
+    eng = EnhancedSimulationEngine(
+        study_title="Message Framing and Attitudes",
+        study_description="A survey study of attitudes under different message versions.",
+        sample_size=n, conditions=[cond_hi, cond_lo, *extra_conds], factors=[],
+        scales=scales, additional_vars=[],
+        demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        effect_sizes=specs, seed=seed)
+    df, _ = eng.generate()
+    return df
+
+
+def _pair_d(df, c1, c2, col="Attitude_mean"):
+    a = df.loc[df["CONDITION"] == c1, col].astype(float)
+    b = df.loc[df["CONDITION"] == c2, col].astype(float)
+    pooled = np.sqrt(((len(a) - 1) * a.var() + (len(b) - 1) * b.var()) / (len(a) + len(b) - 2))
+    return float((a.mean() - b.mean()) / pooled)
+
+
+@pytest.mark.parametrize("hi,lo", [("High stakes", "Low stakes"),
+                                   ("Paid", "Free"),
+                                   ("Maintain", "Keep"),
+                                   ("Positive framing", "Negative framing")])
+def test_condition_names_do_not_create_effects(hi, lo):
+    """d=0 configured: keywords such as high/low/positive/negative/'ai' in the
+    condition names must not shift the means (old calibration added ~0.24 d)."""
+    d = _pair_d(_named_run(hi, lo, 0.0), hi, lo)
+    assert abs(d) < 0.20, f"{hi} vs {lo}: d=0 configured but recovered d={d:.2f}"
+
+
+def test_control_sits_between_levels_of_configured_effect():
+    """A condition matching neither level of a configured effect is the reference
+    level: it must sit near the midpoint, not receive keyword effects."""
+    df = _named_run("Version A", "Version B", 0.6, extra_conds=("Control",))
+    ac, cb = _pair_d(df, "Version A", "Control"), _pair_d(df, "Control", "Version B")
+    assert abs(ac - cb) < 0.22, f"control not centred: A-C={ac:.2f}, C-B={cb:.2f}"
+    assert ac > 0.1 and cb > 0.1
+
+
+def test_automatic_valence_effect_is_literature_sized():
+    """With no d configured, a positive-vs-negative valence manipulation should give
+    a moderate effect (~0.6; Balliet/valence literature), not the old ~1.3."""
+    df = _named_run("Positive feedback", "Negative feedback", 0.0, with_spec=False)
+    d = _pair_d(df, "Positive feedback", "Negative feedback")
+    assert 0.3 <= d <= 0.9, f"automatic valence effect d={d:.2f}"
+
+
+@pytest.mark.parametrize("target", [0.5, 0.8])
+def test_binary_dv_recovers_effect(target):
+    """0/1 DVs: configured d must map to a realistic proportion gap (d=0.5 is a
+    ~20-point gap, not the ~44 points the inflated pipeline produced)."""
+    scales = [{"name": "Choice", "variable_name": "Choice", "num_items": 1,
+               "scale_points": 2, "scale_min": 0, "scale_max": 1,
+               "reverse_items": [], "type": "binary"}]
+    eng = EnhancedSimulationEngine(
+        study_title="Message Framing and Choice",
+        study_description="Participants choose whether to accept an offer after reading a message.",
+        sample_size=2000, conditions=["Version A", "Version B"], factors=[],
+        scales=scales, additional_vars=[],
+        demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        effect_sizes=[EffectSizeSpec(variable="Choice", factor="condition",
+                                     level_high="Version A", level_low="Version B",
+                                     cohens_d=target, direction="positive")],
+        seed=2)
+    df, _ = eng.generate()
+    a = df.loc[df["CONDITION"] == "Version A", "Choice_1"].astype(float)
+    b = df.loc[df["CONDITION"] == "Version B", "Choice_1"].astype(float)
+    d = float((a.mean() - b.mean()) / np.sqrt((a.var() + b.var()) / 2))
+    assert set(df["Choice_1"].astype(int).unique()) <= {0, 1}
+    assert 0.7 * target <= d <= 1.3 * target, f"binary d={d:.2f} vs target {target}"
+    assert (a.mean() - b.mean()) < 0.5 * target + 0.15, "proportion gap implausibly large"
+
+
+# ---------------------------------------------------------------------------
+# Economic-game DVs: published outcome distributions and baselines.
+# ---------------------------------------------------------------------------
+def _game_df(title, desc, col, conds=("Ingroup partner", "Outgroup partner"), target=None, n=2500, seed=4):
+    scales = [{"name": col, "variable_name": col, "num_items": 1, "scale_points": 101,
+               "scale_min": 0, "scale_max": 100, "reverse_items": [], "type": "slider"}]
+    specs = [] if target is None else [EffectSizeSpec(
+        variable=col, factor="condition", level_high=conds[0], level_low=conds[1],
+        cohens_d=target, direction="positive")]
+    eng = EnhancedSimulationEngine(
+        study_title=title, study_description=desc, sample_size=n, conditions=list(conds),
+        factors=[], scales=scales, additional_vars=[],
+        demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        effect_sizes=specs, seed=seed)
+    return eng.generate()[0]
+
+
+def test_dictator_game_matches_published_distribution():
+    """Engel (2011): mean giving ~28%, ~36% give nothing, ~17% split 50/50, giving
+    more than half is rare. The old pipeline gave 37% mean, 9% zeros, 32% > half."""
+    df = _game_df("Dictator game giving",
+                  "Participants decide how much of a $100 endowment to give to an anonymous partner in a dictator game.",
+                  "Dictator_Giving", conds=("Control", "Control B"))
+    v = df["Dictator_Giving_1"].astype(float)
+    assert 22 <= v.mean() <= 34, f"mean giving {v.mean():.1f}%"
+    assert 0.28 <= (v == 0).mean() <= 0.42, f"share giving 0: {(v == 0).mean():.2f}"
+    assert 0.12 <= (v == 50).mean() <= 0.22, f"share giving 50: {(v == 50).mean():.2f}"
+    assert (v > 50).mean() <= 0.15, f"share giving >50%: {(v > 50).mean():.2f}"
+    assert v.min() >= 0 and v.max() <= 100
+
+
+def test_trust_game_baseline():
+    """Berg et al. (1995) / Johnson & Mislin (2011): mean amount sent ~50%."""
+    df = _game_df("Trust game",
+                  "Participants decide how much of a $100 endowment to send to a trustee who receives triple in a trust game.",
+                  "Trust_Sent", conds=("Control", "Control B"))
+    m = df["Trust_Sent_1"].astype(float).mean()
+    assert 43 <= m <= 57, f"mean amount sent {m:.1f}%"
+
+
+@pytest.mark.parametrize("target", [0.5, 0.8])
+def test_game_dv_recovers_configured_effect(target):
+    df = _game_df("Dictator game giving",
+                  "Participants decide how much of a $100 endowment to give to an anonymous partner in a dictator game.",
+                  "Dictator_Giving", target=target)
+    d = _pair_d(df, "Ingroup partner", "Outgroup partner", col="Dictator_Giving_1")
+    assert 0.7 * target <= d <= 1.3 * target, f"game d={d:.2f} vs target {target}"
+
+
+def test_game_automatic_political_discrimination():
+    """No d configured: ingroup partners must receive more than outgroup partners
+    (Iyengar & Westwood 2015) with a literature-sized effect."""
+    df = _game_df("Political ingroup bias in the dictator game",
+                  "Partisans allocate money to co-partisans or opposing partisans in a dictator game.",
+                  "Dictator_Giving")
+    d = _pair_d(df, "Ingroup partner", "Outgroup partner", col="Dictator_Giving_1")
+    assert 0.4 <= d <= 1.1, f"automatic intergroup discrimination d={d:.2f}"
+
+
+# ---------------------------------------------------------------------------
+# Cross-scale correlation, reliability and response-distribution realism.
+# ---------------------------------------------------------------------------
+def _two_scale_df(r, n=1500, seed=3, k=4, names=("Alpha_Scale", "Beta_Scale")):
+    scales = [{"name": nm, "variable_name": nm, "num_items": k, "scale_points": 7,
+               "scale_min": 1, "scale_max": 7, "reverse_items": [], "type": "likert"} for nm in names]
+    eng = EnhancedSimulationEngine(
+        study_title="Message Framing and Attitudes",
+        study_description="A survey study of attitudes.",
+        sample_size=n, conditions=["Version A", "Version B"], factors=[],
+        scales=scales, additional_vars=[],
+        demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        effect_sizes=[], seed=seed, correlation_matrix=np.array([[1.0, r], [r, 1.0]]))
+    return eng.generate()[0], names
+
+
+@pytest.mark.parametrize("target", [-0.4, 0.0, 0.5])
+def test_cross_scale_correlation_reproduces_target(target):
+    """Configured between-scale correlations (incl. negative ones) are reproduced.
+    Old pipeline: realised r ~= 0.22 + 0.42 * target, so -0.4 came out ~ +0.04."""
+    df, (a, b) = _two_scale_df(target)
+    r = float(np.corrcoef(df[a + "_mean"].astype(float), df[b + "_mean"].astype(float))[0, 1])
+    assert abs(r - target) <= 0.12, f"target r={target:+.2f}, realised r={r:+.2f}"
+
+
+def test_multi_item_alpha_is_realistic():
+    """A 4-item scale should have a believable Cronbach's alpha: not the 0.95+ the
+    injection overshoot used to produce, and not unreliable."""
+    df, (a, _) = _two_scale_df(0.3, n=1000)
+    X = df[[f"{a}_{i}" for i in range(1, 5)]].astype(float)
+    k = X.shape[1]
+    alpha = k / (k - 1) * (1 - X.var(ddof=1).sum() / X.sum(axis=1).var(ddof=1))
+    assert 0.70 <= alpha <= 0.93, f"alpha={alpha:.2f}"
+
+
+def test_reverse_keyed_scale_alpha_after_recoding():
+    df, _ = _reverse_engine(n=1000).generate()
+    X = df[[f"Trust_{i}" for i in range(1, 6)]].astype(float).copy()
+    for i in (2, 4):
+        X[f"Trust_{i}"] = 8 - X[f"Trust_{i}"]
+    alpha = 5 / 4 * (1 - X.var(ddof=1).sum() / X.sum(axis=1).var(ddof=1))
+    assert 0.70 <= alpha <= 0.93, f"alpha after recoding reverse items = {alpha:.2f} (old: -0.4)"
+    assert X.corr().values[np.triu_indices(5, 1)].min() > 0.15
+
+
+def test_likert_distribution_has_no_ceiling_spike():
+    """The 7 bin must not exceed the 6 bin by a wide margin (old ERS endpoint snap
+    gave 19.6% at 7 vs 14.9% at 6) and the floor must stay small."""
+    df = _named_run("Version A", "Version B", 0.0, n=3000)
+    v = df["Attitude_1"].astype(int)
+    p = v.value_counts(normalize=True).reindex(range(1, 8)).fillna(0)
+    assert p[7] <= p[6] + 0.03, f"ceiling spike: P(7)={p[7]:.3f} vs P(6)={p[6]:.3f}"
+    assert p[1] <= 0.06, f"floor too heavy: P(1)={p[1]:.3f}"
+
+
+def test_effect_spec_matches_display_name_with_underscored_column():
+    """A spec written as 'Perceived Quality' must drive the 'Perceived_Quality' column."""
+    eng = EnhancedSimulationEngine(
+        study_title="Annotation", study_description="Product annotation study",
+        sample_size=40, conditions=["Human-curated", "AI-generated"], factors=[],
+        scales=[{"name": "Perceived Quality", "variable_name": "Perceived_Quality", "num_items": 3,
+                 "scale_points": 7, "scale_min": 1, "scale_max": 7, "reverse_items": [], "type": "likert"}],
+        additional_vars=[], demographics={"gender_quota": 50, "age_mean": 30, "age_sd": 8},
+        effect_sizes=[EffectSizeSpec(variable="Perceived Quality", factor="condition",
+                                     level_high="Human-curated", level_low="AI-generated",
+                                     cohens_d=0.5, direction="positive")], seed=1)
+    hi = eng._compute_effect_for_condition("Human-curated", "Perceived_Quality")
+    lo = eng._compute_effect_for_condition("AI-generated", "Perceived_Quality")
+    assert hi > 0 > lo and abs(hi + lo) < 1e-9
