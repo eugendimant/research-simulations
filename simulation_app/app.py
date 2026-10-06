@@ -7764,22 +7764,38 @@ def _render_admin_dashboard() -> None:
             from utils.llm_response_generator import (
                 BUILTIN_PROVIDER_SECRETS as _BPS,
                 builtin_provider_key_status as _bpks,
+                bundled_provider_key_status as _bundled_status,
             )
             _key_status = _bpks()
-            _key_rows = [
-                {
+            _bundled = _bundled_status()
+            _key_rows = []
+            for _slot, _configured in _key_status.items():
+                if _bundled.get(_slot):
+                    _source = "Bundled (utils/builtin_free_keys.py)"
+                elif _configured:
+                    _source = "Deployment secret"
+                else:
+                    _source = "Not configured"
+                _key_rows.append({
                     "Provider": _slot,
                     "Secret name": " or ".join(_BPS[_slot]),
                     "Configured": "Yes" if _configured else "No",
-                }
-                for _slot, _configured in _key_status.items()
-            ]
+                    "Source": _source,
+                })
             st.dataframe(_key_rows, use_container_width=True, hide_index=True)
             if not any(_key_status.values()):
-                st.warning(
-                    "No built-in provider key is configured, so Built-in AI has "
-                    "nothing to call. Set at least one of the secret names above "
+                st.info(
+                    "No provider key is configured, so Built-in AI generates "
+                    "open-ended text with the built-in engine. Runs still "
+                    "complete. To switch AI text back on, set any of the secret "
+                    "names above, or add utils/builtin_free_keys.py "
                     "(see docs/DEPLOYMENT_SECRETS.md)."
+                )
+            elif any(_bundled.values()):
+                st.caption(
+                    "Bundled keys are tried first, then deployment secrets. "
+                    "Delete utils/builtin_free_keys.py to remove every bundled "
+                    "key in one commit."
                 )
         except Exception as _key_status_err:  # pragma: no cover - diagnostics only
             st.caption(f"Could not read provider key status: {_key_status_err}")

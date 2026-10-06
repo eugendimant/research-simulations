@@ -26,6 +26,7 @@ Version: 1.2.5.0
 __version__ = "1.2.5.0"
 
 import hashlib
+import importlib
 import json
 import logging
 import os
@@ -140,6 +141,79 @@ BUILTIN_PROVIDER_SECRETS: Dict[str, Tuple[str, ...]] = {
 }
 
 
+# Optional bundled free-tier keys.
+#
+# The deployment owner may add a module at ``utils/builtin_free_keys.py`` that
+# defines the six ``_DEFAULT_<PROVIDER>_KEY`` names (that is exactly the shape of
+# the key block that lived in THIS file before v1.2.9.0, so the old block pastes
+# in unchanged). It is deliberately NOT part of the repository by default, and
+# nothing here requires it: when the module is absent, keys come from the
+# deployment secrets below, and when there are none of those either, open-ended
+# text comes from the built-in engine.
+#
+# Keys found in that module are tried FIRST, in the normal provider order;
+# env/st.secrets keys are then appended behind them as additional providers.
+#
+# TO REMOVE EVERY BUNDLED KEY: delete ``utils/builtin_free_keys.py``. That one
+# deletion is the whole rotation step — no other file needs touching, and the
+# app keeps working without it.
+_BUNDLED_KEY_ATTRS: Dict[str, str] = {
+    "google_ai": "_DEFAULT_GOOGLE_AI_KEY",
+    "groq": "_DEFAULT_GROQ_KEY",
+    "cerebras": "_DEFAULT_CEREBRAS_KEY",
+    "sambanova": "_DEFAULT_SAMBANOVA_KEY",
+    "mistral": "_DEFAULT_MISTRAL_KEY",
+    "openrouter": "_DEFAULT_OPENROUTER_KEY",
+}
+
+
+def _import_bundled_keys() -> Any:
+    """Return the optional bundled-key module, or None.
+
+    Every failure mode is swallowed on purpose: a missing file is the normal
+    case, and a malformed one must not take the app down (see the import
+    resilience rule in CLAUDE.md — a top-level ImportError here would crash
+    every page for every user).
+    """
+    for _name in ("utils.builtin_free_keys", "builtin_free_keys"):
+        try:
+            return importlib.import_module(_name)
+        except ImportError:
+            continue
+        except Exception:  # malformed module — degrade, never crash
+            logger.warning(
+                "Bundled key module %s could not be loaded; falling back to "
+                "deployment secrets.", _name, exc_info=True,
+            )
+            return None
+    return None
+
+
+def bundled_provider_keys() -> Dict[str, str]:
+    """Keys supplied by the optional bundled-key module, by provider slot.
+
+    Empty when the module is absent, which is the default for this repository.
+    """
+    module = _import_bundled_keys()
+    if module is None:
+        return {}
+    found: Dict[str, str] = {}
+    for slot, attr in _BUNDLED_KEY_ATTRS.items():
+        try:
+            value = getattr(module, attr, "") or ""
+        except Exception:
+            continue
+        if isinstance(value, str) and value.strip():
+            found[slot] = value.strip()
+    return found
+
+
+def bundled_provider_key_status() -> Dict[str, bool]:
+    """Report which provider slots the bundled-key module covers."""
+    bundled = bundled_provider_keys()
+    return {slot: slot in bundled for slot in BUILTIN_PROVIDER_SECRETS}
+
+
 def builtin_provider_key_status() -> Dict[str, bool]:
     """Report which built-in provider slots have a key configured right now.
 
@@ -148,8 +222,9 @@ def builtin_provider_key_status() -> Dict[str, bool]:
     tell "no keys configured" apart from "configured keys are failing", and by
     the admin diagnostics page.
     """
+    bundled = bundled_provider_keys()
     return {
-        slot: bool(_load_deployment_key(*names))
+        slot: bool(bundled.get(slot)) or bool(_load_deployment_key(*names))
         for slot, names in BUILTIN_PROVIDER_SECRETS.items()
     }
 
@@ -2442,12 +2517,26 @@ class LLMResponseGenerator:
         # variables can become readable after this module is first imported
         # (and tests set them per-case), so re-reading per instance is what
         # makes a configured deployment actually pick its keys up.
-        _k_groq = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["groq"]) or _DEFAULT_GROQ_KEY
-        _k_cerebras = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["cerebras"]) or _DEFAULT_CEREBRAS_KEY
-        _k_google = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["google_ai"]) or _DEFAULT_GOOGLE_AI_KEY
-        _k_openrouter = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["openrouter"]) or _DEFAULT_OPENROUTER_KEY
-        _k_mistral = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["mistral"]) or _DEFAULT_MISTRAL_KEY
-        _k_sambanova = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["sambanova"]) or _DEFAULT_SAMBANOVA_KEY
+        # v1.2.9.1: a bundled key (optional utils/builtin_free_keys.py) wins the
+        # built-in slot, so it is tried FIRST in the normal provider order. An
+        # env/st.secrets key for the same provider is not lost: the override
+        # blocks further down append it as an additional provider behind the
+        # built-ins, which is the "bundled first, then secrets" order wanted.
+        _bundled = bundled_provider_keys()
+
+        def _resolve(_slot: str, _fallback: str) -> str:
+            return (
+                _bundled.get(_slot)
+                or _load_deployment_key(*BUILTIN_PROVIDER_SECRETS[_slot])
+                or _fallback
+            )
+
+        _k_groq = _resolve("groq", _DEFAULT_GROQ_KEY)
+        _k_cerebras = _resolve("cerebras", _DEFAULT_CEREBRAS_KEY)
+        _k_google = _resolve("google_ai", _DEFAULT_GOOGLE_AI_KEY)
+        _k_openrouter = _resolve("openrouter", _DEFAULT_OPENROUTER_KEY)
+        _k_mistral = _resolve("mistral", _DEFAULT_MISTRAL_KEY)
+        _k_sambanova = _resolve("sambanova", _DEFAULT_SAMBANOVA_KEY)
         _all_builtin_keys = {k for k in (_k_groq, _k_cerebras, _k_google,
                                          _k_openrouter, _k_mistral, _k_sambanova) if k}
 
@@ -2571,7 +2660,8 @@ class LLMResponseGenerator:
         # v1.9.1: Diagnostic logging — log provider chain for debugging
         _provider_summary = []
         for p in self._providers:
-            _key_prefix = p.api_key[:8] + "..." if p.api_key else "(none)"
+            # v1.2.9.1: never log key bytes — a prefix is still key material.
+            _key_prefix = "(key set)" if p.api_key else "(none)"
             _provider_summary.append(f"{p.name}({_key_prefix})")
         logger.info("LLM provider chain: %s | api_available=%s",
                     " → ".join(_provider_summary) if _provider_summary else "(empty)",

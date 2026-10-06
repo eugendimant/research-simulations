@@ -17,6 +17,7 @@ These tests pin down three things:
 
 import os
 import re
+import types
 
 import pytest
 
@@ -48,6 +49,9 @@ def no_keys(monkeypatch):
                   "_DEFAULT_MISTRAL_KEY", "_DEFAULT_SAMBANOVA_KEY",
                   "_DEFAULT_API_KEY"):
         monkeypatch.setattr(lrg, const, "", raising=False)
+    # The deployment owner may add utils/builtin_free_keys.py. Neutralise it so
+    # "no keys configured" keeps that meaning whether or not the file exists.
+    monkeypatch.setattr(lrg, "_import_bundled_keys", lambda: None)
     return None
 
 
@@ -210,3 +214,139 @@ def test_first_working_provider_wins(no_keys, monkeypatch):
     assert status["available"] is True
     assert status["provider"] == _EXPECTED_ORDER[0]
     assert len(calls) == 1, "chain kept probing after a provider answered"
+
+
+# ---------------------------------------------------------------------------
+# Optional bundled-key module (utils/builtin_free_keys.py)
+#
+# The repository ships WITHOUT that file. These tests must therefore pass both
+# ways: unchanged when it is absent, and correctly when the deployment owner
+# adds it. A fake module stands in so no real key is ever needed here.
+# ---------------------------------------------------------------------------
+
+def _install_fake_bundle(monkeypatch, **attrs):
+    """Make _import_bundled_keys() return a stub module with these attributes."""
+    module = types.ModuleType("utils.builtin_free_keys")
+    for name, value in attrs.items():
+        setattr(module, name, value)
+    monkeypatch.setattr(lrg, "_import_bundled_keys", lambda: module)
+    return module
+
+
+def test_bundled_module_lookup_never_raises():
+    """The real import path must be safe whether or not the file exists.
+
+    No stub here on purpose: this is the only test that touches the actual
+    module lookup, so it passes both before and after the owner adds the file.
+    """
+    module = lrg._import_bundled_keys()  # must not raise either way
+    keys = lrg.bundled_provider_keys()
+    status = lrg.bundled_provider_key_status()
+
+    assert set(status) == set(BUILTIN_PROVIDER_SECRETS)
+    if module is None:
+        assert keys == {}
+        assert not any(status.values())
+    else:
+        # File present: whatever it covers must be non-empty strings, and the
+        # status must agree with the keys actually found.
+        assert all(isinstance(v, str) and v.strip() for v in keys.values())
+        assert status == {slot: slot in keys for slot in BUILTIN_PROVIDER_SECRETS}
+
+
+def test_malformed_bundled_module_never_breaks_the_app(no_keys, monkeypatch):
+    """A broken bundled module must degrade, not take the app down."""
+    def _raise(name):
+        raise ValueError("deliberately malformed")
+
+    monkeypatch.setattr(lrg.importlib, "import_module", _raise)
+    assert lrg._import_bundled_keys() is None
+    assert lrg.bundled_provider_keys() == {}
+    # The generator still builds, just with no providers.
+    assert LLMResponseGenerator()._providers == []
+
+
+def test_old_key_block_variable_names_are_what_the_chain_reads(no_keys, monkeypatch):
+    """The pre-v1.2.9.0 block pastes in unchanged.
+
+    That block defined exactly these six names, so the chain must read them
+    under those names and nothing else.
+    """
+    assert set(lrg._BUNDLED_KEY_ATTRS.values()) == {
+        "_DEFAULT_GOOGLE_AI_KEY",
+        "_DEFAULT_GROQ_KEY",
+        "_DEFAULT_CEREBRAS_KEY",
+        "_DEFAULT_SAMBANOVA_KEY",
+        "_DEFAULT_MISTRAL_KEY",
+        "_DEFAULT_OPENROUTER_KEY",
+    }
+
+    _install_fake_bundle(monkeypatch, **{
+        attr: "bundled-%s" % slot
+        for slot, attr in lrg._BUNDLED_KEY_ATTRS.items()
+    })
+
+    assert lrg.bundled_provider_keys() == {
+        slot: "bundled-%s" % slot for slot in lrg._BUNDLED_KEY_ATTRS
+    }
+    assert all(lrg.bundled_provider_key_status().values())
+    assert lrg.missing_builtin_provider_secrets() == []
+
+
+def test_bundled_keys_build_the_chain_in_the_old_order(no_keys, monkeypatch):
+    _install_fake_bundle(monkeypatch, **{
+        attr: "bundled-%s" % slot
+        for slot, attr in lrg._BUNDLED_KEY_ATTRS.items()
+    })
+
+    gen = LLMResponseGenerator()
+    assert [p.name for p in gen._providers] == _EXPECTED_ORDER
+
+    # With bundled keys present this is never reported as unconfigured.
+    monkeypatch.setattr(lrg, "_call_llm_api", lambda *a, **k: None)
+    assert gen.health_check(timeout=1)["reason"] == "unreachable"
+
+
+def test_bundled_key_is_tried_before_the_deployment_secret(no_keys, monkeypatch):
+    """Bundled first, then env/st.secrets behind it — neither is dropped."""
+    _install_fake_bundle(monkeypatch,
+                         _DEFAULT_GOOGLE_AI_KEY="bundled-google")
+    monkeypatch.setenv("GOOGLE_API_KEY", "secret-google")
+
+    gen = LLMResponseGenerator()
+    keys = [p.api_key for p in gen._providers]
+
+    assert keys, "no providers were built"
+    assert keys[0] == "bundled-google", "the bundled key is not tried first"
+    assert "secret-google" in keys, "the deployment secret was dropped"
+    assert keys.index("bundled-google") < keys.index("secret-google")
+
+
+def test_bundled_partial_coverage_still_uses_secrets_for_other_slots(
+        no_keys, monkeypatch):
+    _install_fake_bundle(monkeypatch, _DEFAULT_GROQ_KEY="bundled-groq")
+    monkeypatch.setenv("MISTRAL_API_KEY", "secret-mistral")
+
+    gen = LLMResponseGenerator()
+    keys = {p.api_key for p in gen._providers}
+    assert "bundled-groq" in keys
+    assert "secret-mistral" in keys
+    assert lrg.missing_builtin_provider_secrets() == [
+        BUILTIN_PROVIDER_SECRETS[slot][0]
+        for slot in BUILTIN_PROVIDER_SECRETS
+        if slot not in ("groq", "mistral")
+    ]
+
+
+def test_provider_chain_log_never_contains_key_bytes(no_keys, monkeypatch, caplog):
+    """The diagnostic log line must not carry even a key prefix."""
+    _install_fake_bundle(monkeypatch,
+                         _DEFAULT_GROQ_KEY="gsk_supersecretvalue123456")
+
+    with caplog.at_level("INFO", logger=lrg.logger.name):
+        LLMResponseGenerator()
+
+    text = caplog.text
+    assert "gsk_super" not in text
+    assert "supersecret" not in text
+    assert "(key set)" in text

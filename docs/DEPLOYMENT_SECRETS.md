@@ -38,6 +38,58 @@ deployment secret being set. Unlike the deployment secrets, that path reports an
 error when the key does not work — someone who supplies their own key needs to
 know it is failing rather than silently receiving engine-written text.
 
+## Bundling keys in the repository (optional)
+
+A deployment secret only covers *this* deployment. Someone who clones or forks
+the repository does not inherit it, so the tool will not have AI text for them
+until they supply their own key. To make a clone work with no setup, keys can
+instead live in a module the chain picks up automatically:
+
+`simulation_app/utils/builtin_free_keys.py`
+
+It must define these six names, each a non-empty key string:
+
+| Name | Provider |
+|------|----------|
+| `_DEFAULT_GOOGLE_AI_KEY` | Google AI Studio (Gemini) |
+| `_DEFAULT_GROQ_KEY` | Groq |
+| `_DEFAULT_CEREBRAS_KEY` | Cerebras |
+| `_DEFAULT_SAMBANOVA_KEY` | SambaNova Cloud |
+| `_DEFAULT_MISTRAL_KEY` | Mistral AI |
+| `_DEFAULT_OPENROUTER_KEY` | OpenRouter |
+
+Any subset works; slots it leaves out fall back to the deployment secrets above.
+How each value is produced does not matter — a literal, a decode, anything that
+ends in a string. Keys found here are tried **first**, in the normal provider
+order; deployment secrets are then appended behind them, so neither is dropped.
+
+The file is absent from this repository by default, and nothing requires it. It
+is imported inside a `try`/`except`, so a missing or malformed file degrades to
+the deployment secrets rather than breaking the app.
+
+### Removing bundled keys when you rotate
+
+Delete the one file:
+
+```bash
+git rm simulation_app/utils/builtin_free_keys.py
+git commit -m "Remove bundled free-tier keys"
+```
+
+That is the whole rotation step — no other file needs touching, no version bump
+is required for it, and the app keeps working afterwards (open-ended text falls
+back to the built-in engine, or to whatever deployment secrets are set).
+
+### What bundling costs you
+
+A key committed to a **public** repository is readable by anyone, including in
+history after it is removed. Two concrete consequences: strangers can spend your
+free-tier quota, which surfaces as the app being rate-limited for your own
+users; and GitHub's secret-scanning partner programme notifies several of these
+providers on detection, and some revoke automatically, which switches AI text
+off without warning. Keep the repository private, or accept that bundled keys
+are disposable and rotate them when they stop working.
+
 ## Password-gated pages
 
 | Secret name | Gates |
