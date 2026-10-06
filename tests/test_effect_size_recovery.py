@@ -451,3 +451,40 @@ def test_meta_anchor_sign_for_consumption_dv():
     """Norms REDUCE energy use: the treatment arm must move the DV down."""
     d = _auto_d("Social norms and energy conservation", ["Descriptive norm", "Control"], "Energy use")
     assert d < -0.15, f"d={d:.2f}"
+
+
+def test_placebo_arm_alone_does_not_trigger_placebo_effect():
+    from utils.enhanced_simulation_engine import _match_meta_effect
+    assert _match_meta_effect("drug versus placebo randomized trial of an active treatment") is None
+    assert _match_meta_effect("the placebo effect on pain") == pytest.approx(0.30)
+
+
+def test_meta_anchor_skips_checks_and_demographics():
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine as Eng
+    scales = [{"name": n, "variable_name": n.replace(" ", "_"), "num_items": 3, "scale_points": 7,
+               "scale_min": 1, "scale_max": 7, "reverse_items": [], "type": "likert"}
+              for n in ("Health intention", "Attention check")]
+    eng = Eng(study_title="Self-affirmation and health intentions", study_description="x",
+              sample_size=60, conditions=["Self-affirmation", "Control"], factors=[], scales=scales,
+              additional_vars=[], demographics={"gender_quota": 50, "age_mean": 30, "age_sd": 8}, seed=1)
+    assert eng._meta_variable_eligible("Health_intention", ["self_affirmation_meta"])
+    assert not eng._meta_variable_eligible("Attention_check", ["self_affirmation_meta"])
+
+
+def test_game_outcome_follows_configured_correlation():
+    """A configured game-outcome/scale correlation must not be ignored."""
+    scales = [
+        {"name": "Dictator_Giving", "variable_name": "Dictator_Giving", "num_items": 1, "scale_points": 101,
+         "scale_min": 0, "scale_max": 100, "reverse_items": [], "type": "slider"},
+        {"name": "Empathy_Scale", "variable_name": "Empathy_Scale", "num_items": 4, "scale_points": 7,
+         "scale_min": 1, "scale_max": 7, "reverse_items": [], "type": "likert"}]
+    eng = EnhancedSimulationEngine(
+        study_title="Dictator game giving",
+        study_description="Participants decide how much of a $100 endowment to give in a dictator game.",
+        sample_size=2500, conditions=["Control", "Control B"], factors=[], scales=scales, additional_vars=[],
+        demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        effect_sizes=[], seed=4, correlation_matrix=np.array([[1.0, 0.5], [0.5, 1.0]]))
+    df, _ = eng.generate()
+    r = float(np.corrcoef(df["Dictator_Giving_1"].astype(float), df["Empathy_Scale_mean"].astype(float))[0, 1])
+    assert 0.35 <= r <= 0.60, f"game-scale r={r:.2f} vs target 0.5"
+    assert 22 <= df["Dictator_Giving_1"].astype(float).mean() <= 34  # published baseline intact

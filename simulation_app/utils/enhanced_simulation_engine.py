@@ -3032,6 +3032,7 @@ _INTERACTION_MULTIPLIER_POP_MEAN = 1.12
 # Latent-shift gain for game DVs (calibrated so recovered d on bounded, zero-inflated
 # allocations tracks the configured d; see tests/test_effect_size_recovery.py).
 _GAME_Z_GAIN = 0.9
+_GAME_LATENT_LOADING = 0.87  # loading of the correlated latent on game outcomes
 # Observed scale-score correlation produced by the pipeline for a latent correlation t:
 #   r_obs ~= _XCORR_FLOOR + _XCORR_SLOPE * t
 # The floor is common-method variance between unrelated scales (Podsakoff et al. 2003:
@@ -3096,7 +3097,7 @@ _META_INDEX_CACHE: Optional[List[Tuple[str, float, Tuple[str, ...]]]] = None
 # single-token key needs one of its explicit phrase aliases below.
 _META_SINGLE_TOKEN_OK = frozenset({
     "anchoring", "bystander", "inoculation", "endowment", "deindividuation", "spotlight",
-    "placebo", "interleaving", "retargeting", "representativeness", "decoy", "denomination",
+    "interleaving", "retargeting", "representativeness", "decoy", "denomination",
     "psychotherapy", "scarcity",
 })
 _META_ALIASES: Dict[str, Tuple[str, ...]] = {
@@ -3105,6 +3106,7 @@ _META_ALIASES: Dict[str, Tuple[str, ...]] = {
     "framing_general_meta": ("framing effect", "message framing", "gain frame", "loss frame",
                              "gain framing", "loss framing"),
     "testing_effect_meta": ("testing effect", "retrieval practice"),
+    "placebo_effect_meta": ("placebo effect", "placebo response", "placebo analgesia"),
 }
 
 
@@ -3141,15 +3143,15 @@ def _meta_index() -> List[Tuple[str, float, Tuple[Any, ...]]]:
     return out
 
 
-def _match_meta_effect(text: str) -> Optional[float]:
-    """Return the meta-analytic |d| for the paradigm named in ``text``, or None.
+def _match_meta_entries(text: str) -> Tuple[Optional[float], List[str]]:
+    """Return (|d|, matched keys) for the paradigm named in ``text``, or (None, []).
 
     The paradigm with the most specific (longest) match wins. When several
     different paradigms match equally well and disagree by more than 0.15 the
     text is ambiguous and no anchoring is applied.
     """
     text = str(text).lower()
-    hits: List[Tuple[int, float]] = []
+    hits: List[Tuple[int, float, str]] = []
     for _key, d, pats in _meta_index():
         best = 0
         for pat in pats:
@@ -3157,14 +3159,26 @@ def _match_meta_effect(text: str) -> Optional[float]:
             if m:
                 best = max(best, len(m.group(0)))
         if best:
-            hits.append((best, d))
+            hits.append((best, d, _key))
     if not hits:
-        return None
+        return None, []
     top = max(h[0] for h in hits)
-    ds = [d for n, d in hits if n >= top * 0.999]
+    top_hits = [h for h in hits if h[0] >= top * 0.999]
+    ds = [h[1] for h in top_hits]
     if max(ds) - min(ds) > 0.15:
-        return None
-    return float(sum(ds) / len(ds))
+        return None, []
+    return float(sum(ds) / len(ds)), [h[2] for h in top_hits]
+
+
+def _match_meta_effect(text: str) -> Optional[float]:
+    """Return the meta-analytic |d| for the paradigm named in ``text``, or None."""
+    return _match_meta_entries(text)[0]
+
+
+# Variables that are never the outcome of a manipulation (checks, demographics).
+_META_INELIGIBLE_VAR_RE = re.compile(
+    r"\b(attention|manipulation|comprehension|check|demograph\w*|age|gender|sex|income|education|"
+    r"ethnicity|race|covariate|filler|consent)\b")
 
 
 class EnhancedSimulationEngine:
@@ -6784,8 +6798,8 @@ class EnhancedSimulationEngine:
         # size of the design's main contrast (relational/economic-game designs keep their
         # own calibrated scaling).
         if not _raw and not _handled_by_relational and not _is_economic_game_dv:
-            _meta_d = _match_meta_effect(_study_text + " " + _all_conds_text + " " + _cond_desc_text)
-            if _meta_d is not None:
+            _meta_d, _meta_keys = _match_meta_entries(_study_text + " " + _all_conds_text + " " + _cond_desc_text)
+            if _meta_d is not None and self._meta_variable_eligible(variable, _meta_keys):
                 return self._meta_anchored_effect(condition, variable, _meta_d)
 
         # Apply Cohen's d scaling with domain-aware multiplier
@@ -6802,6 +6816,42 @@ class EnhancedSimulationEngine:
         r"use\b|usage|consumption|waste|smok|emission|intake|absentee|errors?\b|craving|relapse|"
         r"discrimination|stigma|hostil|rumination|worry|guilt|shame)"
     )
+
+    def _meta_variable_eligible(self, variable: str, keys: List[str]) -> bool:
+        """Whether a matched paradigm's published effect applies to this variable.
+
+        Checks, demographics and covariates are never anchored. When some study
+        variables name the paradigm's outcome construct, only those are anchored;
+        when none does, every remaining outcome is (the paradigm names the study).
+        """
+        def _txt(name: str, desc: Any = "") -> str:
+            return (str(name).replace("_", " ") + " " + str(desc or "")).lower()
+
+        v_txt = _txt(variable, self._dv_descriptions.get(str(variable).lower(), ""))
+        if _META_INELIGIBLE_VAR_RE.search(v_txt):
+            return False
+        toks: List[str] = []
+        for k in keys:
+            entry = META_ANALYTIC_DB.get(k) if HAS_KNOWLEDGE_BASE else None
+            if entry is not None:
+                toks += [t for t in re.split(r"[^a-z]+", f"{entry.construct} {entry.paradigm}".lower())
+                         if len(t) >= 5 and t not in _META_GENERIC_TOKENS]
+        if not toks:
+            return True
+
+        def _has_construct(txt: str) -> bool:
+            return any(re.search(r"\b" + re.escape(t[:max(5, len(t) - 2)]), txt) for t in toks)
+
+        if _has_construct(v_txt):
+            return True
+        others = []
+        for sc in (getattr(self, "scales", None) or []):
+            if isinstance(sc, dict):
+                nm = sc.get("variable_name") or sc.get("name") or ""
+                others.append(_txt(nm, sc.get("description", "")))
+        # eligible only if NO study variable carries the construct (then the paradigm
+        # label itself is the best evidence that this variable is the outcome)
+        return not any(_has_construct(o) for o in others if not _META_INELIGIBLE_VAR_RE.search(o))
 
     def _meta_anchored_effect(self, condition: str, variable: str, meta_d: float) -> float:
         """Effect for ``condition`` when the study names a paradigm with a published estimate.
@@ -8705,6 +8755,12 @@ class EnhancedSimulationEngine:
                 _zt = float(np.clip(((_coop - 0.5) + (_emp - 0.5)) / 2.0 / 0.2, -2.5, 2.5))
                 _w = 0.35
                 _z = _w * _zt + math.sqrt(1.0 - _w * _w) * float(_grng.normal())
+                # Configured/inferred cross-scale correlations: blend the participant's
+                # correlated latent score into the game position (loading matches the
+                # Likert pipeline's, so realised game-scale correlations track targets).
+                _glat = float((traits.get("_latent_dvs", {}) or {}).get(variable_name, 0.0) or 0.0)
+                if _glat != 0.0:
+                    _z = _GAME_LATENT_LOADING * _glat + math.sqrt(1.0 - _GAME_LATENT_LOADING ** 2) * _z
                 _z_shift = condition_effect / (self._explicit_effect_scale(variable_name) * 0.25)
                 _q = 0.5 * (1.0 + math.erf((_z + _z_shift * _GAME_Z_GAIN) / math.sqrt(2.0)))
                 _val = scale_min + _qfn(_q) * scale_range
@@ -13819,7 +13875,11 @@ class EnhancedSimulationEngine:
         # the composites were built (repairs, jitter, enrichment) may leave a scale
         # mean inconsistent with its own items in the exported data.
         try:
-            self._reconcile_composites(df)
+            if self._reconcile_composites(df):
+                # item/composite edits after the metadata was built: refresh it
+                metadata["effect_sizes_observed"] = self._compute_observed_effect_sizes(df)
+                metadata["scale_verification"] = self._build_scale_verification_report(df)
+                metadata["generation_warnings"] = self._check_generation_warnings(df)
         except Exception as _rec_err:
             self._log(f"WARNING: composite reconciliation failed: {_rec_err}")
 
