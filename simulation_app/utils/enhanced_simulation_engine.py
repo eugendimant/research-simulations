@@ -297,6 +297,33 @@ try:
 except ImportError:
     HAS_KNOWLEDGE_BASE = False
 
+# v1.2.9.1: Empirical realism layer — provenance for the knowledge base, a
+# content-based construct matcher, verified distribution shapes, and the
+# real-data benchmark. Each import is guarded: these are additive, and the app
+# must still load if any one of them is unavailable.
+try:
+    from .item_realism import (
+        decouple_block,
+        match_straightlining,
+        target_r_from_alpha,
+        DEFAULT_STRAIGHTLINE_SHARE,
+    )
+    HAS_ITEM_REALISM = True
+except Exception:
+    HAS_ITEM_REALISM = False
+
+try:
+    from . import construct_matcher as _construct_matcher
+    HAS_CONSTRUCT_MATCHER = True
+except Exception:
+    HAS_CONSTRUCT_MATCHER = False
+
+try:
+    from . import literature_effects as _literature_effects
+    HAS_LITERATURE_EFFECTS = True
+except Exception:
+    HAS_LITERATURE_EFFECTS = False
+
 # Import comprehensive response library for LLM-quality text generation
 try:
     from .response_library import (
@@ -3411,6 +3438,8 @@ class EnhancedSimulationEngine:
         # v1.2.3.5: validation_log MUST be initialized before any _log() calls.
         # The ABE v2 init block below uses _log(), so this must come first.
         self.column_info: List[Tuple[str, str]] = []
+        # v1.2.9.1: what the empirical-realism passes did, for the audit page and tests
+        self._item_realism_log: List[Dict[str, Any]] = []
         self.validation_log: List[str] = []
         self._scale_generation_log: List[Dict[str, Any]] = []
 
@@ -4259,7 +4288,51 @@ class EnhancedSimulationEngine:
         # explicit ones (nominal d = gap / 0.25 of range), so they get the same
         # item-count correction: otherwise a 4+ item composite shows d ~1.3-2x the
         # literature value the keyword rule encodes (valence 1.3 vs ~0.6).
-        return self._get_automatic_condition_effect(condition, variable) * self._explicit_effect_scale(variable)
+        _effect_scale = self._explicit_effect_scale(variable)
+        _auto = self._get_automatic_condition_effect(condition, variable)
+        # "Nothing matched" does not come back as exactly zero: measured on
+        # unmatched labels, the keyword pipeline returns noise-level values around
+        # +/-0.004 normalized, i.e. Cohen's d near 0.01. Anything below d = 0.05 is
+        # indistinguishable from no manipulation at all, so that is the trigger.
+        _NEGLIGIBLE = 0.05 * COHENS_D_TO_NORMALIZED
+        if abs(_auto) >= _NEGLIGIBLE or not HAS_LITERATURE_EFFECTS:
+            return _auto * _effect_scale
+
+        # v1.2.9.1 — LAST RESORT. The keyword rules above are a closed set: an
+        # uploaded study whose conditions are called `descriptive_norm_high` /
+        # `descriptive_norm_low` or `cognitive_dissonance_induced` matches none of
+        # them, and the condition then does NOTHING — the user's design silently
+        # becomes a null design, which is the worst failure a simulator can have.
+        # So when the rules find no effect at all, match the condition against the
+        # meta-analytic table on content instead. The match is deliberately strict
+        # (two shared content words, one of which must come from the condition
+        # label) because a wrong effect is worse than none: an unmatched condition
+        # falls back to zero, which is explicit and inspectable. The returned value
+        # is passed through empirical_registry.adjust_effect(), so an entry whose
+        # numbers were never checked against a source pushes the data less hard.
+        try:
+            _lit = _literature_effects.lookup(
+                condition=str(condition),
+                variable=str(variable),
+                study_context=f"{self.study_title or ''} {self.study_description or ''}",
+            )
+        except Exception:
+            return _auto * _effect_scale
+        if _lit is None:
+            return _auto * _effect_scale
+        _normalized = float(_lit.effect_d) * COHENS_D_TO_NORMALIZED * _effect_scale
+        self._log(
+            f"No keyword rule matched condition '{condition}' for '{variable}'; "
+            f"used literature entry '{_lit.key}' ({_lit.source}, published "
+            f"d={_lit.published_d}, applied d={_lit.effect_d:.3f}, "
+            f"verification={_lit.status})"
+        )
+        if not hasattr(self, "_literature_effect_log"):
+            self._literature_effect_log = []
+        self._literature_effect_log.append(
+            dict(condition=str(condition), variable=str(variable), **_lit.as_dict())
+        )
+        return _normalized
 
     def _get_automatic_condition_effect(self, condition: str, variable: str, _raw: bool = False) -> float:
         """
@@ -7756,6 +7829,36 @@ class EnhancedSimulationEngine:
                         elif _norm.get('skewness', 0) < -0.3:
                             calibration['variance_adjustment'] -= 0.02
                         calibration['_kb_source'] = f"ConstructNorm: {_norm_key}"
+                        return calibration
+
+            # v1.2.9.1: the substring map above reaches about 40 of the 201
+            # published norms, and only when the variable name happens to contain
+            # the mapped fragment. An uploaded survey calling its items `PSS4_1`,
+            # `stress_total`, `bfi_extra_1` or `panas_pos_4` matched nothing, so the
+            # published norm went unused. Fall back to content-based matching over
+            # the whole table: instrument acronyms are matched exactly, otherwise by
+            # IDF-weighted token overlap with the variable name and question text,
+            # and an ambiguous match is treated as no match so a wrong norm is never
+            # applied.
+            if HAS_CONSTRUCT_MATCHER:
+                try:
+                    _m = _construct_matcher.match(variable_name=variable_name)
+                except Exception:
+                    _m = None
+                if _m is not None:
+                    _norm = get_construct_norm(_m.key, target_scale_points=7)
+                    if _norm:
+                        _dev = (_norm['mean'] - 4.0) / 3.0
+                        calibration['mean_adjustment'] = _dev * 0.15
+                        calibration['positivity_bias'] = max(-0.10, min(0.12, _dev * 0.10))
+                        if _norm.get('skewness', 0) > 0.3:
+                            calibration['variance_adjustment'] += 0.06
+                        elif _norm.get('skewness', 0) < -0.3:
+                            calibration['variance_adjustment'] -= 0.02
+                        calibration['_kb_source'] = (
+                            f"ConstructNorm: {_m.key} (matched on "
+                            f"{'acronym' if _m.via_acronym else 'content'})"
+                        )
                         return calibration
 
         # ===== SATISFACTION SCALES =====
@@ -12016,6 +12119,80 @@ class EnhancedSimulationEngine:
             except Exception as err:
                 self._log(f"WARNING: numeric realism transform failed for '{log_entry.get('name')}': {err}")
 
+    def _apply_identical_answer_realism(self, data, scale_log, frame=None) -> List[str]:
+        """Bring the share of identical-answer respondents up to the real level.
+
+        In real item-level data (see utils/reference_profiles.json), 5.2% of
+        respondents give the SAME answer to every item of a 5-item block once the
+        items are aligned to the construct direction — people sitting at the
+        ceiling of a construct, answering "6,6,6,6,6". A continuous latent trait
+        plus noise almost never produces five identical integers: before this pass
+        the simulator produced 0.2%, a 25-fold shortfall that any careless-
+        responding screen over the output would show up.
+
+        Only direction-aligned Likert-style blocks of 3+ items are touched, and a
+        block that already has enough constant rows is left exactly as it was.
+
+        `frame` is the authoritative source when given. By the point this runs,
+        later passes have written corrections into the DataFrame that never went
+        back into `data`, so reading `data` would resurrect pre-correction values:
+        doing that measured as condition means of 4.31/4.64 against the 3.00/4.00
+        the calibrated frame actually held.
+        """
+        changed: List[str] = []
+        if not HAS_ITEM_REALISM:
+            return changed
+        for log_entry in scale_log:
+            icols = log_entry.get("columns_generated") or []
+            if len(icols) < 3:
+                continue
+            if any(c in getattr(self, "_typed_dv_columns", set()) for c in icols):
+                continue        # rank-order / constant-sum blocks have their own shape
+            def _source(col):
+                if frame is not None and col in getattr(frame, "columns", []):
+                    return list(frame[col].tolist())
+                return list(data.get(col, []))
+
+            if any(len(_source(c)) < 20 for c in icols):
+                continue
+            try:
+                smin = float(log_entry.get("scale_min", 1))
+                smax = float(log_entry.get("scale_max", 5))
+                if smax - smin <= 0 or smax - smin > 10:
+                    continue    # wide/continuous DVs are shaped elsewhere
+                _rng = random.Random(self.seed + _stable_int_hash(str(log_entry.get("name", ""))))
+                cols = [_source(c) for c in icols]
+                if any(any(v != v for v in col) for col in cols):
+                    continue      # missing data present: leave the block alone
+                new_cols, report = match_straightlining(
+                    cols, smin, smax,
+                    target_share=DEFAULT_STRAIGHTLINE_SHARE, rng=_rng,
+                )
+                if report.get("applied"):
+                    # Keep integer columns integral: these passes work in floats,
+                    # and letting that leak would turn an exported "4" into "4.0"
+                    # for every Likert item in the CSV.
+                    for j, c in enumerate(icols):
+                        vals = [int(round(v)) for v in new_cols[j]]
+                        data[c] = vals
+                        if frame is not None and c in getattr(frame, "columns", []):
+                            frame[c] = vals
+                    changed.extend(icols)
+                    self._log(
+                        f"Identical-answer realism for '{log_entry.get('name')}': "
+                        f"{report.get('share_before')} -> {report.get('share_after')} "
+                        f"(real reference {DEFAULT_STRAIGHTLINE_SHARE})"
+                    )
+                    self._item_realism_log.append(
+                        dict(scale=log_entry.get("name"), pass_name="identical_answers", **report)
+                    )
+            except Exception as err:
+                self._log(
+                    f"WARNING: identical-answer realism failed for "
+                    f"'{log_entry.get('name')}': {err}"
+                )
+        return changed
+
     def generate(self) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         # v1.2.8.4 (Codex P2 — de-serialize multi-user runs): generation no longer
         # seeds the process-GLOBAL np.random/random, so it no longer needs a
@@ -12474,6 +12651,49 @@ class EnhancedSimulationEngine:
                         self._log(f"Attenuated inter-item correlation for '{scale_name_raw}' (alpha={_alpha_now:.2f} -> ~{target_alpha:.2f})")
                 except Exception as _corr_err:
                     self._log(f"WARNING: Could not inject correlation for '{scale_name_raw}': {_corr_err}")
+
+                # v1.2.9.1 — VERIFY the reliability that was actually achieved.
+                # Both paths above can leave a block MORE internally consistent
+                # than the target: injection overshoots (measured 0.58 -> 0.88
+                # while aiming at 0.75 on a 5-item block), and a block that
+                # started above target was previously left untouched. Benchmarked
+                # against real item-level data (utils/reference_profiles.json),
+                # that overshoot is the clearest signature of synthetic survey
+                # data: mean inter-item r 0.60 and alpha 0.88 where real 5-item
+                # blocks sit at 0.36 and 0.73, with within-person SD 0.72 against
+                # 1.02 and 0.2% of respondents giving identical answers against
+                # 5.2%. Scaling the item-specific variance up fixes all of them
+                # at once, and leaves every participant's rank on the construct —
+                # so every condition effect — where it was.
+                if HAS_ITEM_REALISM and num_items >= 3:
+                    try:
+                        _target_r = target_r_from_alpha(target_alpha, num_items)
+                        _cols = [list(data[c]) for c in item_col_names
+                                 if c in data]
+                        if len(_cols) == num_items:
+                            _new_cols, _dc_report = decouple_block(
+                                _cols, scale_min, scale_max,
+                                condition_labels=data.get("CONDITION"),
+                                target_r=_target_r,
+                                preserve_effect=True,
+                            )
+                            if _dc_report.applied:
+                                for j, c in enumerate(item_col_names):
+                                    data[c] = [int(round(v)) for v in _new_cols[j]]
+                                self._log(
+                                    f"Reliability correction for '{scale_name_raw}' "
+                                    f"(target alpha {target_alpha:.2f} -> r {_target_r:.3f}): "
+                                    f"{_dc_report.reason}"
+                                )
+                                self._item_realism_log.append(
+                                    dict(scale=scale_name_raw, pass_name="decouple",
+                                         **_dc_report.as_dict())
+                                )
+                    except Exception as _dc_err:
+                        self._log(
+                            f"WARNING: reliability correction failed for "
+                            f"'{scale_name_raw}': {_dc_err}"
+                        )
 
         # v1.0.5.8: Anti-detection — detect and break alternating/zigzag patterns.
         # Mechanical alternation (e.g., 2,4,2,4,2,4 or 1,7,1,7,1,7) across items
@@ -13477,8 +13697,23 @@ class EnhancedSimulationEngine:
             # Re-create DataFrame with repaired data
             df = pd.DataFrame(data)
 
+        # v1.2.9.1 — identical-answer realism, deliberately LAST.
+        # Generation leaves about 11% of respondents answering identically across
+        # a 5-item block; the consistency audit above then repairs nearly all of
+        # them away, leaving 0.3%. Real data sits in between: 5.2% of respondents
+        # in the reference sample give the same answer to every direction-aligned
+        # item of a 5-item block (utils/reference_profiles.json), because people at
+        # the ceiling of a construct genuinely answer "6,6,6,6,6". Restoring that
+        # share has to happen after every pass that would undo it.
+        # Only the touched columns are written back. Rebuilding the frame from
+        # `data` here would silently discard every df-level correction made above
+        # (the range clipping, for one) — which measured as a drop in the observed
+        # treatment effect from d=1.41 to d=0.34 before this was caught.
+        self._apply_identical_answer_realism(data, _scale_generation_log, frame=df)
+
         # Final consistency pass: every <Scale>_mean must equal the mean of the delivered
         # (reverse-recoded, missing-aware) items, whatever the steps above did to them.
+        # Runs after the identical-answer pass, which rewrites items.
         self._refresh_scale_composites(df, _scale_generation_log)
 
         # Compute observed effect sizes to validate simulation quality

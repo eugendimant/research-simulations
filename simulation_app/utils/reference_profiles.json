@@ -1,0 +1,546 @@
+{
+ "schema_version": 2,
+ "what_this_is": "Distributional reference profiles computed from REAL human item-level responses, for use by realism_benchmark.py. Only aggregate statistics are stored here; no participant-level data is redistributed.",
+ "how_tolerances_were_set": "Each tolerance is twice the between-block SD of that metric across the five real BFI blocks, floored at a small minimum. \"Within tolerance\" therefore means \"as close to real data as two real blocks of the same instrument are to each other\", not an arbitrary pass mark.",
+ "why_two_variants": "A block of items all keyed in the same direction and a block containing reverse-keyed items have genuinely different marginals: in this data, aligning the reverse-keyed items moves the mean inter-item correlation from 0.096 to 0.363, Cronbach alpha from 0.02 to 0.73, and within-person SD from 1.47 to 1.02. Comparing a simulated all-positive block against the mixed-keying reference would demand an alpha of 0.02, which no instrument should hit. Pick the variant matching whether the block under test contains reverse-keyed items.",
+ "provenance": [
+  {
+   "dataset": "psych::bfi",
+   "description": "25 IPIP personality self-report items administered as part of the Synthetic Aperture Personality Assessment (SAPA) web project; 2800 subjects, 6-point agreement scale.",
+   "quote": "\"25 personality self report items taken from the International Personality Item Pool (ipip.ori.org) were included as part of the Synthetic Aperture Personality Assessment (SAPA) web based personality assessment project. The data from 2800 subjects are included here as a demonstration set for scale construction, factor analysis, and Item Response Theory analysis.\"",
+   "source_page": "https://vincentarelbundock.github.io/Rdatasets/doc/psych/bfi.html",
+   "data_file": "https://raw.githubusercontent.com/vincentarelbundock/Rdatasets/master/csv/psych/bfi.csv",
+   "distributed_with": "the R package psych (GPL-2 | GPL-3), mirrored by the Rdatasets project",
+   "retrieved_on": "2026-10-06",
+   "rows_total": 2800,
+   "rows_complete_case_used": 2436,
+   "reverse_keyed_items": [
+    "A1",
+    "C4",
+    "C5",
+    "E1",
+    "E2",
+    "O2",
+    "O5"
+   ],
+   "reverse_keying_basis": "item wordings read from the package documentation page above: A1 \"Am indifferent to the feelings of others\"; C4 \"Do things in a half-way manner\"; C5 \"Waste my time\"; E1 \"Do not talk a lot\" (administered as \"Don't talk a lot\"); E2 \"Find it difficult to approach others\"; O2 \"Avoid difficult reading material\"; O5 \"Will not probe deeply into a subject\"",
+   "caveats": "One self-selected web sample of one instrument family. It pins down the shape of 6-point agreement data well; it is NOT a reference for other scale lengths, other response formats, or economic-game allocations. Adding 5- and 7-point references needs access to data repositories (OSF, Zenodo) that this build could not reach, because the network policy blocks them."
+  }
+ ],
+ "profiles": [
+  {
+   "item_mean": 4.1643,
+   "item_sd": 1.4086,
+   "item_skew": -0.5504,
+   "item_excess_kurtosis": -0.3181,
+   "floor_share": 0.0701,
+   "ceiling_share": 0.2226,
+   "midpoint_share": 0.0,
+   "endpoint_share": 0.2928,
+   "options_used_mean": 2.8078,
+   "long_string_mean": 2.2256,
+   "straightlined_share": 0.0517,
+   "within_person_sd_mean": 1.0204,
+   "mean_interitem_r": 0.3635,
+   "alpha": 0.7286,
+   "item_mean_spread_sd": 0.2099,
+   "label": "psych::bfi - five 5-item IPIP Big-Five blocks, 6-point agreement scale, reverse-keyed items aligned to the construct direction",
+   "scale_points": 6,
+   "direction_aligned": true,
+   "n_respondents": 2436,
+   "n_items_per_block": 5,
+   "n_blocks": 5,
+   "observed_range": {
+    "item_mean": [
+     3.1719,
+     4.6441
+    ],
+    "item_sd": [
+     1.2804,
+     1.5794
+    ],
+    "item_skew": [
+     -0.9682,
+     0.2006
+    ],
+    "item_excess_kurtosis": [
+     -1.081,
+     0.2694
+    ],
+    "floor_share": [
+     0.0271,
+     0.1849
+    ],
+    "ceiling_share": [
+     0.0901,
+     0.3148
+    ],
+    "midpoint_share": [
+     0.0,
+     0.0
+    ],
+    "endpoint_share": [
+     0.2523,
+     0.3452
+    ],
+    "options_used_mean": [
+     2.6786,
+     2.8941
+    ],
+    "long_string_mean": [
+     2.1026,
+     2.3748
+    ],
+    "straightlined_share": [
+     0.039,
+     0.0714
+    ],
+    "within_person_sd_mean": [
+     0.949,
+     1.0631
+    ],
+    "mean_interitem_r": [
+     0.2409,
+     0.4729
+    ],
+    "alpha": [
+     0.6078,
+     0.8169
+    ],
+    "item_mean_spread_sd": [
+     0.0895,
+     0.2968
+    ]
+   },
+   "between_block_sd": {
+    "item_mean": 0.5335,
+    "item_sd": 0.1081,
+    "item_skew": 0.4088,
+    "item_excess_kurtosis": 0.509,
+    "floor_share": 0.059,
+    "ceiling_share": 0.0798,
+    "midpoint_share": 0.0,
+    "endpoint_share": 0.0349,
+    "options_used_mean": 0.0724,
+    "long_string_mean": 0.1044,
+    "straightlined_share": 0.0118,
+    "within_person_sd_mean": 0.0388,
+    "mean_interitem_r": 0.0752,
+    "alpha": 0.0692,
+    "item_mean_spread_sd": 0.0674
+   },
+   "tolerance": {
+    "item_mean": 1.0669,
+    "item_sd": 0.2161,
+    "item_skew": 0.8176,
+    "item_excess_kurtosis": 1.0181,
+    "floor_share": 0.1179,
+    "ceiling_share": 0.1596,
+    "midpoint_share": 0.05,
+    "endpoint_share": 0.0699,
+    "options_used_mean": 0.5,
+    "long_string_mean": 0.5,
+    "straightlined_share": 0.03,
+    "within_person_sd_mean": 0.25,
+    "mean_interitem_r": 0.1504,
+    "alpha": 0.1385,
+    "item_mean_spread_sd": 0.15
+   }
+  },
+  {
+   "item_mean": 3.7682,
+   "item_sd": 1.4086,
+   "item_skew": -0.2707,
+   "item_excess_kurtosis": -0.3181,
+   "floor_share": 0.1241,
+   "ceiling_share": 0.1687,
+   "midpoint_share": 0.0,
+   "endpoint_share": 0.2928,
+   "options_used_mean": 3.1558,
+   "long_string_mean": 1.9995,
+   "straightlined_share": 0.0173,
+   "within_person_sd_mean": 1.468,
+   "mean_interitem_r": 0.0963,
+   "alpha": 0.0226,
+   "item_mean_spread_sd": 0.7101,
+   "label": "psych::bfi - five 5-item IPIP Big-Five blocks, 6-point agreement scale, items left in their administered direction (mixed keying)",
+   "scale_points": 6,
+   "direction_aligned": false,
+   "n_respondents": 2436,
+   "n_items_per_block": 5,
+   "n_blocks": 5,
+   "observed_range": {
+    "item_mean": [
+     3.1719,
+     4.2067
+    ],
+    "item_sd": [
+     1.2804,
+     1.5794
+    ],
+    "item_skew": [
+     -0.6328,
+     0.2006
+    ],
+    "item_excess_kurtosis": [
+     -1.081,
+     0.2694
+    ],
+    "floor_share": [
+     0.091,
+     0.1849
+    ],
+    "ceiling_share": [
+     0.0901,
+     0.2542
+    ],
+    "midpoint_share": [
+     0.0,
+     0.0
+    ],
+    "endpoint_share": [
+     0.2523,
+     0.3452
+    ],
+    "options_used_mean": [
+     2.8214,
+     3.3276
+    ],
+    "long_string_mean": [
+     1.6248,
+     2.3153
+    ],
+    "straightlined_share": [
+     0.0045,
+     0.0579
+    ],
+    "within_person_sd_mean": [
+     1.0418,
+     1.6682
+    ],
+    "mean_interitem_r": [
+     -0.0745,
+     0.4729
+    ],
+    "alpha": [
+     -0.6552,
+     0.8169
+    ],
+    "item_mean_spread_sd": [
+     0.2076,
+     1.0684
+    ]
+   },
+   "between_block_sd": {
+    "item_mean": 0.3346,
+    "item_sd": 0.1081,
+    "item_skew": 0.2674,
+    "item_excess_kurtosis": 0.509,
+    "floor_share": 0.0321,
+    "ceiling_share": 0.0552,
+    "midpoint_share": 0.0,
+    "endpoint_share": 0.0349,
+    "options_used_mean": 0.1903,
+    "long_string_mean": 0.2306,
+    "straightlined_share": 0.0203,
+    "within_person_sd_mean": 0.22,
+    "mean_interitem_r": 0.2039,
+    "alpha": 0.5333,
+    "item_mean_spread_sd": 0.2939
+   },
+   "tolerance": {
+    "item_mean": 0.6692,
+    "item_sd": 0.2161,
+    "item_skew": 0.5349,
+    "item_excess_kurtosis": 1.0181,
+    "floor_share": 0.0642,
+    "ceiling_share": 0.1104,
+    "midpoint_share": 0.05,
+    "endpoint_share": 0.0699,
+    "options_used_mean": 0.5,
+    "long_string_mean": 0.5,
+    "straightlined_share": 0.0407,
+    "within_person_sd_mean": 0.44,
+    "mean_interitem_r": 0.4077,
+    "alpha": 1.0666,
+    "item_mean_spread_sd": 0.5878
+   }
+  }
+ ],
+ "per_block_detail": {
+  "direction_aligned": [
+   {
+    "label": "agreeableness",
+    "n_respondents": 2436,
+    "n_items": 5,
+    "scale_min": 1.0,
+    "scale_max": 6.0,
+    "item_mean": 4.644088669950738,
+    "item_sd": 1.330816996644357,
+    "item_skew": -0.96819851280737,
+    "item_excess_kurtosis": 0.26935726674856425,
+    "floor_share": 0.030377668308702793,
+    "ceiling_share": 0.31477832512315274,
+    "midpoint_share": 0.0,
+    "options_used_mean": 2.6785714285714284,
+    "endpoint_share": 0.34515599343185555,
+    "round_number_share": 0.0,
+    "long_string_mean": 2.3747947454844005,
+    "long_string_p95": 5.0,
+    "straightlined_share": 0.07142857142857142,
+    "within_person_sd_mean": 0.9490358055580258,
+    "mean_interitem_r": 0.3451530820754168,
+    "alpha": 0.7158485497771107,
+    "scale_points": 6,
+    "block": "agreeableness",
+    "item_mean_spread_sd": 0.0895323867337641,
+    "item_mean_spread_range": 0.25369458128078826
+   },
+   {
+    "label": "conscientiousness",
+    "n_respondents": 2436,
+    "n_items": 5,
+    "scale_min": 1.0,
+    "scale_max": 6.0,
+    "item_mean": 4.2683908045977015,
+    "item_sd": 1.3710041278435565,
+    "item_skew": -0.5918115296304951,
+    "item_excess_kurtosis": -0.3574929893725217,
+    "floor_share": 0.04261083743842364,
+    "ceiling_share": 0.209688013136289,
+    "midpoint_share": 0.0,
+    "options_used_mean": 2.849343185550082,
+    "endpoint_share": 0.25229885057471263,
+    "round_number_share": 0.0,
+    "long_string_mean": 2.2023809523809526,
+    "long_string_p95": 4.0,
+    "straightlined_share": 0.038998357963875206,
+    "within_person_sd_mean": 1.032262597292916,
+    "mean_interitem_r": 0.363812142228387,
+    "alpha": 0.7372948129530239,
+    "scale_points": 6,
+    "block": "conscientiousness",
+    "item_mean_spread_sd": 0.29681891197854177,
+    "item_mean_spread_range": 0.8308702791461413
+   },
+   {
+    "label": "extraversion",
+    "n_respondents": 2436,
+    "n_items": 5,
+    "scale_min": 1.0,
+    "scale_max": 6.0,
+    "item_mean": 4.130213464696223,
+    "item_sd": 1.4814835629728176,
+    "item_skew": -0.533579516494455,
+    "item_excess_kurtosis": -0.625157976807922,
+    "floor_share": 0.06576354679802955,
+    "ceiling_share": 0.20369458128078818,
+    "midpoint_share": 0.0,
+    "options_used_mean": 2.894088669950739,
+    "endpoint_share": 0.26945812807881775,
+    "round_number_share": 0.0,
+    "long_string_mean": 2.1026272577996714,
+    "long_string_p95": 4.0,
+    "straightlined_share": 0.04146141215106732,
+    "within_person_sd_mean": 1.063097203510582,
+    "mean_interitem_r": 0.39458479389691525,
+    "alpha": 0.7651224389778194,
+    "scale_points": 6,
+    "block": "extraversion",
+    "item_mean_spread_sd": 0.22787983058678649,
+    "item_mean_spread_range": 0.5632183908045976
+   },
+   {
+    "label": "neuroticism",
+    "n_respondents": 2436,
+    "n_items": 5,
+    "scale_min": 1.0,
+    "scale_max": 6.0,
+    "item_mean": 3.17192118226601,
+    "item_sd": 1.5793890666538253,
+    "item_skew": 0.20056474037131058,
+    "item_excess_kurtosis": -1.0810168513552036,
+    "floor_share": 0.18489326765188835,
+    "ceiling_share": 0.09006568144499179,
+    "midpoint_share": 0.0,
+    "options_used_mean": 2.8214285714285716,
+    "endpoint_share": 0.2749589490968801,
+    "round_number_share": 0.0,
+    "long_string_mean": 2.315270935960591,
+    "long_string_p95": 5.0,
+    "straightlined_share": 0.05788177339901478,
+    "within_person_sd_mean": 1.0417520187603864,
+    "mean_interitem_r": 0.4728584658858715,
+    "alpha": 0.8169468842774033,
+    "scale_points": 6,
+    "block": "neuroticism",
+    "item_mean_spread_sd": 0.2076283744448659,
+    "item_mean_spread_range": 0.5738916256157633
+   },
+   {
+    "label": "openness",
+    "n_respondents": 2436,
+    "n_items": 5,
+    "scale_min": 1.0,
+    "scale_max": 6.0,
+    "item_mean": 4.606896551724138,
+    "item_sd": 1.280371784016801,
+    "item_skew": -0.8588800410111175,
+    "item_excess_kurtosis": 0.20397189185960318,
+    "floor_share": 0.027093596059113302,
+    "ceiling_share": 0.294991789819376,
+    "midpoint_share": 0.0,
+    "options_used_mean": 2.7955665024630543,
+    "endpoint_share": 0.32208538587848934,
+    "round_number_share": 0.0,
+    "long_string_mean": 2.1330049261083746,
+    "long_string_p95": 4.0,
+    "straightlined_share": 0.04885057471264368,
+    "within_person_sd_mean": 1.0157007352421634,
+    "mean_interitem_r": 0.2409031836408328,
+    "alpha": 0.6078018169956484,
+    "scale_points": 6,
+    "block": "openness",
+    "item_mean_spread_sd": 0.22767966292478203,
+    "item_mean_spread_range": 0.6100164203612479
+   }
+  ],
+  "as_administered": [
+   {
+    "label": "agreeableness",
+    "n_respondents": 2436,
+    "n_items": 5,
+    "scale_min": 1.0,
+    "scale_max": 6.0,
+    "item_mean": 4.206650246305419,
+    "item_sd": 1.330816996644357,
+    "item_skew": -0.6328064091766243,
+    "item_excess_kurtosis": 0.26935726674856425,
+    "floor_share": 0.0909688013136289,
+    "ceiling_share": 0.2541871921182266,
+    "midpoint_share": 0.0,
+    "options_used_mean": 3.0730706075533663,
+    "endpoint_share": 0.3451559934318555,
+    "round_number_share": 0.0,
+    "long_string_mean": 2.1432676518883413,
+    "long_string_p95": 4.0,
+    "straightlined_share": 0.009852216748768473,
+    "within_person_sd_mean": 1.5066338625943319,
+    "mean_interitem_r": 0.15035453262418316,
+    "alpha": 0.4437533019387807,
+    "scale_points": 6,
+    "block": "agreeableness",
+    "item_mean_spread_sd": 0.9042125648211191,
+    "item_mean_spread_range": 2.39080459770115
+   },
+   {
+    "label": "conscientiousness",
+    "n_respondents": 2436,
+    "n_items": 5,
+    "scale_min": 1.0,
+    "scale_max": 6.0,
+    "item_mean": 3.810591133004926,
+    "item_sd": 1.3710041278435565,
+    "item_skew": -0.3214775976027654,
+    "item_excess_kurtosis": -0.357492989372522,
+    "floor_share": 0.10837438423645321,
+    "ceiling_share": 0.14392446633825945,
+    "midpoint_share": 0.0,
+    "options_used_mean": 3.240968801313629,
+    "endpoint_share": 0.2522988505747127,
+    "round_number_share": 0.0,
+    "long_string_mean": 1.9839901477832513,
+    "long_string_p95": 3.0,
+    "straightlined_share": 0.0069786535303776685,
+    "within_person_sd_mean": 1.5374591899494432,
+    "mean_interitem_r": -0.04263828365649027,
+    "alpha": -0.31628341382240466,
+    "scale_points": 6,
+    "block": "conscientiousness",
+    "item_mean_spread_sd": 0.7629279410253265,
+    "item_mean_spread_range": 1.9753694581280787
+   },
+   {
+    "label": "extraversion",
+    "n_respondents": 2436,
+    "n_items": 5,
+    "scale_min": 1.0,
+    "scale_max": 6.0,
+    "item_mean": 3.783415435139573,
+    "item_sd": 1.4814835629728176,
+    "item_skew": -0.29314338735701584,
+    "item_excess_kurtosis": -0.625157976807922,
+    "floor_share": 0.11403940886699507,
+    "ceiling_share": 0.15541871921182265,
+    "midpoint_share": 0.0,
+    "options_used_mean": 3.3275862068965516,
+    "endpoint_share": 0.26945812807881775,
+    "round_number_share": 0.0,
+    "long_string_mean": 1.9302134646962232,
+    "long_string_p95": 3.0,
+    "straightlined_share": 0.007389162561576354,
+    "within_person_sd_mean": 1.5859741324496865,
+    "mean_interitem_r": -0.07451159875673194,
+    "alpha": -0.6552429584732491,
+    "scale_points": 6,
+    "block": "extraversion",
+    "item_mean_spread_sd": 0.6072675846752622,
+    "item_mean_spread_range": 1.430213464696223
+   },
+   {
+    "label": "neuroticism",
+    "n_respondents": 2436,
+    "n_items": 5,
+    "scale_min": 1.0,
+    "scale_max": 6.0,
+    "item_mean": 3.17192118226601,
+    "item_sd": 1.5793890666538253,
+    "item_skew": 0.20056474037131058,
+    "item_excess_kurtosis": -1.0810168513552036,
+    "floor_share": 0.18489326765188835,
+    "ceiling_share": 0.09006568144499179,
+    "midpoint_share": 0.0,
+    "options_used_mean": 2.8214285714285716,
+    "endpoint_share": 0.2749589490968801,
+    "round_number_share": 0.0,
+    "long_string_mean": 2.315270935960591,
+    "long_string_p95": 5.0,
+    "straightlined_share": 0.05788177339901478,
+    "within_person_sd_mean": 1.0417520187603864,
+    "mean_interitem_r": 0.4728584658858715,
+    "alpha": 0.8169468842774033,
+    "scale_points": 6,
+    "block": "neuroticism",
+    "item_mean_spread_sd": 0.2076283744448659,
+    "item_mean_spread_range": 0.5738916256157633
+   },
+   {
+    "label": "openness",
+    "n_respondents": 2436,
+    "n_items": 5,
+    "scale_min": 1.0,
+    "scale_max": 6.0,
+    "item_mean": 3.868308702791461,
+    "item_sd": 1.280371784016801,
+    "item_skew": -0.3065992311710769,
+    "item_excess_kurtosis": 0.20397189185960346,
+    "floor_share": 0.12233169129720854,
+    "ceiling_share": 0.19975369458128078,
+    "midpoint_share": 0.0,
+    "options_used_mean": 3.3160919540229883,
+    "endpoint_share": 0.32208538587848934,
+    "round_number_share": 0.0,
+    "long_string_mean": 1.6247947454844007,
+    "long_string_p95": 3.0,
+    "straightlined_share": 0.00451559934318555,
+    "within_person_sd_mean": 1.6682106827013188,
+    "mean_interitem_r": -0.02460543737697598,
+    "alpha": -0.1760981079376553,
+    "scale_points": 6,
+    "block": "openness",
+    "item_mean_spread_sd": 1.0683663718857872,
+    "item_mean_spread_range": 2.456486042692939
+   }
+  ]
+ }
+}

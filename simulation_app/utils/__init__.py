@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.9.0 - Privacy, reproducibility, export fidelity and a how-to guide served from the app: embedded API keys and default passwords removed (secrets via env or st.secrets), opt-in survey sharing, user-controlled seed with deterministic output, Qualtrics-faithful Simulated_Data.csv plus Simulation_Diagnostics.csv sidecar, analysis scripts that recode reverse items and match the delivered files, the student how-to guide PDF served via st.download_button so distribution no longer depends on the repository being public
+Version: 1.2.9.1 - Empirical realism layer. Benchmarking against real human item-level responses showed simulated multi-item blocks were far too internally consistent (mean inter-item r 0.60 and alpha 0.88 against 0.36 and 0.73 in real 5-item blocks, within-person SD 0.72 against 1.02, identical-answer respondents 0.2% against 5.2%). Reliability is now verified after generation and corrected by scaling item-specific variance, preserving every participant rank and the observed treatment effect; the identical-answer share is restored after the consistency audit. Adds a provenance layer that reports which knowledge-base numbers have actually been checked against a source, a content-based construct matcher that reaches all 201 published norms instead of ~40, and a realism benchmark with a real-data reference profile
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.9.0"
+__version__ = "1.2.9.1"
 
 
 # =============================================================================
