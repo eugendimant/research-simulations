@@ -10,7 +10,8 @@ The tool is genuinely mature: **43 effect-detection domains**, a scientific
 knowledge base of **~255 calibration entries** (187 meta-analytic effects, 68
 game calibrations, construct norms spanning clinical/personality/affect/
 well-being scales), **78 personas** (6 response-style + 72 domain-specific), census-weighted demographics, ex-Gaussian
-response-time realism, MCAR/MAR missingness + survival-skewed dropout, inter-item
+response-time realism, optional MCAR and trait/position-dependent missingness
++ survival-skewed dropout (off by default), inter-item
 α targeting, cross-DV correlation, and acquiescence/extremity/SD response styles.
 
 The audit found the breadth of *reference knowledge* is excellent. The real gaps

@@ -58,7 +58,7 @@ Where you configure an effect size explicitly, that is the number the engine tar
 
 A post-generation audit then checks completion-time plausibility, open-ended uniqueness, straight-lining prevalence, open-ended length distribution and rating–text coherence. The first four are repaired automatically; coherence failures are reported for review rather than corrected, since rewriting text to match a rating risks introducing artifacts.
 
-Item-level missingness and dropout are available under advanced settings and are **off by default** (DVs are forced-response). Two mechanisms are offered: `mcar`, and `realistic` — a trait- and position-dependent (MAR-like) mechanism in which inattentive participants and later items go missing more often.
+Item-level missingness and dropout are available under advanced settings and are **off by default** (DVs are forced-response). The advanced panel sets the rates; the mechanism itself is not exposed in the UI and defaults to `realistic` — trait- and position-dependent (MAR-like), so inattentive participants and later items go missing more often. A plain `mcar` mechanism exists in the engine for callers that ask for it.
 
 **Difficulty levels** (easy / medium / hard / expert) scale noise, straight-lining, careless responding and text effort together, so you can practice cleaning at a chosen difficulty.
 
@@ -66,7 +66,7 @@ Item-level missingness and dropout are available under advanced settings and are
 
 - Conditions and factors, including embedded-data randomization, with 644 block-name exclusions and 77 regex patterns filtering trash/admin/structural blocks
 - DVs by type: matrix, single-item, numbered items, slider, numeric input, constant sum, rank order, and more
-- Well-known instruments (Big Five via BFI/IPIP/NEO wording, PANAS, SWLS, PSS, RSE) and reverse-coded items
+- Ten well-known instruments — Big Five (BFI/IPIP/NEO wording), PANAS, Satisfaction With Life, Perceived Stress, Rosenberg Self-Esteem, Need for Cognition, Regulatory Focus, Risk Propensity, Trust Propensity and a social-desirability scale — plus reverse-coded items
 - DisplayLogic and SkipLogic, as a question dependency graph
 Generation then respects those types: constant-sum items are renormalized to sum exactly to the total (largest-remainder), and rank-order DVs are valid 1..k permutations rather than independent integers.
 
@@ -97,7 +97,7 @@ pip install -r simulation_app/requirements.txt
 streamlit run simulation_app/app.py     # http://localhost:8501
 ```
 
-Optional dependencies (plotly, scipy, matplotlib, pdfplumber, openpyxl, jsonschema) are in `requirements-optional.txt`. All are lazy imports with fallbacks — the core app runs without them.
+Optional dependencies (plotly, scipy, matplotlib, pdfplumber, PyMuPDF, requests, openpyxl, jsonschema) are in `requirements-optional.txt`. All are lazy imports with fallbacks — the core app runs without them.
 
 **Streamlit Community Cloud:** fork, then point a new app at `simulation_app/app.py`.
 
