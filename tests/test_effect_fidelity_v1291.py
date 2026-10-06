@@ -125,3 +125,44 @@ def test_game_dv_keeps_the_requested_effect(lo, hi, items):
     observed = _scale_d(df, conds, name)
     assert 0.5 * 0.7 <= observed <= 0.5 * 1.3, f"requested 0.5, observed {observed:.2f}"
     assert df[[c for c in df.columns if c.startswith(name + "_") and c[len(name) + 1:].isdigit()]].min().min() >= lo
+
+
+def _report_row(conds, level_high, level_low, direction, d=0.8):
+    """Run a small study and return the 'Effects you specified' table row from the summary report."""
+    from utils.instructor_report import InstructorReportGenerator
+
+    scale = {"name": "DV", "variable_name": "DV", "type": "likert", "num_items": 3, "scale_points": 7,
+             "scale_min": 1, "scale_max": 7, "reverse_items": []}
+    spec = [EffectSizeSpec(variable="DV", factor="CONDITION", level_high=level_high, level_low=level_low,
+                           cohens_d=d, direction=direction)]
+    e = EnhancedSimulationEngine(
+        study_title="Orientation", study_description="A study of participants", sample_size=600, conditions=conds,
+        factors=[], scales=[scale], additional_vars=[], demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        open_ended_questions=[], effect_sizes=spec, seed=11)
+    e.llm_generator.disable_permanently("test")
+    df, meta = e.generate()
+    report = InstructorReportGenerator().generate_markdown_report(
+        df=df, metadata=meta, schema_validation={"passed": True, "checks": [], "warnings": [], "errors": []},
+        prereg_text="", team_info={})
+    rows = [ln for ln in report.splitlines() if ln.startswith("| DV |") and level_high in ln]
+    assert rows, "effects table row not found"
+    cells = [c.strip() for c in rows[0].strip("|").split("|")]
+    return cells, meta
+
+
+def test_report_orients_the_observed_effect_as_high_minus_low():
+    """With the conditions listed low-first, a positive effect must not read as a negative one."""
+    cells, meta = _report_row(["Control", "Treatment"], "Treatment", "Control", "positive")
+    assert cells[1:3] == ["Treatment", "Control"]
+    assert cells[3] == "+0.80"
+    assert float(cells[4]) > 0.4, cells
+    # the metadata keeps the raw orientation (condition_1 minus condition_2)
+    row = meta["effect_sizes_applied"]["contrasts"][0]
+    assert (row["condition_1"], row["condition_2"]) == ("Control", "Treatment")
+    assert row["intended_d"] < 0 and row["observed_d"] < 0
+
+
+def test_report_signs_the_intended_effect_by_direction():
+    cells, _ = _report_row(["Control", "Treatment"], "Treatment", "Control", "negative")
+    assert cells[3] == "-0.80"
+    assert float(cells[4]) < -0.4, cells

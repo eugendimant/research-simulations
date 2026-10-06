@@ -924,9 +924,9 @@ def _infer_numeric_answer_spec(
         if not t or _NUMERIC_EXCLUDE_RE.search(t):
             return None
     if _YEAR_OF_BIRTH_RE.search(t):
-        return {"kind": "year_of_birth"}
+        return {"kind": "year_of_birth", "lo": lo_hi[0] if lo_hi else None, "hi": lo_hi[1] if lo_hi else None}
     if _AGE_RE.search(t) or str(variable_name or "").strip().lower() == "age":
-        return {"kind": "age"}
+        return {"kind": "age", "lo": lo_hi[0] if lo_hi else None, "hi": lo_hi[1] if lo_hi else None}
     if not declared_number and not (_COUNT_ASK_RE.search(t) or _PERCENT_RE.search(t)
                                     or (_MONEY_RE.search(t) and re.search(r"how much|amount|enter|offer|bid|pay|give|spend", t))):
         return None
@@ -951,10 +951,23 @@ def _draw_numeric_answer(spec: Dict[str, Any], rng: "np.random.RandomState") -> 
         return "".join("0123456789abcdef"[int(i)] for i in rng.randint(0, 16, size=24))
     if kind == "participant_id":
         return str(int(rng.randint(100000, 999999)))
-    if kind == "age":
-        return str(int(np.clip(rng.normal(35, 13), 18, 80)))
-    if kind == "year_of_birth":
-        return str(_REFERENCE_SURVEY_YEAR - int(np.clip(rng.normal(35, 13), 18, 80)))
+    if kind in ("age", "year_of_birth"):
+        lo, hi = spec.get("lo"), spec.get("hi")
+
+        def _one() -> int:
+            age = int(np.clip(rng.normal(35, 13), 18, 80))
+            return age if kind == "age" else _REFERENCE_SURVEY_YEAR - age
+
+        if lo is None or hi is None:
+            return str(_one())
+        # The survey declares a validation range (e.g. ages 65-90): stay inside it. Draw from the
+        # usual distribution and keep the draw if it fits; otherwise fall back to the window itself.
+        lo, hi = (float(lo), float(hi)) if float(lo) <= float(hi) else (float(hi), float(lo))
+        for _ in range(12):
+            value = _one()
+            if lo <= value <= hi:
+                return str(value)
+        return str(int(round(rng.uniform(lo, hi))))
     lo, hi = spec.get("lo"), spec.get("hi")
     decimals = bool(spec.get("decimals"))
     if lo is None or hi is None:
@@ -14691,7 +14704,8 @@ class EnhancedSimulationEngine:
         return {
             "inferred_effects_enabled": bool(getattr(self, "auto_effects", True)),
             "contrasts": rows,
-            "note": ("intended_d is given only for effects you specified. Inferred effects are a "
+            "note": ("Each contrast is condition_1 minus condition_2, in the order of the conditions. "
+                     "intended_d is given only for effects you specified. Inferred effects are a "
                      "heuristic read of the condition names and are not calibrated to a target d."),
         }
 

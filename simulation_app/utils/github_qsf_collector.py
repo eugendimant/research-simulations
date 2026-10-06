@@ -220,9 +220,12 @@ def _file_exists_in_repo(filename: str, config: dict) -> bool:
             "Accept": "application/vnd.github.v3+json",
         }
 
-        # GitHub API: Get contents of directory
+        # GitHub API: Get contents of directory, on the branch uploads are committed to (the
+        # default branch is only the right answer when GITHUB_QSF_BRANCH is unset)
         url = f"https://api.github.com/repos/{config['repo']}/contents/{config['path']}"
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(
+            url, headers=headers, params={"ref": config.get("branch") or "main"}, timeout=10
+        )
 
         if response.status_code == 200:
             files = response.json()

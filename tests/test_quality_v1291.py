@@ -215,6 +215,20 @@ def test_crowd_platform_wording_does_not_turn_other_questions_into_id_boxes():
     assert count["kind"] == "count"
 
 
+def test_age_and_birth_year_boxes_honor_the_declared_validation_range():
+    import numpy as np
+    rng = np.random.RandomState(4)
+    age_spec = eng._infer_numeric_answer_spec("What is your age?", "", {"content_type": "ValidNumber", "number_min": 65, "number_max": 90})
+    ages = [int(eng._draw_numeric_answer(age_spec, rng)) for _ in range(400)]
+    assert min(ages) >= 65 and max(ages) <= 90
+    year_spec = eng._infer_numeric_answer_spec("What is your year of birth?", "", {"content_type": "ValidNumber", "number_min": 1940, "number_max": 1960})
+    years = [int(eng._draw_numeric_answer(year_spec, rng)) for _ in range(400)]
+    assert min(years) >= 1940 and max(years) <= 1960
+    # without a declared range the usual adult distribution applies
+    free = [int(eng._draw_numeric_answer(eng._infer_numeric_answer_spec("What is your age?", "", {}), rng)) for _ in range(400)]
+    assert 18 <= min(free) and max(free) <= 80
+
+
 def test_numeric_answers_respect_declared_range_and_are_deterministic():
     import numpy as np
     spec = {"kind": "count", "lo": 0.0, "hi": 10.0, "decimals": False}
@@ -487,3 +501,22 @@ def test_text_boxes_that_duplicate_numeric_dvs_are_skipped():
     kept, dropped = eng._drop_oe_duplicating_dvs(oe, scales)
     assert dropped == ["Score_Total"]                      # a numeric DV already has its numbers
     assert [q["name"] for q in kept] == ["why", "Trust"]   # a Likert matrix of the same name is left alone
+
+
+def test_collector_duplicate_check_queries_the_configured_branch(monkeypatch):
+    """With GITHUB_QSF_BRANCH set, "does this file exist" must look at that branch, not the default."""
+    import types
+
+    seen = {}
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        seen["params"] = params
+        return types.SimpleNamespace(status_code=200, json=lambda: [{"name": "other.qsf"}])
+
+    monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(get=fake_get))
+    config = {"token": "t", "repo": "o/r", "path": "p", "branch": "qsf-collection"}
+    assert coll._file_exists_in_repo("new.qsf", config) is False
+    assert seen["params"] == {"ref": "qsf-collection"}
+    config.pop("branch")
+    coll._file_exists_in_repo("new.qsf", config)
+    assert seen["params"] == {"ref": "main"}

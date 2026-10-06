@@ -866,19 +866,33 @@ class InstructorReportGenerator:
             lines.append("**Effects you specified** (the Cohen's d on the scale mean is calibrated to land "
                          "near the intended value; the observed value varies with sampling):")
             lines.append("")
-            lines.append("| Variable | Higher condition | Lower condition | Intended d | Observed d |")
-            lines.append("|----------|------------------|-----------------|------------|------------|")
+            lines.append("| Variable | High level | Low level | Intended d (high - low) | Observed d (high - low) |")
+            lines.append("|----------|------------|-----------|-------------------------|-------------------------|")
             user_rows = [r for r in contrasts if r.get('source') == 'user']
+
+            def _norm_name(x: Any) -> str:
+                return re.sub(r"[^a-z0-9]+", "_", str(x).lower()).strip("_")
+
             for es in effect_sizes[:10]:
                 var = es.get('variable', 'DV')
-                high = es.get('level_high', '') or 'higher condition'
-                low = es.get('level_low', '') or 'lower condition'
+                high = es.get('level_high', '') or 'high level'
+                low = es.get('level_low', '') or 'low level'
                 d = _safe_float(es.get('cohens_d', 0.5))
-                observed = next((r.get('observed_d') for r in user_rows
-                                 if str(r.get('variable', '')).lower() == str(var).lower().replace(' ', '_')
-                                 and {r.get('condition_1'), r.get('condition_2')} == {high, low}), None)
+                # The engine raises the high level for direction "positive" and lowers it otherwise
+                intended = d if str(es.get('direction', 'positive')).lower() == 'positive' else -d
+                observed = None
+                for r in user_rows:
+                    if _norm_name(r.get('variable', '')) != _norm_name(var):
+                        continue
+                    pair = (r.get('condition_1'), r.get('condition_2'))
+                    if pair not in ((high, low), (low, high)) or r.get('observed_d') is None:
+                        continue
+                    # contrast rows are condition_1 minus condition_2, in condition order:
+                    # orient them as high minus low
+                    observed = r['observed_d'] if pair == (high, low) else -r['observed_d']
+                    break
                 obs_txt = f"{observed:+.2f}" if observed is not None else "n/a"
-                lines.append(f"| {var} | {high} | {low} | {d:.2f} | {obs_txt} |")
+                lines.append(f"| {var} | {high} | {low} | {intended:+.2f} | {obs_txt} |")
             lines.append("")
 
         if inferred_on:

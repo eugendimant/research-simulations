@@ -56,7 +56,7 @@ To remove them, untick **Also infer small differences from the condition names**
 Every run writes the following into `Metadata.json`:
 
 - `effect_sizes_configured`: the effects you specified.
-- `effect_sizes_applied`: for each variable and pair of conditions, whether the contrast came from your specification (`user`), from the name-based heuristic (`inferred`), or from nothing (`none`), the intended d where one exists, and the d observed in this sample.
+- `effect_sizes_applied`: for each variable and pair of conditions, whether the contrast came from your specification (`user`), from the name-based heuristic (`inferred`), or from nothing (`none`), the intended d where one exists, and the d observed in this sample. Each contrast is `condition_1` minus `condition_2`, in the order of your conditions, so a contrast listed as Control then Treatment shows a negative d when Treatment scores higher. The summary report shows the same numbers oriented as high level minus low level.
 - `effect_sizes_observed`: the observed Cohen's d for every item and scale mean, for every pair of conditions.
 
 `User_Study_Summary.md` shows the same information as tables.
