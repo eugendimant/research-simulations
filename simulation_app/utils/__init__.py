@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.3.0.1 - Every one of the 484 calibration entries in the scientific knowledge base was audited entry by entry against recalled knowledge of the published literature: citation, design, direction and magnitude. The registry gains a recall tier band that records that kind of evidence honestly — weaker than any source check, barred from setting a magnitude, and unable to move the verification headline — and the entries whose numbers were clearly wrong were corrected with their old values kept in the record. Shipped alongside the free-provider chain losing Cerebras and Mistral AI, whose free tiers no longer exist, and recognition of Google AI Studio's newer "AQ." key shape everywhere a key is detected or validated.
+Version: 1.3.0.2 - Every one of the 484 calibration entries in the scientific knowledge base was audited entry by entry against recalled knowledge of the published literature: citation, design, direction and magnitude. The registry gains a recall tier band that records that kind of evidence honestly — weaker than any source check, barred from setting a magnitude, and unable to move the verification headline — and the entries whose numbers were clearly wrong were corrected with their old values kept in the record. Shipped alongside the free-provider chain losing Cerebras and Mistral AI, whose free tiers no longer exist, and recognition of Google AI Studio's newer "AQ." key shape everywhere a key is detected or validated.
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.3.0.1"
+__version__ = "1.3.0.2"
 
 
 # =============================================================================

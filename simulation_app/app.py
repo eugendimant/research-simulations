@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.0.1"
-BUILD_ID = "20261006-v13001-literature-recall-audit"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.0.2"
+BUILD_ID = "20261006-v13002-within-person-keying"
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.3.0.1"  # v1.3.0.1: recall audit of all 484 literature calibration entries
+APP_VERSION = "1.3.0.2"  # v1.3.0.2: recall audit of all 484 literature calibration entries
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
