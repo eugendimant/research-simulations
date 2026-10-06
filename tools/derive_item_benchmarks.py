@@ -103,9 +103,14 @@ def profile_block(mat: np.ndarray, lo: int, hi: int) -> Dict[str, float]:
     ceil = (mat == hi).mean(axis=0)
     ls = np.array([long_string(mat[i]) for i in range(n_rows)])
     within_sd = mat.std(axis=1, ddof=1) if n_items > 1 else np.zeros(n_rows)
+    span = float(hi - lo)
     return {
         "n_rows": int(n_rows),
         "n_items": int(n_items),
+        "scale_span": span,
+        "item_sd_fraction_of_span": float(sds.mean() / span) if span > 0 else float("nan"),
+        "within_person_sd_fraction_of_span": float(
+            (within_sd.mean() / span) if span > 0 else float("nan")),
         "item_mean": float(means.mean()),
         "item_sd": float(sds.mean()),
         "mean_abs_skew": float(np.abs(skew).mean()),
@@ -278,6 +283,35 @@ def build_entries(block_profiles, full_profiles, sources) -> List[Dict]:
                     "excess kurtosis) where 5-point attitude scales are flat. This is "
                     "a wide-polarised-scale profile, not a general 9-point one",
                 ]))
+    # Scale-free entries. Expressed as a fraction of the scale span, and only
+    # emitted when the fraction actually agrees across scale lengths — which is the
+    # empirical question, not an assumption. Dispersion across all contributing
+    # blocks is the honest width, and it is what decides whether the entry gets to
+    # claim it generalises.
+    everything = [p for p in block_profiles + full_profiles if p["n_items"] >= 8]
+    for metric in ("item_sd_fraction_of_span", "within_person_sd_fraction_of_span"):
+        vals = [p[metric] for p in everything if p[metric] == p[metric]]
+        if len(vals) < 4:
+            continue
+        arr = np.asarray(vals, dtype=float)
+        if arr.std(ddof=1) / max(abs(arr.mean()), 1e-9) > 0.25:
+            # Too variable across scale lengths to claim it is scale-free. The
+            # scale-specific entries above still stand.
+            continue
+        # item_sd is a property of a single item, so it is not bounded by how many
+        # items happen to sit beside it. within_person_sd IS a block statistic and
+        # keeps the block-size bound it was measured under.
+        bounds = [1, 100] if metric.startswith("item_sd") else [8, 50]
+        app = {"scale_points": None, "items_per_block": bounds, "keying": "any",
+               "design": "any", "population": "any", "repetition": "any"}
+        entries.append(_entry(
+            f"item.likert.any.{metric}", "proportion", vals, "proportion", app,
+            [tag(p) for p in everything if p[metric] == p[metric]], sources,
+            common_caveats + [
+                "Emitted only because the fraction agreed across 5-point and 9-point "
+                "instruments; the coefficient of variation across contributing blocks "
+                "is the width of that agreement",
+            ]))
     return entries
 
 

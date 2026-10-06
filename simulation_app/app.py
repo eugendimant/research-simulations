@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.9.2"
-BUILD_ID = "20261006-v12092-registry-applicability-guards"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.9.3"
+BUILD_ID = "20261006-v12093-measured-marginal-shape"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.9.2"  # v1.2.9.2: Applicability-guarded empirical registry. Response-process benchmarks derived from 48,000 real respondents (Big Five, Dark Triad, Humor Styles, RWAS) with reproducible provenance; every entry declares the designs it may speak about, so a benchmark measured on a 5-point mixed-keyed block declines on a 7-point or same-keyed one instead of returning a plausible wrong number; publication-bias shrinkage now refuses to install on unverified evidence or a mismatched tau scale
+APP_VERSION = "1.2.9.3"  # v1.2.9.3: Measured marginal shape. Simulated Likert items were far too tame - item SD 0.22 of the scale span against 0.295 measured across 17 blocks of four published instruments (48,431 respondents), with 12% of responses on an endpoint against 34%, and peaked where real data is flat. Each item is now rank-transported onto a maximum-entropy distribution carrying its own mean and the measured dispersion, so every participant keeps their position and the manipulation survives intact
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")

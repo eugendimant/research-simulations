@@ -177,3 +177,107 @@ def test_ledger_reports_the_mix_for_this_run():
     s = led.summary()
     assert s["applied"] == 2 and s["evidenced"] == 1 and s["asserted"] == 1
     assert "1 of 2" in led.notice()
+
+
+# --------------------------------------------------------------------------
+# Marginal shape: maximum-entropy targets and rank transport
+# --------------------------------------------------------------------------
+
+import math                                                    # noqa: E402
+import random                                                  # noqa: E402
+
+from utils.item_realism import maxent_discrete, match_item_dispersion  # noqa: E402
+
+
+def _moments(probs, lo):
+    ks = list(range(lo, lo + len(probs)))
+    mu = sum(p * k for p, k in zip(probs, ks))
+    var = sum(p * (k - mu) ** 2 for p, k in zip(probs, ks))
+    return mu, math.sqrt(var)
+
+
+@pytest.mark.parametrize("lo,hi,mean,sd", [
+    (1, 5, 3.0, 1.18), (1, 7, 4.2, 1.77), (1, 9, 4.9, 2.34), (1, 5, 2.0, 1.00),
+])
+def test_maxent_recovers_the_requested_moments(lo, hi, mean, sd):
+    mu, s = _moments(maxent_discrete(lo, hi, mean, sd), lo)
+    assert mu == pytest.approx(mean, abs=0.01)
+    assert s == pytest.approx(sd, abs=0.01)
+
+
+def test_maxent_is_flatter_than_a_discretised_normal():
+    """Real 5-point items have negative excess kurtosis and sit on the endpoints;
+    a peaked distribution is the tell this pass exists to remove."""
+    p = maxent_discrete(1, 5, 3.0, 1.18)
+    assert p[0] + p[-1] > 0.15
+    assert max(p) < 0.40
+
+
+def _block(gap, n=400, k=5, within=0.6, seed=1, blocked=True):
+    rng = random.Random(seed)
+    cond = (["A"] * (n // 2) + ["B"] * (n // 2)) if blocked else (["A", "B"] * (n // 2))
+    cols = [[min(5, max(1, round(rng.gauss(3.0 + (gap if cond[i] == "B" else 0.0), within))))
+             for i in range(n)] for _ in range(k)]
+    return cols, cond
+
+
+def _composite_d(cols, cond):
+    n = len(cols[0])
+    comp = [sum(c[i] for c in cols) / len(cols) for i in range(n)]
+    a = [comp[i] for i in range(n) if cond[i] == "A"]
+    b = [comp[i] for i in range(n) if cond[i] == "B"]
+    ma, mb = sum(a) / len(a), sum(b) / len(b)
+    va = sum((v - ma) ** 2 for v in a) / (len(a) - 1)
+    vb = sum((v - mb) ** 2 for v in b) / (len(b) - 1)
+    return (mb - ma) / math.sqrt((va + vb) / 2)
+
+
+def test_dispersion_match_hits_the_measured_target():
+    cols, cond = _block(0.3)
+    new, rep = match_item_dispersion(cols, 1, 5, condition_labels=cond,
+                                     rng=random.Random(7))
+    assert rep.sd_after > rep.sd_before
+    assert rep.sd_after == pytest.approx(0.295 * 4, abs=0.15)
+    assert rep.endpoint_after > rep.endpoint_before
+
+
+def test_dispersion_match_does_not_manufacture_an_effect():
+    """Regression. Breaking rank ties by row index orders tied respondents by their
+    position in the frame, which when the frame is built condition by condition IS
+    the condition: it turned a null design (d = 0.06) into d = 1.65. Ties must be
+    broken by noise independent of the design."""
+    cols, cond = _block(0.0, blocked=True)
+    before = _composite_d(cols, cond)
+    new, _ = match_item_dispersion(cols, 1, 5, condition_labels=cond,
+                                   rng=random.Random(7))
+    after = _composite_d(new, cond)
+    assert abs(before) < 0.2
+    assert abs(after) < 0.2
+
+
+def test_dispersion_match_preserves_a_real_effect():
+    for gap in (0.15, 0.3, 0.6):
+        cols, cond = _block(gap)
+        before = _composite_d(cols, cond)
+        new, _ = match_item_dispersion(cols, 1, 5, condition_labels=cond,
+                                       rng=random.Random(7))
+        after = _composite_d(new, cond)
+        assert after > 0.5 * before, f"gap={gap}: {before:.3f} -> {after:.3f}"
+
+
+def test_dispersion_match_declines_on_degenerate_input():
+    cols, cond = _block(0.3, n=10)
+    _, rep = match_item_dispersion(cols, 1, 5, condition_labels=cond)
+    assert rep.skipped and rep.adjusted_items == 0
+    cols, cond = _block(0.3)
+    cols[0][0] = float("nan")
+    _, rep = match_item_dispersion(cols, 1, 5, condition_labels=cond)
+    assert rep.skipped == "missing values present"
+
+
+def test_dispersion_match_returns_integers_on_an_integer_scale():
+    cols, cond = _block(0.3)
+    new, _ = match_item_dispersion(cols, 1, 5, condition_labels=cond,
+                                   rng=random.Random(7))
+    for col in new:
+        assert all(isinstance(v, int) and 1 <= v <= 5 for v in col)

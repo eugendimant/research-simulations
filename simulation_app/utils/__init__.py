@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.9.2 - Applicability-guarded empirical registry. Response-process benchmarks (item SD, floor/ceiling occupancy, skew, kurtosis, within-person SD, straight-lining share, long-string shape) derived from 48,431 real respondents across four published instruments, each entry recording the script, the data file and its SHA-256 so the number is reproducible rather than asserted. Every entry declares the designs it applies to and declines outside them: straight-lining measured at 3.3% in a same-keyed block does not fire on a mixed-keyed block where it is 0.3%, and a 5-point benchmark does not fire on a 7-point scale. Publication-bias shrinkage refuses to install on unverified provenance or a tau reported on another scale, and a per-run ledger reports how much of a given dataset rests on measured evidence versus unverified literature
+Version: 1.2.9.3 - Measured marginal shape for Likert items. Benchmarked against 48,431 real respondents across four published instruments, simulated items came out far too tame: item SD 0.22 of the scale span against a measured 0.295 (SD 0.019 across 5-point and 9-point scales alike), 12% of responses on an endpoint against 34%, and excess kurtosis -0.15 where real 5-point attitude scales are flat at -0.51. Each item is now rank-transported onto a maximum-entropy distribution carrying the item's own mean and the measured dispersion, widened by whatever between-condition variance the column already holds, so every participant keeps their position and the manipulation, the persona structure and the inter-item correlation all survive while only the marginal changes. Measured across three designs and three seeds: item SD 0.217 to 0.297 of span, endpoint share 0.12 to 0.28, excess kurtosis -0.15 to -0.69, alpha still inside the real 0.79-0.89 band, and the recovered treatment effect unchanged
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.9.2"
+__version__ = "1.2.9.3"
 
 
 # =============================================================================

@@ -306,11 +306,19 @@ try:
         decouple_block,
         match_straightlining,
         target_r_from_alpha,
+        match_item_dispersion,
         DEFAULT_STRAIGHTLINE_SHARE,
     )
     HAS_ITEM_REALISM = True
 except Exception:
     HAS_ITEM_REALISM = False
+
+try:
+    from . import empirical_registry as _empirical_registry
+    from . import design_signature as _design_signature
+    HAS_EMPIRICAL_REGISTRY = True
+except Exception:
+    HAS_EMPIRICAL_REGISTRY = False
 
 try:
     from . import construct_matcher as _construct_matcher
@@ -3440,6 +3448,12 @@ class EnhancedSimulationEngine:
         self.column_info: List[Tuple[str, str]] = []
         # v1.2.9.1: what the empirical-realism passes did, for the audit page and tests
         self._item_realism_log: List[Dict[str, Any]] = []
+        # Which registry calibrations actually changed a number in THIS run, so the
+        # app can tell the user how much of their dataset rests on measured evidence
+        # rather than on unverified literature.
+        self.registry_ledger = (
+            _empirical_registry.RunLedger() if HAS_EMPIRICAL_REGISTRY else None
+        )
         self.validation_log: List[str] = []
         self._scale_generation_log: List[Dict[str, Any]] = []
 
@@ -12693,6 +12707,71 @@ class EnhancedSimulationEngine:
                         self._log(
                             f"WARNING: reliability correction failed for "
                             f"'{scale_name_raw}': {_dc_err}"
+                        )
+
+                # v1.2.9.3 — MARGINAL SHAPE. The reliability pass above fixes how
+                # items relate to each other; this one fixes what a single item
+                # looks like on its own. Simulated items come out far too tame:
+                # measured across 17 blocks of four published instruments (48,431
+                # respondents), real item SD is 0.295 of the scale span with only
+                # a 0.019 spread across 5-point and 9-point scales alike, and 34%
+                # of all responses sit on an endpoint. A discretised normal puts
+                # almost nothing on the endpoints and is peaked where real data is
+                # flat (measured excess kurtosis -0.51).
+                #
+                # The fix rank-transports each item onto a maximum-entropy
+                # distribution carrying the item's own mean and the measured
+                # dispersion, so every participant keeps their position and the
+                # manipulation, the persona structure and the inter-item
+                # correlation all survive; only the marginal changes. The target
+                # is widened by whatever between-condition variance the column
+                # already holds, so a strong manipulation is not squeezed back
+                # toward a single-group spread.
+                #
+                # Gated on the registry: the benchmark declines on any design it
+                # was not measured under, and a declined lookup leaves the block
+                # exactly as the engine built it.
+                if HAS_ITEM_REALISM and HAS_EMPIRICAL_REGISTRY and num_items >= 3:
+                    try:
+                        _sig = _design_signature.for_block(
+                            scale_min=scale_min, scale_max=scale_max,
+                            n_items=num_items,
+                            design_type=getattr(self, "design_type", None),
+                            n_conditions=len(self.conditions or []),
+                        )
+                        _hit = _empirical_registry.lookup_best(
+                            "item.likert.any", "item_sd_fraction_of_span", _sig)
+                        _cols = [list(data[c]) for c in item_col_names if c in data]
+                        if _hit is not None and len(_cols) == num_items:
+                            _md_cols, _md_rep = match_item_dispersion(
+                                _cols, int(scale_min), int(scale_max),
+                                condition_labels=data.get("CONDITION"),
+                                sd_fraction=float(_hit.value),
+                                rng=random.Random(int(self.seed) + 0x5D15),
+                            )
+                            if _md_rep.adjusted_items and not _md_rep.skipped:
+                                for j, c in enumerate(item_col_names):
+                                    data[c] = [int(v) for v in _md_cols[j]]
+                                if self.registry_ledger is not None:
+                                    self.registry_ledger.record_lookup(
+                                        _hit, f"scale '{scale_name_raw}' item marginals")
+                                self._log(
+                                    f"Marginal shape for '{scale_name_raw}': item SD "
+                                    f"{_md_rep.sd_before:.2f} -> {_md_rep.sd_after:.2f} "
+                                    f"(target {_md_rep.target_sd:.2f}), endpoint share "
+                                    f"{_md_rep.endpoint_before:.3f} -> "
+                                    f"{_md_rep.endpoint_after:.3f} "
+                                    f"[{_hit.entry_id}, {_hit.tier}]"
+                                )
+                                self._item_realism_log.append(
+                                    dict(scale=scale_name_raw, pass_name="marginal",
+                                         entry_id=_hit.entry_id, tier=_hit.tier,
+                                         **vars(_md_rep))
+                                )
+                    except Exception as _md_err:
+                        self._log(
+                            f"WARNING: marginal shape pass failed for "
+                            f"'{scale_name_raw}': {_md_err}"
                         )
 
         # v1.0.5.8: Anti-detection — detect and break alternating/zigzag patterns.

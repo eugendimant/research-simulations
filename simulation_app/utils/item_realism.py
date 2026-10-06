@@ -382,3 +382,232 @@ def target_r_from_alpha(alpha: float, n_items: int) -> float:
         return DEFAULT_TARGET_R
     r = a / denom
     return float(min(0.95, max(0.05, r)))
+
+
+# =============================================================================
+# MARGINAL SHAPE — maximum-entropy discrete distributions
+# =============================================================================
+# Real Likert items are not discretised normals. Measured across 17 blocks of four
+# published instruments (48,431 respondents, 5-point and 9-point), they are FLAT:
+# mean excess kurtosis -0.51 on 5-point attitude scales, with 34% of all responses
+# sitting on an endpoint. A discretised normal puts almost nothing on the
+# endpoints and is peaked where real data is flat.
+#
+# The distribution that is flat-to-U-shaped on a bounded support subject only to a
+# mean and a variance is the maximum-entropy one, p_k proportional to
+# exp(a*k + b*k^2). So rather than inventing a shape, we impose the two moments we
+# measured and let the least-committed distribution consistent with them supply
+# the rest. That is both principled and, as it happens, what the data looks like.
+#
+# The measured constraint that travels is dispersion as a FRACTION OF THE SCALE
+# SPAN: 0.295 with an SD of 0.019 across 5-point and 9-point instruments alike
+# (registry entry item.likert.any.item_sd_fraction_of_span). Endpoint occupancy
+# itself does NOT travel across scale lengths (34% on 5-point, 49% on 9-point), so
+# it stays scale-specific and is not used here.
+
+#: Measured item SD as a fraction of the scale span. See the registry entry for
+#: the derivation, the contributing blocks and the file hashes.
+DEFAULT_SD_FRACTION_OF_SPAN = 0.295
+
+
+def maxent_discrete(lo: int, hi: int, mean: float, sd: float,
+                    iters: int = 60) -> List[float]:
+    """Probabilities over {lo..hi} with the given mean and SD, otherwise flattest.
+
+    Solved by nested bisection: the mean is monotone in the linear coefficient and
+    the variance is monotone in the quadratic one, so each is bracketed and halved
+    rather than needing a Jacobian. Returns a uniform distribution if the targets
+    are unreachable on this support, which is the right degenerate answer.
+    """
+    ks = list(range(int(lo), int(hi) + 1))
+    n = len(ks)
+    if n < 2:
+        return [1.0] * n
+    mid = 0.5 * (lo + hi)
+    span = float(hi - lo)
+    # Work on a centred, scaled axis so the exponents stay well conditioned.
+    zs = [(k - mid) / span for k in ks]
+    z_mean = (float(mean) - mid) / span
+    z_sd = float(sd) / span
+
+    def probs(a: float, b: float) -> List[float]:
+        ex = [a * z + b * z * z for z in zs]
+        m = max(ex)
+        w = [math.exp(e - m) for e in ex]
+        s = sum(w)
+        return [x / s for x in w]
+
+    def moments(a: float, b: float) -> Tuple[float, float]:
+        p = probs(a, b)
+        mu = sum(pi * z for pi, z in zip(p, zs))
+        var = sum(pi * (z - mu) ** 2 for pi, z in zip(p, zs))
+        return mu, math.sqrt(max(var, 0.0))
+
+    def solve_a(b: float) -> float:
+        lo_a, hi_a = -60.0, 60.0
+        for _ in range(iters):
+            a = 0.5 * (lo_a + hi_a)
+            mu, _ = moments(a, b)
+            if mu < z_mean:
+                lo_a = a
+            else:
+                hi_a = a
+        return 0.5 * (lo_a + hi_a)
+
+    lo_b, hi_b = -60.0, 60.0
+    for _ in range(iters):
+        b = 0.5 * (lo_b + hi_b)
+        _, s = moments(solve_a(b), b)
+        if s < z_sd:
+            lo_b = b          # more positive b pushes mass to the edges
+        else:
+            hi_b = b
+    b = 0.5 * (lo_b + hi_b)
+    return probs(solve_a(b), b)
+
+
+def _quantile_targets(probs: Sequence[float], lo: int, n: int) -> List[float]:
+    """n sorted values drawn deterministically from a discrete distribution.
+
+    Deterministic rather than sampled, so the transform adds no variance of its own
+    and two runs of the same design differ only where the engine made them differ.
+    """
+    out: List[float] = []
+    cum = 0.0
+    k = 0
+    for i in range(n):
+        q = (i + 0.5) / n
+        while k < len(probs) - 1 and cum + probs[k] < q:
+            cum += probs[k]
+            k += 1
+        out.append(float(lo + k))
+    return out
+
+
+def _rank_map(values: Sequence[float], targets: Sequence[float],
+              rng: Optional[random.Random] = None) -> List[float]:
+    """Rank-transport `values` onto sorted `targets`, breaking ties at random.
+
+    The random tie-break is not a detail. Likert values take 5 to 9 distinct levels,
+    so most of a column is tied, and any deterministic tie-break orders the tied
+    respondents by whatever the fallback key is. Breaking ties by row index orders
+    them by position in the frame — which, when the frame is built condition by
+    condition, is the condition itself. That hands every low target to the first
+    condition and every high target to the second and MANUFACTURES an effect out of
+    a column that had none: measured at d = 0.06 before and d = 1.65 after, on data
+    generated with no manipulation at all. Ties must be broken by noise that is
+    independent of the design.
+    """
+    r = rng or random.Random(0xA17E)
+    jitter = [r.random() for _ in values]
+    order = sorted(range(len(values)), key=lambda i: (values[i], jitter[i]))
+    out = [0.0] * len(values)
+    for rank, idx in enumerate(order):
+        out[idx] = float(targets[rank])
+    return out
+
+
+@dataclass
+class DispersionReport:
+    adjusted_items: int = 0
+    sd_before: float = 0.0
+    sd_after: float = 0.0
+    target_sd: float = 0.0
+    endpoint_before: float = 0.0
+    endpoint_after: float = 0.0
+    skipped: str = ""
+
+
+def match_item_dispersion(
+    columns: Sequence[Sequence[float]],
+    scale_min: int,
+    scale_max: int,
+    condition_labels: Optional[Sequence[Any]] = None,
+    sd_fraction: float = DEFAULT_SD_FRACTION_OF_SPAN,
+    rng: Optional[random.Random] = None,
+) -> Tuple[List[List[int]], DispersionReport]:
+    """Give each item the measured marginal shape without moving its mean.
+
+    Each item column is rank-transported onto a maximum-entropy distribution with
+    the item's OWN current mean and a target SD. Rank transport means every
+    participant keeps their position in the column, so condition differences,
+    persona correlations and inter-item structure all survive; only the marginal
+    changes.
+
+    `preserve the effect`: the target is the dispersion a single condition should
+    show, so the pooled target is widened by whatever between-condition variance
+    the column already carries. Without that, a column split by a strong
+    manipulation would be squeezed back toward a single-group spread and the
+    manipulation would be partly transported away.
+    """
+    rep = DispersionReport()
+    cols = [list(map(float, c)) for c in columns]
+
+    def _untouched():
+        """Hand the input straight back on any skip.
+
+        Not rounded: a column that was skipped BECAUSE it holds NaN cannot be cast
+        to int, and the caller must not write back a skipped block anyway — it
+        checks `rep.skipped` first.
+        """
+        return [list(c) for c in columns], rep
+
+    if not cols or not cols[0]:
+        rep.skipped = "empty"
+        return _untouched()
+    n = len(cols[0])
+    span = float(scale_max) - float(scale_min)
+    if span <= 0 or n < 20:
+        rep.skipped = "degenerate scale or too few rows"
+        return _untouched()
+    if any(len(c) != n for c in cols):
+        rep.skipped = "ragged columns"
+        return _untouched()
+    if any(any(v != v for v in c) for c in cols):
+        rep.skipped = "missing values present"
+        return _untouched()
+
+    target_within = sd_fraction * span
+    rep.target_sd = target_within
+
+    def _sd(xs: Sequence[float]) -> float:
+        m = sum(xs) / len(xs)
+        return math.sqrt(sum((x - m) ** 2 for x in xs) / max(1, len(xs) - 1))
+
+    def _endpoint_share(cs: Sequence[Sequence[float]]) -> float:
+        tot = sum(len(c) for c in cs) or 1
+        hits = sum(1 for c in cs for v in c
+                   if abs(v - scale_min) < 1e-9 or abs(v - scale_max) < 1e-9)
+        return hits / tot
+
+    _rng = rng or random.Random(0xA17E)
+    rep.sd_before = sum(_sd(c) for c in cols) / len(cols)
+    rep.endpoint_before = _endpoint_share(cols)
+
+    groups: Optional[Dict[Any, List[int]]] = None
+    if condition_labels is not None and len(condition_labels) == n:
+        groups = {}
+        for i, lab in enumerate(condition_labels):
+            groups.setdefault(lab, []).append(i)
+        if len(groups) < 2:
+            groups = None
+
+    out: List[List[int]] = []
+    for col in cols:
+        mean = sum(col) / n
+        target = target_within
+        if groups:
+            # Between-condition variance already in this column, added back so the
+            # manipulation is not squeezed out along with the excess concentration.
+            between = sum(len(ix) * ((sum(col[i] for i in ix) / len(ix)) - mean) ** 2
+                          for ix in groups.values()) / n
+            target = math.sqrt(target_within ** 2 + between)
+        target = max(0.05 * span, min(0.6 * span, target))
+        probs = maxent_discrete(int(scale_min), int(scale_max), mean, target)
+        targets = _quantile_targets(probs, int(scale_min), n)
+        out.append([int(round(v)) for v in _rank_map(col, targets, _rng)])
+        rep.adjusted_items += 1
+
+    rep.sd_after = sum(_sd([float(v) for v in c]) for c in out) / len(out)
+    rep.endpoint_after = _endpoint_share([[float(v) for v in c] for c in out])
+    return out, rep
