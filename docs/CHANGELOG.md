@@ -21,6 +21,9 @@ lookup) is untouched; only the text post-processing after a response is drawn ch
   `auto_effects=False`): no inferred offsets and no name-based trait modifiers. For conditions named
   by a specified effect, name-based trait modifiers are skipped too. Label matching uses whole words
   ("ai" matched "wait", "low" matched "follow-up").
+- **A requested effect no longer vanishes when a level label starts or ends with a symbol.** Matching used a `\b` word boundary, so labels such as "Norm message with reference (Empirical)", `80%`, `$10` or "Treatment (high)" silently lost the effect (observed d 0.02-0.12 for a request of 0.8; now 0.78-0.92) in 9% of the corpus's condition labels (44 of 473, 41 of 205 multi-condition files). An effect that reaches nothing is now reported (`effect_sizes_applied.specs`: `matched`, `status`; `generation_warnings`). A spec for "Trust" no longer moves "Distrust", a blank variable applies to nothing, and labels like `High_Threat` get the same trait modifiers as `High Threat`.
+- **`auto_effects=False` is a true null with game words in the labels.** "Dictator game" vs "Trust game" gave d = -1.88 with inference off and -1.38 for an explicit +0.5; now +0.04 and +0.57.
+- **The requested d holds next to other scales.** With two or more scales the cross-scale latent term cut the realised d to 0.2-0.5 of the request (0.28-0.38 with two scales), so the effect is now added to the finished answers of the scale it targets, in units of its realised within-condition SD, with randomised rounding and without forcing the realised gap (the mean over 8 runs: 0.97 of the request with two scales, 1.05 with eight; 60 independent runs at N = 400 gave 0.500 with an SD across runs of 0.106, the natural 0.10). A lone scale is bit-identical to before in 50 configurations, the cross-scale correlations moved by at most 0.005, determinism holds across processes and generation time is +0.4%. Both main effects of a 2x2 design are recovered (marginal d 0.49; it was 0.10).
 - `Metadata.json` gains `effect_sizes_applied` (per contrast: user / inferred / none, intended d,
   observed d) and `level_high` / `level_low` in `effect_sizes_configured`; `effect_sizes_observed`
   is recomputed from the data that is actually returned. The instructor report's "Condition Effects
@@ -41,6 +44,7 @@ lookup) is untouched; only the text post-processing after a response is drawn ch
   MTurk IDs were rewritten ("perhaps a6O1VU1998UHS"), and a ZIP-code box was answered with a state name.
 - Stylometric engine and validator: "it's" -> "it has", "(2)" counters on duplicates and mid-phrase
   truncation fixed.
+- The question-text cleaner no longer deletes prose that looks like a CSS rule ("The U.S. government gave ${e://Field/amount} to you" became "The U to you"), and `Metadata.json` never contains `NaN` (it was invalid JSON whenever missing data was enabled).
 - An adversarial review of this pipeline found and fixed (13 of its 22 findings no longer reproduce on
   the reviewer's own checks): the validator could treat a numbered numeric text box as a Likert item
   (pandas 3 aborted the whole validation step, older pandas rewrote the cells); an open-ended question
