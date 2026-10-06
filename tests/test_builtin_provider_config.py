@@ -350,3 +350,51 @@ def test_provider_chain_log_never_contains_key_bytes(no_keys, monkeypatch, caplo
     assert "gsk_super" not in text
     assert "supersecret" not in text
     assert "(key set)" in text
+
+
+def test_bundled_module_imports_cleanly_when_present():
+    """If the bundled-key file exists, it must actually import.
+
+    The generator swallows a malformed bundled module on purpose, so the app
+    keeps working — but that means a bad paste loads NO keys silently, with
+    only a log line to show it. (This happened: a paste collapsed the file to
+    one line and a literal "nnn", a SyntaxError, and the only visible symptom
+    was ruff going red.) This test turns that into a loud failure.
+
+    An inert file whose keys are all empty strings is allowed: that is a valid
+    placeholder. What is not allowed is a file Python cannot import.
+    """
+    path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "simulation_app", "utils", "builtin_free_keys.py",
+    )
+    if not os.path.exists(path):
+        pytest.skip("no bundled-key module in this checkout (the default)")
+
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_bundled_under_test", path)
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except SyntaxError as exc:
+        pytest.fail(
+            "builtin_free_keys.py is not valid Python, so NO bundled key is "
+            "loaded: %s (line %s). Re-paste the key block; a paste that turns "
+            "newlines into literal characters produces exactly this."
+            % (exc.msg, exc.lineno)
+        )
+    except Exception as exc:
+        pytest.fail(
+            "builtin_free_keys.py raised on import, so NO bundled key is "
+            "loaded: %r" % (exc,)
+        )
+
+    missing = [
+        attr for attr in lrg._BUNDLED_KEY_ATTRS.values()
+        if not hasattr(module, attr)
+    ]
+    assert not missing, (
+        "builtin_free_keys.py is missing the names the loader reads, so those "
+        "slots load no key: %s" % missing
+    )
