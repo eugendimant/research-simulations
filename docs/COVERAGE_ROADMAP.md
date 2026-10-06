@@ -126,6 +126,16 @@ Ordered by (frequency of need × value ÷ risk). These are larger, mostly
 18. **Fraud subpopulation** (bots/duplicates/speeders) sized by sample source.
 
 ### Known characteristics (pre-existing, not regressions; noted for transparency)
+- **Automatically-inferred condition effects are directional, not magnitude-calibrated.**
+  When no `cohens_d` is configured for a DV, the effect is derived from condition
+  wording via the STEP 0-4 detection pipeline and capped at ±0.50 in normalized
+  units, but it is not fitted to a target d — a contrast such as positive vs.
+  negative feedback can land well above typical literature effects. A condition
+  named "Control" also carries a small automatic effect rather than exactly zero.
+  Configure an explicit effect size for any DV whose effect magnitude matters.
+- **Cross-scale correlations run low.** Correlations between distinct constructs
+  (e.g. Trust–Satisfaction r ≈ 0.33) are below what multi-construct survey data
+  typically shows.
 - **Construct norms apply a small ±0.15 calibration nudge, not a mean anchor** —
   a depression/anxiety/Machiavellianism DV with no manipulation centers near the
   scale's default, not at the published norm mean. Anchoring generated means to

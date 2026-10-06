@@ -33,7 +33,9 @@ Built-in provider chain, tried in order until one responds: Google Gemini 3.1 Fl
 
 **Numeric responses.** Each participant is one person with a persistent identity: census-weighted demographics (age, education, income, party ID, ideology, state), eight response-style traits, and a latent attitude vector. Condition effects are applied as deterministic mean shifts; individual variance is applied separately.
 
-**Condition effects.** 43 effect-detection domains, each with published effect sizes. Relational conditions are parsed before simple valence, so "matched with an outgroup member" produces discrimination rather than generic negativity (Iyengar & Westwood 2015). Economic games use published baselines, not 50% (dictator ≈ 28%, Engel 2011; trust ≈ 50%, Berg et al. 1995). Total semantic effect is capped at ±0.50.
+**Condition effects.** 43 effect-detection domains, keyed to a calibration knowledge base of meta-analytic effect sizes. Relational conditions are parsed before simple valence, so "matched with an outgroup member" produces discrimination rather than generic negativity (Iyengar & Westwood 2015). Economic games start from published baselines rather than a generic 50% (dictator 0.28, Engel 2011; trust 0.50, Berg et al. 1995; Johnson & Mislin 2011). The total automatically-detected effect is capped at ±0.50.
+
+Where you configure an effect size explicitly, that is the number the engine targets. Effects it infers on its own from condition wording — when you configure no `d` — are directional rather than calibrated to a target magnitude, and can be larger than you would expect from the literature; configure `d` for the DVs whose effect size matters to your analysis. Known deviations are tracked in `docs/COVERAGE_ROADMAP.md`.
 
 **Strategic games.** For beauty contest, money-request/11-20, stag hunt, minimum-effort coordination and Tullock contest, players reason recursively about other players via Level-k (Stahl & Wilson 1994; Nagel 1995) and Cognitive Hierarchy (Camerer, Ho & Chong 2004). Each persona's `strategic_depth` sets its recursion depth.
 
