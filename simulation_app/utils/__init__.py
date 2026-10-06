@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.3.0.2 - Every one of the 484 calibration entries in the scientific knowledge base was audited entry by entry against recalled knowledge of the published literature: citation, design, direction and magnitude. The registry gains a recall tier band that records that kind of evidence honestly — weaker than any source check, barred from setting a magnitude, and unable to move the verification headline — and the entries whose numbers were clearly wrong were corrected with their old values kept in the record. Shipped alongside the free-provider chain losing Cerebras and Mistral AI, whose free tiers no longer exist, and recognition of Google AI Studio's newer "AQ." key shape everywhere a key is detected or validated.
+Version: 1.3.0.3 - Two findings from review. A key belonging to a provider this app dropped (Cerebras, Mistral AI) is now refused rather than falling through to the "long key means Groq" default, which would have sent the user's credential to a vendor it was never issued for. And published construct norms gain an explicit scale_min: rescaling by a ratio of maxima had no notion of where a scale starts, so every zero-based instrument - a forced-choice proportion like the NPI, a 0-3 per-item mean like the PHQ-9 - landed below the target scale's own minimum and dragged its calibration to the floor. Twenty-one entries are marked zero-based and the rescale now preserves position within the range.
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.3.0.2"
+__version__ = "1.3.0.3"
 
 
 # =============================================================================

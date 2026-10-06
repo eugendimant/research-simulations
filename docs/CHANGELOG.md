@@ -1,3 +1,35 @@
+## 2026-10-06 — v1.3.0.3
+### Two review findings: a misrouted credential and a mis-origined norm
+
+- **A removed provider's key was being sent to Groq.** Deleting the Cerebras
+  and Mistral detection branches in v1.3.0.0 did not stop those key shapes
+  existing — a user who still holds one pastes it into "AI (your API key)".
+  Both then fell through to the generic ">30 characters means Groq" default
+  and were sent to Groq as a Bearer credential: a request that can only fail,
+  with the key disclosed to a vendor it was never issued for. The same default
+  sits on the un-detected-key fallback in the chain builder, so both paths are
+  fixed. `retired_provider_for_key()` names the shape, `detect_provider_from_key()`
+  returns None for it, no provider is built, and the app says which provider it
+  is and that it is no longer supported rather than "format not recognized".
+- **Construct norms gain an explicit `scale_min`.** `get_construct_norm()`
+  rescaled by a ratio of maxima, which has no notion of where a scale starts.
+  Every zero-based instrument therefore landed below the target scale's own
+  minimum: the NPI's 0.388 proportion of endorsed items became
+  `0.388 × 7/2 = 1.36` on a 1–7 scale instead of `1 + 0.388 × 6 = 3.33`,
+  dragging automatic narcissism calibration to the floor; the PHQ-9's 0–3
+  per-item mean came out at 0.7, below the scale entirely. Twenty-one entries
+  are marked `scale_min=0.0` (forced-choice proportions and 0–k per-item
+  means) and the rescale now preserves position within the range, with SD
+  scaled by the span ratio. An ordinary 1–k Likert is affected only in kind:
+  the midpoint of 1–5 now maps to the midpoint of 1–7 (4.0, was 4.2).
+
+**New tests** (`tests/test_codex_findings_v1303.py`): each retired key shape is
+named, detected as nothing, and builds no provider on either the constructor or
+the runtime path, while supported keys still route; every published mean sits
+inside its own declared range; no norm rescales outside the target scale at 5,
+7 or 9 points; the NPI lands at 3.328; and a 1–k Likert maps endpoint to
+endpoint.
+
 ## 2026-10-06 — v1.3.0.2
 ### Benchmark honesty: the alpha claim and the within-person SD entry
 

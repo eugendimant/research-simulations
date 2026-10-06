@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.0.2"
-BUILD_ID = "20261006-v13002-within-person-keying"
+REQUIRED_UTILS_VERSION = "1.3.0.3"
+BUILD_ID = "20261006-v13003-codex-findings"
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.3.0.2"  # v1.3.0.2: recall audit of all 484 literature calibration entries
+APP_VERSION = "1.3.0.3"  # v1.3.0.3: recall audit of all 484 literature calibration entries
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -13019,7 +13019,30 @@ if active_page == 3:
             if _key_val:
                 _detected_provider = "Unknown"
                 _key_valid_format = False
-                if _key_val.startswith("AIza") or _key_val.startswith("AQ."):
+                # v1.3.0.0: a key belonging to a dropped provider is named as
+                # such rather than shown as unrecognised, so the user is not
+                # left guessing whether they mistyped it. The generator refuses
+                # to build a provider for it (retired_provider_for_key), so it
+                # is never sent anywhere.
+                _retired_provider = None
+                try:
+                    from utils.llm_response_generator import retired_provider_for_key
+                    _retired_provider = retired_provider_for_key(_key_val)
+                except ImportError:
+                    _retired_provider = None
+
+                if _retired_provider:
+                    st.markdown(
+                        f'<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;'
+                        f'padding:8px 12px;margin:6px 0;">'
+                        f'<span style="color:#dc2626;font-size:0.85em;">'
+                        f'That looks like a <strong>{_retired_provider}</strong> key. '
+                        f'{_retired_provider} no longer offers a free tier, so it was '
+                        f'removed and this key cannot be used. Google AI Studio, Groq, '
+                        f'SambaNova, OpenRouter and OpenAI keys all work.</span></div>',
+                        unsafe_allow_html=True,
+                    )
+                elif _key_val.startswith("AIza") or _key_val.startswith("AQ."):
                     # v1.3.0.0: Google AI Studio keys come in two shapes —
                     # "AIza..." and, for keys created from late 2026, "AQ...".
                     _detected_provider = "Google AI Studio (Gemini)"
@@ -13040,7 +13063,9 @@ if active_page == 3:
                 else:
                     _key_valid_format = len(_key_val) >= 10
 
-                if _key_valid_format:
+                if _retired_provider:
+                    pass  # already reported above
+                elif _key_valid_format:
                     st.markdown(
                         f'<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;'
                         f'padding:8px 12px;margin:6px 0;">'

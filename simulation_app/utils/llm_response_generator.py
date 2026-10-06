@@ -2047,6 +2047,35 @@ def _is_low_quality_response(text: str, topic_tokens: Optional[List[str]] = None
 # ---------------------------------------------------------------------------
 # Key auto-detection for multi-provider support
 # ---------------------------------------------------------------------------
+#: Key shapes belonging to providers this app no longer supports. They are
+#: matched BEFORE the generic ">30 characters means Groq" default, because that
+#: default would otherwise send the user's credential to a vendor it does not
+#: belong to: a rejected request, and the key disclosed to the wrong company.
+#: Dropping a provider's chain entry is not a reason to start leaking its keys.
+_RETIRED_KEY_SHAPES: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
+    # Cerebras — unambiguous prefix. Free tier now requires a payment card.
+    ("Cerebras", re.compile(r"^csk-[A-Za-z0-9_\-]{10,}$")),
+    # Mistral AI — 32 alphanumeric characters, no prefix. This was always a
+    # heuristic rather than a documented format, but it is the shape the app
+    # itself told users to paste, so it is refused rather than forwarded.
+    ("Mistral AI", re.compile(r"^[a-zA-Z0-9]{32}$")),
+)
+
+
+def retired_provider_for_key(api_key: str) -> Optional[str]:
+    """Return the display name of a removed provider whose key shape this is.
+
+    Returns None for every other key, including an empty one. Callers must not
+    build a provider for a key this names: the provider is gone, so there is no
+    endpoint it belongs to, and the generic fallback would hand it to Groq.
+    """
+    key = (api_key or "").strip()
+    if not key:
+        return None
+    for name, pattern in _RETIRED_KEY_SHAPES:
+        if pattern.match(key):
+            return name
+    return None
 def detect_provider_from_key(api_key: str, provider_hint: str = "") -> Optional[Dict[str, str]]:
     """Auto-detect LLM provider from API key prefix.
 
@@ -2087,6 +2116,12 @@ def detect_provider_from_key(api_key: str, provider_hint: str = "") -> Optional[
     _hint_lower = (provider_hint or "").lower()
     if "sambanova" in _hint_lower:
         return {"name": "sambanova", "api_url": SAMBANOVA_API_URL, "model": SAMBANOVA_MODEL}
+
+    # v1.3.0.0: a key belonging to a provider this app dropped is refused here,
+    # before the Groq default below could forward the credential to a vendor it
+    # was never issued for.
+    if retired_provider_for_key(key):
+        return None
 
     if len(key) > 30:
         # Default to Groq for unrecognized long keys
@@ -2534,6 +2569,15 @@ class LLMResponseGenerator:
                     api_key=user_key,
                     max_rpm=_user_rpm,
                 ))
+            elif retired_provider_for_key(user_key):
+                # v1.3.0.0: detection returned None because this is a removed
+                # provider's key. The Groq default below is exactly what must
+                # not happen to it — no provider is built, and the user falls
+                # back to the built-in engine with their key untouched.
+                logger.warning(
+                    "User key matches %s, a provider this app no longer "
+                    "supports; no provider was built for it (the key was NOT "
+                    "sent anywhere).", retired_provider_for_key(user_key))
             else:
                 self._providers.append(_LLMProvider(
                     name="groq_user",

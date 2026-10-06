@@ -92,9 +92,17 @@ class ConstructNorm:
     source: str
     construct: str
     scale_name: str               # e.g., "UCLA Loneliness Scale", "SWLS"
-    scale_points: int             # e.g., 7 for 1-7 Likert
+    scale_points: int             # number of response options, e.g. 7 for 1-7
     mean: float                   # Published mean
     sd: float                     # Published SD
+    #: Lowest value the published scale can take. 1.0 for an ordinary 1-k
+    #: Likert; 0.0 for an instrument scored from zero — a forced-choice
+    #: proportion (NPI, MC-SDS) or a 0-3 / 0-4 per-item mean (PHQ-9, GAD-7).
+    #: Rescaling needs it: without an origin, a 0.388 proportion was treated as
+    #: if 0.388 sat on a 1-2 scale, and every zero-based instrument landed
+    #: BELOW the target scale's own minimum. The published maximum is
+    #: scale_min + scale_points - 1, which gives 1..7, 0..1 and 0..3 correctly.
+    scale_min: float = 1.0
     ci_95_mean: Tuple[float, float] = (0.0, 0.0)
     skewness: float = 0.0        # Distribution skew
     kurtosis: float = 0.0        # Distribution kurtosis
@@ -4994,6 +5002,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="NPI-40",
         scale_points=2,
         mean=0.388,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.17,
         skewness=0.3,
         sample_type="student",
@@ -5083,6 +5092,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="PHQ-9",
         scale_points=4,
         mean=0.4,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.65,
         skewness=1.2,
         sample_type="general",
@@ -5122,6 +5132,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="GAD-7",
         scale_points=4,  # 0-3 per item
         mean=0.45,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.78,
         skewness=1.0,
         sample_type="general",
@@ -5135,6 +5146,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="BDI-II",
         scale_points=4,  # 0-3 per item
         mean=0.53,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.48,
         skewness=1.3,
         sample_type="general",
@@ -5148,6 +5160,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="PCL-5",
         scale_points=5,  # 0-4 per item
         mean=0.75,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.80,
         skewness=1.4,
         sample_type="general",
@@ -5163,6 +5176,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="LSAS",
         scale_points=4,  # 0-3 per item (fear + avoidance)
         mean=0.5,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.72,
         skewness=0.8,
         sample_type="general",
@@ -5176,6 +5190,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="Y-BOCS",
         scale_points=5,  # 0-4 per item
         mean=0.55,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.70,
         skewness=1.6,
         sample_type='clinical',
@@ -5191,6 +5206,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="EAT-26",
         scale_points=6,  # 0-3 scored (6-point response)
         mean=0.60,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.55,
         skewness=1.5,
         sample_type="general",
@@ -5207,6 +5223,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="PDSS",
         scale_points=5,  # 0-4 per item
         mean=0.45,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.65,
         skewness=1.8,
         sample_type="general",
@@ -5222,6 +5239,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="AUDIT",
         scale_points=5,  # 0-4 per item
         mean=0.45,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.72,
         skewness=1.2,
         sample_type="general",
@@ -5250,6 +5268,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="DAS",
         scale_points=2,  # True/False (0-1)
         mean=0.44,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.22,
         sample_type="general",
         n_participants=4500,
@@ -5264,6 +5283,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="PSQI",
         scale_points=4,  # 0-3 per component
         mean=0.7,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.65,
         skewness=0.7,
         sample_type="general",
@@ -5292,6 +5312,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="HAI",
         scale_points=4,  # 0-3 per item
         mean=0.70,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.50,
         skewness=1.0,
         sample_type="general",
@@ -5307,6 +5328,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="PHQ-15",
         scale_points=3,  # 0-2 per item
         mean=0.3,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.52,
         skewness=0.8,
         sample_type="general",
@@ -5320,6 +5342,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="SCL-90-R IS",
         scale_points=5,  # 0-4
         mean=0.5,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.70,
         skewness=0.9,
         sample_type="general",
@@ -5336,6 +5359,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="SPIN",
         scale_points=5,  # 0-4 per item
         mean=0.85,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.68,
         skewness=0.9,
         sample_type="general",
@@ -5381,6 +5405,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="WI",
         scale_points=2,  # 0-1 (yes/no)
         mean=0.28,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.20,
         skewness=0.8,
         sample_type="general",
@@ -6095,6 +6120,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="LOC",
         scale_points=2,  # 0/1 forced choice (29 items)
         mean=0.42,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.15,
         sample_type="general",
         n_participants=6000,
@@ -6641,6 +6667,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name='WIS-7',
         scale_points=5,  # 0-4 (never to many times)
         mean=0.75,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.70,
         skewness=1.2,
         sample_type="general",
@@ -6920,6 +6947,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="ECVS",
         scale_points=5,  # 0-4 (never to always)
         mean=0.55,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.60,
         skewness=1.8,
         sample_type="student",
@@ -7436,6 +7464,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         scale_name="MC-SDS",
         scale_points=2,  # 0/1 (true/false)
         mean=0.47,
+        scale_min=0.0,  # scored from zero (proportion / 0-k per-item mean)
         sd=0.20,
         sample_type="general",
         n_participants=6000,
@@ -7947,25 +7976,41 @@ def get_construct_norm(
     if norm is None:
         return None
 
-    # Rescale from published scale to target scale
-    published_max = float(norm.scale_points)
+    # Rescale from the published scale to the target scale, preserving
+    # position within the range rather than multiplying by a ratio of maxima.
+    # The ratio form has no notion of where a scale starts, so a zero-based
+    # instrument came out below the target scale's minimum: the NPI's 0.388
+    # proportion of endorsed items became 0.388 * 7/2 = 1.36 on a 1-7 scale
+    # instead of 1 + 0.388 * 6 = 3.33, pushing simulated narcissism scores to
+    # the floor. The published maximum is scale_min + scale_points - 1.
+    published_min = float(norm.scale_min)
+    published_max = published_min + float(norm.scale_points) - 1.0
+    published_span = published_max - published_min
+    target_min = 1.0
     target_max = float(target_scale_points)
-    scale_factor = target_max / published_max
+    target_span = target_max - target_min
+    if published_span <= 0:  # malformed entry — leave the value alone
+        return {"mean": norm.mean, "sd": norm.sd,
+                "skewness": norm.skewness, "kurtosis": norm.kurtosis}
 
-    mean = norm.mean * scale_factor
-    sd = norm.sd * scale_factor
+    def _to_target(value: float) -> float:
+        return target_min + ((value - published_min) / published_span) * target_span
+
+    # An SD is a width, not a position, so it scales by the span ratio only.
+    sd = norm.sd * (target_span / published_span)
+    mean = _to_target(norm.mean)
 
     # Apply cultural moderator if available
     if culture != "western" and "culture" in norm.moderators:
         cult_mod = norm.moderators["culture"]
         if culture in cult_mod:
-            mean = cult_mod[culture] * scale_factor
+            mean = _to_target(cult_mod[culture])
 
     # Apply sample type moderator
     if sample_type != "general" and "sample" in norm.moderators:
         samp_mod = norm.moderators["sample"]
         if sample_type in samp_mod:
-            mean = samp_mod[sample_type] * scale_factor
+            mean = _to_target(samp_mod[sample_type])
 
     return {
         "mean": mean,
