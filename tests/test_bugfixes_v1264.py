@@ -289,7 +289,7 @@ def test_scale_items_list_sets_num_items_and_names():
 
 def test_hbs_stable_hash_is_process_stable():
     """Audit 3.4: seeded hashing must not use Python's salted hash()."""
-    from utils.hbs_engine import _stable_int_hash
+    from utils.enhanced_simulation_engine import _stable_int_hash
     assert _stable_int_hash("col") == _stable_int_hash("col")
     assert isinstance(_stable_int_hash("col"), int)
 

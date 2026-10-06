@@ -48,17 +48,13 @@ Previous (v2.4.5 - 5 Iterations of Improvements):
     - Enhanced DV detection, cultural personas, new domains, export formats
 
 Modules:
-    - qsf_parser: Parse Qualtrics Survey Format (.qsf) files
     - qsf_preview: Interactive QSF preview with 200+ exclusion patterns
-    - simulation_engine: Core simulation logic with persona-based generation
     - enhanced_simulation_engine: Advanced simulation with effect sizes and personas
     - persona_library: Comprehensive behavioral persona library (50+ archetypes)
     - response_library: 225+ domain-specific response templates
-    - text_generator: Free open-ended text response generation (40 question types)
     - condition_identifier: Enhanced condition identification (30 variable roles)
     - instructor_report: Comprehensive instructor-only analysis reports
     - schema_validator: Data validation with 10+ quality checks
-    - pdf_generator: Generate tamper-proof audit log PDFs
     - group_management: Student group registration and usage tracking
     - svg_charts: Pure SVG chart generators (guaranteed visualizations)
     - github_qsf_collector: Auto-upload QSF files to GitHub for collection
@@ -165,8 +161,6 @@ def detect_oe_columns(df, known_oe_names=None):
 
     return oe_cols
 
-from .qsf_parser import parse_qsf_file, extract_survey_structure, generate_qsf_summary
-from .simulation_engine import SimulationEngine
 from .enhanced_simulation_engine import (
     EnhancedSimulationEngine,
     EffectSizeSpec,
@@ -179,7 +173,6 @@ from .persona_library import (
     TextResponseGenerator,
     StimulusEvaluationHandler
 )
-from .pdf_generator import generate_audit_log_pdf
 from .schema_validator import (
     validate_schema,
     generate_schema_summary,
@@ -217,14 +210,6 @@ from .condition_identifier import (
     RandomizationInfo,
     analyze_qsf_design,
 )
-from .text_generator import (
-    OpenEndedTextGenerator,
-    PersonaTextTraits,
-    ResponseSentiment,
-    ResponseStyle,
-    MarkovChainGenerator,
-    create_text_generator,
-)
 from .svg_charts import (
     create_bar_chart_svg,
     create_distribution_svg,
@@ -260,11 +245,6 @@ from .scientific_knowledge_base import (
 
 __all__ = [
     # Original exports
-    'parse_qsf_file',
-    'extract_survey_structure',
-    'generate_qsf_summary',
-    'SimulationEngine',
-    'generate_audit_log_pdf',
     'validate_schema',
     'generate_schema_summary',
     'check_data_quality',
@@ -306,12 +286,6 @@ __all__ = [
     'RandomizationInfo',
     'analyze_qsf_design',
     # Text generator
-    'OpenEndedTextGenerator',
-    'PersonaTextTraits',
-    'ResponseSentiment',
-    'ResponseStyle',
-    'MarkovChainGenerator',
-    'create_text_generator',
     # SVG charts (guaranteed visualization fallbacks)
     'create_bar_chart_svg',
     'create_distribution_svg',
