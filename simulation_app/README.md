@@ -4,7 +4,7 @@
 
 ## What it does
 
-Upload a `.qsf` (or describe your study) and get a complete data package: numeric DV responses, open-ended text, demographics, attention/manipulation/comprehension checks, timing paradata, exclusion flags, and ready-to-run analysis scripts in R, Python, Julia, SPSS and Stata.
+Upload a `.qsf` (or describe your study) and get a complete data package: numeric DV responses, open-ended text, demographics, attention/manipulation/comprehension checks, timing paradata, exclusion flags, and data-preparation scripts in R, Python, Julia, SPSS and Stata (load the CSV, code the conditions, reverse-score items, build scale composites, apply the recommended exclusions; the statistical analysis is yours to run).
 
 Conditions, factors and scales are detected from the QSF automatically; you confirm or edit them before generating.
 

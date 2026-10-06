@@ -856,3 +856,90 @@ def test_core_modules_are_still_imported_strictly():
                  "from utils.survey_builder import"):
         index = head.index(core)
         assert not head[max(0, index - 200):index].rstrip().endswith("try:"), core
+
+
+# ---- 11. documentation says what the code does ----------------------------------------------------
+_ROOT = _APP_DIR.parent
+
+
+def _read(relative: str) -> str:
+    return (_ROOT / relative).read_text(encoding="utf-8")
+
+
+def test_docs_give_the_real_template_engine_limit_instead_of_unlimited():
+    import re
+
+    max_n = int(re.search(r"^MAX_SIMULATED_N\s*=\s*(\d+)", _read("simulation_app/app.py"), re.MULTILINE).group(1))
+    assert max_n == 10000
+    for relative in ("docs/guide/limitations.md", "README.md"):
+        text = _read(relative)
+        assert "unlimited" not in text.lower(), relative
+        assert f"{max_n:,}" in text, relative
+
+
+def test_limitations_page_does_not_send_users_to_a_reverse_item_control_that_does_not_exist():
+    import ast
+
+    assert "mark reverse-keyed items on the Design page" not in _read("docs/guide/limitations.md")
+    widgets = {"checkbox", "multiselect", "text_input", "text_area", "number_input", "selectbox", "radio", "toggle", "data_editor"}
+    labelled = []
+    for node in ast.walk(ast.parse(_read("simulation_app/app.py"))):
+        if isinstance(node, ast.Call) and getattr(node.func, "attr", "") in widgets and node.args:
+            first = node.args[0]
+            parts = [first] if isinstance(first, ast.Constant) else list(ast.walk(first))
+            text = " ".join(str(p.value) for p in parts if isinstance(p, ast.Constant) and isinstance(p.value, str))
+            if "reverse" in text.lower():
+                labelled.append((node.lineno, text[:60]))
+    assert not labelled, f"the app has a reverse-item widget now, update the limitations page: {labelled}"
+
+
+def test_technical_methods_page_carries_the_real_licence():
+    text = _read("docs/internal/technical_methods.md")
+    assert "proprietary" not in text.lower() and "all rights reserved" not in text.lower()
+    assert text.count("PolyForm Noncommercial License 1.0.0") == 2
+    assert "PolyForm Noncommercial License 1.0.0" in _read("LICENSE")
+
+
+def test_exported_scripts_are_described_as_data_preparation_because_that_is_all_they_do():
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+
+    assert "ready-to-run analysis scripts" not in _read("simulation_app/README.md")
+    source = _read("simulation_app/app.py")
+    for stale in ("analysis scripts in 5", "metadata + analysis scripts)", "metadata, analysis scripts)", "(data files, '\n            'analysis scripts"):
+        assert stale not in source, stale
+    engine = EnhancedSimulationEngine(
+        study_title="Scripts", study_description="A pilot study of satisfaction", sample_size=40, conditions=["Alpha", "Bravo"],
+        factors=[], scales=[_scale()], additional_vars=[], demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        open_ended_questions=[], effect_sizes=[], seed=3)
+    engine.llm_generator.disable_permanently("test")
+    df, _ = engine.generate()
+    analysis_calls = ("t.test(", "aov(", "anova(", "lm(", "glm(", "ttest", "f_oneway", "ols(", "mixedlm", "regress ", "ttest ", "oneway ",
+                      "T-TEST", "ONEWAY", "UNIANOVA", "MIXED ", "pingouin", "scipy.stats", "statsmodels", "HypothesisTests")
+    for name in ("r", "python", "julia", "spss", "stata"):
+        script = getattr(engine, f"generate_{name}_export")(df)
+        assert "Data Preparation" in script or "prepar" in script.lower(), name
+        assert not [call for call in analysis_calls if call in script], (name, [c for c in analysis_calls if c in script])
+
+
+def test_download_button_says_data_preparation_scripts(apptest_env):
+    at = _generate_page(["Alpha", "Bravo"], n=40, advanced=False)
+    _click_generate(at)
+    labels = [b.label for b in at.get("download_button")]
+    assert "Download ZIP (CSV + metadata + data-preparation scripts)" in labels, labels
+
+
+def test_changelog_numeric_text_box_count_matches_the_corpus():
+    from utils.enhanced_simulation_engine import clean_question_text, infer_numeric_answer_spec
+    from utils.qsf_preview import QSFPreviewParser
+
+    files = sorted((_APP_DIR / "example_files").glob("*.qsf"))
+    if len(files) != 302:
+        pytest.skip("the changelog counts the 302-file corpus; the example folder has changed")
+    total = numeric = 0
+    for path in files:
+        for question in QSFPreviewParser().parse(path.read_bytes()).open_ended_details:
+            total += 1
+            text = clean_question_text(question.get("question_text") or "")
+            if infer_numeric_answer_spec(text, question["variable_name"], dict(question)) is not None:
+                numeric += 1
+    assert f"Numeric text boxes ({numeric:,} of the {total:,} open-ended questions in the 302-file corpus)" in _read("docs/CHANGELOG.md")

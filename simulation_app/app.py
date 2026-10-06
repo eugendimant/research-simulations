@@ -9726,7 +9726,7 @@ if active_page == -1:
             '<div class="step-detail-text"><strong>Name Your Study</strong>'
             '<span>Enter your study title and a description of your experiment\'s purpose, manipulation, '
             'and main outcomes. This information is embedded in all generated outputs (data files, '
-            'analysis scripts, reports).</span></div></div>'
+            'data-preparation scripts, reports).</span></div></div>'
 
             '<div class="step-detail-item">'
             '<div class="step-num">2</div>'
@@ -9746,7 +9746,7 @@ if active_page == -1:
             '<div class="step-num">4</div>'
             '<div class="step-detail-text"><strong>Generate & Download</strong>'
             '<span>Choose a difficulty level (easy to expert) that controls noise, attention check failure rates, '
-            'and response quality. Generate your complete data package \u2014 CSV, codebook, analysis scripts in 5 '
+            'and response quality. Generate your complete data package \u2014 CSV, codebook, data-preparation scripts in 5 '
             'languages, summary reports, and metadata.</span></div></div>'
 
             '</div>',
@@ -16356,7 +16356,7 @@ if active_page == 3:
                     st.caption(f"Top recurring issue codes: {', '.join(_dl_top_issues[:3])}")
 
         st.download_button(
-            "Download ZIP (CSV + metadata + analysis scripts)",
+            "Download ZIP (CSV + metadata + data-preparation scripts)",
             data=zip_bytes,
             file_name=f"behavioral_simulation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
             mime="application/zip",
@@ -16439,7 +16439,7 @@ if active_page == 3:
                     # visitor must not be able to choose its subject or attach documents of their own.
                     subject = "[Behavioral Simulation] Your simulation output"
                     body = (
-                        "Attached is the simulation output ZIP (Simulated_Data.csv, Simulation_Diagnostics.csv, metadata, analysis scripts).\n"
+                        "Attached is the simulation output ZIP (Simulated_Data.csv, Simulation_Diagnostics.csv, metadata, data-preparation scripts).\n"
                         "Files you uploaded to the app are not included in the emailed copy; the Download button has the full package.\n\n"
                         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
                     )

@@ -23,7 +23,7 @@ You upload a `.qsf` file (or describe your study). The tool detects the conditio
 
 - **Numeric responses** for Likert, matrix, slider, numeric-input, constant-sum, rank-order and similar scales. Participants have response styles drawn from survey-methodology research (engaged, satisficing, extreme, acquiescent and careless responding, reverse-item failure, social desirability, fatigue, straight-lining). Values always stay inside the scale's range.
 - **Condition effects.** Specify a Cohen's d for an outcome and a contrast and the data show roughly that d on the scale mean. Where you specify nothing, small differences are inferred from the condition names; you can switch that off for a true null. See [How effects work](docs/guide/how-effects-work.md).
-- **Open-ended text** written to fit each participant's ratings and the question topic. In the built-in AI mode, free language-model providers write the first 100 responses and a template engine writes the rest; the template engine alone is unlimited and works offline. Numeric text boxes (age, counts, amounts) get numbers.
+- **Open-ended text** written to fit each participant's ratings and the question topic. In the built-in AI mode, free language-model providers write the first 100 responses and a template engine writes the rest; the template engine alone works offline and goes up to 10,000 participants. Numeric text boxes (age, counts, amounts) get numbers.
 - **Quality flags and exclusions** (speed, attention checks, straight-lining) so you can practice or pre-register exclusion rules.
 - **Between-subjects designs**, including factorial designs. Within-subject and clustered designs are not modeled yet; the design step says so when you pick one.
 
