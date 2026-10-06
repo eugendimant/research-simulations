@@ -12178,9 +12178,33 @@ class EnhancedSimulationEngine:
                 cols = [_source(c) for c in icols]
                 if any(any(v != v for v in col) for col in cols):
                     continue      # missing data present: leave the block alone
+                # v1.2.9.4 — the target is width- and keying-conditional, not one
+                # global share. Measured over every contiguous window of four
+                # published instruments, the rate falls from 7.1% at 3 items to
+                # 0.17% at 10, and a same-keyed block runs 3-6x a mixed-keyed one
+                # of the same width (nothing contradicts a run of identical answers
+                # when every item points the same way). A single 5.2% constant is
+                # therefore roughly right only for a direction-aligned 5-item block
+                # and wrong by an order of magnitude at either end of that range.
+                # The registry declines outside the widths it was measured at, and
+                # a declined lookup keeps the previous constant.
+                _target_share = DEFAULT_STRAIGHTLINE_SHARE
+                _sl_hit = None
+                if HAS_EMPIRICAL_REGISTRY:
+                    _rev = log_entry.get("reverse_items") or []
+                    _keying = "mixed" if _rev else "same"
+                    _sl_sig = _design_signature.for_block(
+                        scale_min=smin, scale_max=smax, n_items=len(icols),
+                        keying=_keying,
+                    )
+                    _sl_hit = _empirical_registry.lookup_best(
+                        f"item.likert.{_keying}.k{len(icols)}",
+                        "straightlined_share", _sl_sig)
+                    if _sl_hit is not None:
+                        _target_share = float(_sl_hit.value)
                 new_cols, report = match_straightlining(
                     cols, smin, smax,
-                    target_share=DEFAULT_STRAIGHTLINE_SHARE, rng=_rng,
+                    target_share=_target_share, rng=_rng,
                 )
                 if report.get("applied"):
                     # Keep integer columns integral: these passes work in floats,
@@ -12192,13 +12216,20 @@ class EnhancedSimulationEngine:
                         if frame is not None and c in getattr(frame, "columns", []):
                             frame[c] = vals
                     changed.extend(icols)
+                    _src = (f"{_sl_hit.entry_id}, {_sl_hit.tier}" if _sl_hit is not None
+                            else "default 5-item reference")
                     self._log(
                         f"Identical-answer realism for '{log_entry.get('name')}': "
                         f"{report.get('share_before')} -> {report.get('share_after')} "
-                        f"(real reference {DEFAULT_STRAIGHTLINE_SHARE})"
+                        f"(target {_target_share:.4f} from {_src})"
                     )
+                    if _sl_hit is not None and self.registry_ledger is not None:
+                        self.registry_ledger.record_lookup(
+                            _sl_hit, f"scale '{log_entry.get('name')}' straight-lining")
                     self._item_realism_log.append(
-                        dict(scale=log_entry.get("name"), pass_name="identical_answers", **report)
+                        dict(report, scale=log_entry.get("name"),
+                             pass_name="identical_answers",
+                             entry_id=(_sl_hit.entry_id if _sl_hit else ""))
                     )
             except Exception as err:
                 self._log(

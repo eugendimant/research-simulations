@@ -54,8 +54,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.2.9.3"
-BUILD_ID = "20261006-v12093-measured-marginal-shape"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.2.9.4"
+BUILD_ID = "20261006-v12094-straightlining-by-width-and-keying"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -146,7 +146,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.2.9.3"  # v1.2.9.3: Measured marginal shape. Simulated Likert items were far too tame - item SD 0.22 of the scale span against 0.295 measured across 17 blocks of four published instruments (48,431 respondents), with 12% of responses on an endpoint against 34%, and peaked where real data is flat. Each item is now rank-transported onto a maximum-entropy distribution carrying its own mean and the measured dispersion, so every participant keeps their position and the manipulation survives intact
+APP_VERSION = "1.2.9.4"  # v1.2.9.4: Straight-lining matched to real rates at every block width. The rate is strongly width- and keying-dependent (7.1% of respondents answer a 3-item block identically, 0.17% a 10-item one, and a same-keyed block runs 3-6x a mixed-keyed one), so one global share was wrong by an order of magnitude at either end; the validator benchmark that forced the data into a flat 3-8% band is now driven by the same measured curve
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")

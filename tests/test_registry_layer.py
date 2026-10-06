@@ -281,3 +281,87 @@ def test_dispersion_match_returns_integers_on_an_integer_scale():
                                    rng=random.Random(7))
     for col in new:
         assert all(isinstance(v, int) and 1 <= v <= 5 for v in col)
+
+
+# --------------------------------------------------------------------------
+# Straight-lining: width- and keying-conditional, and bidirectional
+# --------------------------------------------------------------------------
+
+from utils.item_realism import match_straightlining, straightlined_share  # noqa: E402
+
+
+def test_straightlining_entries_fall_with_block_width():
+    """Straight-lining a 3-item block is far easier than a 10-item one. A single
+    global share is therefore wrong by an order of magnitude at one end or other."""
+    vals = {}
+    for k in range(3, 11):
+        ent = R.entries().get(f"item.likert.mixed.k{k}.straightlined_share")
+        if ent is not None:
+            vals[k] = ent.value
+    assert len(vals) >= 6
+    ks = sorted(vals)
+    assert all(vals[a] > vals[b] for a, b in zip(ks, ks[1:]))
+    assert vals[ks[0]] > 10 * vals[ks[-1]]
+
+
+def test_same_keyed_blocks_straightline_more_than_mixed_keyed():
+    for k in (3, 5, 8):
+        same = R.entries().get(f"item.likert.same.k{k}.straightlined_share")
+        mixed = R.entries().get(f"item.likert.mixed.k{k}.straightlined_share")
+        assert same is not None and mixed is not None
+        assert same.value > 2 * mixed.value
+
+
+def test_single_block_entries_say_so():
+    for ent in R.entries().values():
+        n = len(ent.provenance.get("contributing_blocks") or [])
+        if n == 1:
+            assert any("single contributing block" in c for c in ent.caveats), ent.entry_id
+
+
+def _sl_fixture(share, n=600, k=8, seed=5):
+    rng = random.Random(seed)
+    cols = [[0.0] * n for _ in range(k)]
+    n_const = int(share * n)
+    for i in range(n):
+        row = ([rng.choice([1, 7])] * k if i < n_const
+               else [rng.randint(1, 7) for _ in range(k)])
+        for j in range(k):
+            cols[j][i] = float(row[j])
+    return cols
+
+
+def test_straightlining_raises_a_share_that_is_too_low():
+    cols = _sl_fixture(0.002)
+    new, rep = match_straightlining(cols, 1, 7, target_share=0.036,
+                                    rng=random.Random(1))
+    assert rep["applied"]
+    assert straightlined_share(new) == pytest.approx(0.036, abs=0.005)
+
+
+def test_straightlining_lowers_a_share_that_is_too_high():
+    """New in v1.2.9.3. The marginal-shape pass produces constant rows readily, so
+    the pass has to be able to correct downward too — an 8-item block was coming
+    out at 3.7% where the mixed-keyed real rate is 0.30%."""
+    cols = _sl_fixture(0.10)
+    new, rep = match_straightlining(cols, 1, 7, target_share=0.003,
+                                    rng=random.Random(1))
+    assert rep["applied"] and rep.get("n_broken", 0) > 0
+    assert straightlined_share(new) == pytest.approx(0.003, abs=0.003)
+
+
+def test_breaking_a_row_stays_on_scale():
+    cols = _sl_fixture(0.10)
+    new, _ = match_straightlining(cols, 1, 7, target_share=0.003,
+                                  rng=random.Random(1))
+    assert all(1 <= v <= 7 for col in new for v in col)
+
+
+def test_validator_straightlining_range_follows_block_width():
+    from utils.hbs_validator import HBSValidator
+    v = HBSValidator()
+    lo3, hi3 = v._straightlining_range(3)
+    lo10, hi10 = v._straightlining_range(10)
+    assert hi3 > hi10 and lo3 > lo10
+    # The old flat benchmark forced a 10-item block to 3-8%; measured is far lower.
+    assert hi10 < 0.03

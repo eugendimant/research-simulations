@@ -129,6 +129,29 @@ def profile_block(mat: np.ndarray, lo: int, hi: int) -> Dict[str, float]:
     }
 
 
+def straightlining_by_width(mat: np.ndarray, widths=range(3, 11)) -> Dict[int, float]:
+    """Share of respondents answering identically across a contiguous k-item window.
+
+    Averaged over every window of that width in the block. Simulated blocks are
+    short - 3 to 8 items is typical - and the published instruments here are 8 to
+    50, so the rate has to be measured AT the width it will be applied at. It is
+    strongly width-dependent (a 3-item window is far easier to straight-line than
+    a 10-item one), which is exactly why one global share was wrong.
+    """
+    n_rows, n_items = mat.shape
+    out: Dict[int, float] = {}
+    for k in widths:
+        if k > n_items:
+            continue
+        shares = []
+        for start in range(0, n_items - k + 1):
+            win = mat[:, start:start + k]
+            shares.append(float((win == win[:, :1]).all(axis=1).mean()))
+        if shares:
+            out[int(k)] = float(np.mean(shares))
+    return out
+
+
 def complete_matrix(df: pd.DataFrame, items: Sequence[str], missing) -> np.ndarray:
     sub = df[list(items)].apply(pd.to_numeric, errors="coerce")
     for code in missing:
@@ -204,7 +227,10 @@ def _entry(entry_id, quantity, values, effect_scale, applicability, contributors
                 "be re-fetched when it becomes reachable"
             ),
         },
-        "caveats": caveats,
+        "caveats": tuple(caveats) + ((
+            "Derived from a single contributing block, so the value is an order of "
+            "magnitude rather than a precise rate",
+        ) if len(contributors) < 2 else ()),
     }
 
 
@@ -283,6 +309,35 @@ def build_entries(block_profiles, full_profiles, sources) -> List[Dict]:
                     "excess kurtosis) where 5-point attitude scales are flat. This is "
                     "a wide-polarised-scale profile, not a general 9-point one",
                 ]))
+    # Straight-lining as a function of block width and keying. Two dimensions,
+    # because the rate moves by an order of magnitude along each of them: a
+    # same-keyed block straight-lines far more than a mixed-keyed one (nothing
+    # contradicts a run of identical answers when every item points the same way),
+    # and a short window far more than a long one.
+    for keying, want_same in (("mixed", False), ("same", True)):
+        by_k: Dict[int, List[float]] = {}
+        contributors: Dict[int, List[str]] = {}
+        for p in block_profiles:
+            is_same = (p["dataset"], p["block"]) in SAME_KEYED_BLOCKS
+            if is_same != want_same:
+                continue
+            for k_str, v in (p.get("straightlining_by_width") or {}).items():
+                by_k.setdefault(int(k_str), []).append(float(v))
+                contributors.setdefault(int(k_str), []).append(tag(p))
+        for k, vals in sorted(by_k.items()):
+            if not vals:
+                continue
+            app = {"scale_points": None, "items_per_block": [k, k], "keying": keying,
+                   "design": "any", "population": "any", "repetition": "any"}
+            entries.append(_entry(
+                f"item.likert.{keying}.k{k}.straightlined_share", "proportion",
+                vals, "proportion", app, contributors[k], sources,
+                common_caveats + [
+                    "Measured over every contiguous %d-item window of each block, so "
+                    "it is the rate for a block of that width rather than for a whole "
+                    "instrument" % k,
+                ]))
+
     # Scale-free entries. Expressed as a fraction of the scale span, and only
     # emitted when the fraction actually agrees across scale lengths — which is the
     # empirical question, not an assumption. Dispersion across all contributing
@@ -345,8 +400,11 @@ def main(argv: List[str]) -> int:
             bmat = complete_matrix(df, bitems, spec["missing"])
             if bmat.shape[0] < 100:
                 continue
-            block_profiles.append(dict(dataset=spec["name"], scale_points=hi - lo + 1,
-                                       block=bname, **profile_block(bmat, lo, hi)))
+            prof = dict(dataset=spec["name"], scale_points=hi - lo + 1,
+                        block=bname, **profile_block(bmat, lo, hi))
+            prof["straightlining_by_width"] = {
+                str(k): v for k, v in straightlining_by_width(bmat).items()}
+            block_profiles.append(prof)
 
     out = {
         "schema_version": 1,

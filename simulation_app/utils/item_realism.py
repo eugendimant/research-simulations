@@ -317,8 +317,17 @@ def match_straightlining(
     Each selected respondent's block collapses to their own rounded block mean, so
     their rank on the construct is unchanged and no treatment effect moves.
 
-    Never removes existing constant rows, and never converts more than a quarter
-    of the sample however high `target_share` is.
+    Works in BOTH directions. Raising the share was the original problem: a
+    continuous latent trait plus noise almost never produces identical integers.
+    Lowering it became a problem once the marginal-shape pass landed, because a
+    flat marginal produces constant rows readily — on an 8-item block the engine
+    was delivering 3.7% where real mixed-keyed 8-item blocks sit at 0.30%, which
+    is a 12x tell in the opposite direction. Excess constant rows are broken by
+    nudging ONE item of the row by a single scale point, chosen toward the block
+    interior so the row stays plausible and the item's marginal barely moves.
+
+    Never converts more than a quarter of the sample however high `target_share`
+    is, and never touches a row it does not have to.
     """
     k = len(columns)
     if k < 2:
@@ -329,7 +338,38 @@ def match_straightlining(
     cols = [[float(v) for v in c[:n]] for c in columns]
     current = straightlined_share(cols)
     target = max(0.0, min(0.25, float(target_share)))
-    if current >= target:
+    if current > target:
+        excess = int(round((current - target) * n))
+        if excess <= 0:
+            return cols, {"applied": False, "reason": f"already at {current:.3f}",
+                          "share_before": round(current, 4)}
+        _rng = rng or random.Random(0x57BA)
+        constant_rows = [i for i in range(n)
+                         if len({cols[j][i] for j in range(k)}) == 1]
+        _rng.shuffle(constant_rows)
+        broken = 0
+        for i in constant_rows[:excess]:
+            j = _rng.randrange(k)
+            v = cols[j][i]
+            # Step toward the middle of the scale when at an endpoint, otherwise
+            # either way: a row of 7s becoming 7,7,6,7 reads as a real respondent,
+            # a row of 7s becoming 7,7,8,7 is off-scale.
+            if v <= float(scale_min):
+                cols[j][i] = v + 1.0
+            elif v >= float(scale_max):
+                cols[j][i] = v - 1.0
+            else:
+                cols[j][i] = v + (1.0 if _rng.random() < 0.5 else -1.0)
+            broken += 1
+        return cols, {
+            "applied": broken > 0,
+            "reason": f"broke {broken} excess identical rows",
+            "share_before": round(current, 4),
+            "share_after": round(straightlined_share(cols), 4),
+            "target_share": round(target, 4),
+            "n_broken": broken,
+        }
+    if current == target:
         return cols, {"applied": False, "reason": f"already at {current:.3f}",
                       "share_before": round(current, 4)}
     need = int(round((target - current) * n))

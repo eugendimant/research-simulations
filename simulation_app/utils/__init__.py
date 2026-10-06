@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.9.3 - Measured marginal shape for Likert items. Benchmarked against 48,431 real respondents across four published instruments, simulated items came out far too tame: item SD 0.22 of the scale span against a measured 0.295 (SD 0.019 across 5-point and 9-point scales alike), 12% of responses on an endpoint against 34%, and excess kurtosis -0.15 where real 5-point attitude scales are flat at -0.51. Each item is now rank-transported onto a maximum-entropy distribution carrying the item's own mean and the measured dispersion, widened by whatever between-condition variance the column already holds, so every participant keeps their position and the manipulation, the persona structure and the inter-item correlation all survive while only the marginal changes. Measured across three designs and three seeds: item SD 0.217 to 0.297 of span, endpoint share 0.12 to 0.28, excess kurtosis -0.15 to -0.69, alpha still inside the real 0.79-0.89 band, and the recovered treatment effect unchanged
+Version: 1.2.9.4 - Straight-lining matched to real rates at every block width. Measured over every contiguous window of four published instruments (48,431 respondents), the share of respondents answering a block identically falls from 7.1% at 3 items to 0.17% at 10, and a same-keyed block runs 3-6x a mixed-keyed one because nothing contradicts a run of identical answers when every item points the same way. The engine delivered a flat 5.2% whatever the block looked like; it now hits the measured rate at every width (19.3% against 19.4% at k=3, 8.2% against 8.1% at k=5, 3.7% against 3.6% at k=8). The pass also corrects downward, which it could not before, because the marginal-shape work produces constant rows readily. The adversarial validator's straight-lining benchmark, a hardcoded 3-8% band that it actively rewrote data to satisfy, now reads the same measured curve
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.9.3"
+__version__ = "1.2.9.4"
 
 
 # =============================================================================

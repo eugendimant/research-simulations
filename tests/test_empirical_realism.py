@@ -240,11 +240,17 @@ def test_straightlining_is_raised_to_the_real_share_without_removing_rows():
     assert all(len(c) == len(cols[0]) for c in out)
 
 
-def test_straightlining_never_reduces_an_already_high_share():
+def test_straightlining_also_lowers_a_share_that_is_too_high():
+    """Changed in v1.2.9.3. The pass used to be one-directional, which was right
+    while the only failure mode was too FEW identical rows. The marginal-shape
+    pass produces constant rows readily, so an excessive share is now a real
+    failure mode too and the pass corrects in both directions."""
     cols = [[4] * 100 for _ in range(5)]        # everybody identical already
-    out, rep = ir.match_straightlining(cols, 1, 6, target_share=0.052)
-    assert not rep["applied"]
-    assert ir.straightlined_share(out) == 1.0
+    out, rep = ir.match_straightlining(cols, 1, 6, target_share=0.052,
+                                       rng=random.Random(2))
+    assert rep["applied"] and rep["n_broken"] > 0
+    assert ir.straightlined_share(out) == pytest.approx(0.052, abs=0.02)
+    assert all(1 <= v <= 6 for c in out for v in c)
 
 
 # ───────────────────────── benchmark plumbing ────────────────────────────────
