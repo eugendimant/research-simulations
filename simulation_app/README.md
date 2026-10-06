@@ -21,7 +21,7 @@ All three use the same behavioral engine for numeric data. They differ only in w
 
 | Method | Open-ended text | Sample size |
 |---|---|---|
-| **Adaptive Behavioral Engine 3.0** (default) | Offline template engine — no API calls | up to 10,000 |
+| **Adaptive Behavioral Engine 3.0** (listed first; no method is pre-selected) | Offline template engine — no API calls | up to 10,000 |
 | **Built-in AI** | Free LLM providers, built-in keys, no setup | **LLM text for the first 100 participants; ABE 3.0 for the rest** |
 | **Your API Key** | Your own provider key | up to 10,000 |
 
@@ -33,13 +33,13 @@ Built-in provider chain, tried in order until one responds: Google Gemini 3.1 Fl
 
 **Numeric responses.** Each participant is one person with a persistent identity: eight response-style traits and a latent attitude vector, which together drive their answers. Condition effects are applied as deterministic mean shifts; individual variance is applied separately.
 
-Alongside these, census-weighted demographics are exported as seven descriptive `ABE3_*` columns (education, income, party ID, ideology, state, region, response style). These are drawn from census margins but are **descriptive only** — they do not currently drive the DVs, and the `Age` column is a separate normal draw from the mean and SD you set, not a census weighting. `docs/COVERAGE_ROADMAP.md` tracks wiring them into generation.
+Alongside these, census-weighted demographics are exported as seven descriptive `ABE3_*` columns (education, income, party ID, ideology, state, region, response style). These are drawn from census margins but are **descriptive only as far as the numeric DVs go** — they do not shift any DV. Two of them, education and response style, do feed the open-ended text's stylometric fingerprint. The `Age` column is a separate normal draw from the mean and SD you set, not a census weighting. `docs/COVERAGE_ROADMAP.md` tracks wiring them into generation.
 
-**Condition effects.** 43 effect-detection domains, keyed to a calibration knowledge base of meta-analytic effect sizes. Relational conditions are parsed before simple valence, so "matched with an outgroup member" produces discrimination rather than generic negativity (Iyengar & Westwood 2015). Economic games start from published baselines rather than a generic 50% (dictator 0.28, Engel 2011; trust 0.50, Berg et al. 1995; Johnson & Mislin 2011). The total automatically-detected effect is capped at ±0.50 before the Cohen's-*d* conversion, which bounds the shift that reaches generation at roughly ±0.12 in normalized units.
+**Condition effects.** Forty-three effect-detection domains, each with keyword-to-effect mappings grounded in the literature but written into the engine as literals — the meta-analytic effect table is not consulted at runtime. Relational conditions are parsed before simple valence, so "matched with an outgroup member" produces discrimination rather than generic negativity (Iyengar & Westwood 2015). Economic games start from published baselines rather than a generic 50% (dictator 0.28, Engel 2011; trust 0.50, Berg et al. 1995; Johnson & Mislin 2011). The total automatically-detected effect is capped at ±0.50 before the Cohen's-*d* conversion, which bounds the shift that reaches generation at roughly ±0.12 in normalized units.
 
 **On effect magnitudes, read this before you rely on one.** A configured Cohen's `d` sets the engine's *target*, not its achieved effect: as of 1.2.8.7 the realized between-condition gap runs several times the `d` you ask for, and recalibration is in flight. Effects the engine infers on its own, when you configure no `d`, are directional rather than aimed at any magnitude at all. Direction and the ordering of conditions are dependable; magnitude is not yet. Every run writes its achieved effects to `Metadata.json` under `effect_sizes_observed` — check there rather than assuming the configured number. Known deviations are tracked in `docs/COVERAGE_ROADMAP.md`.
 
-**Strategic games.** Where a strategic game is detected, players reason recursively about other players via Level-k (Stahl & Wilson 1994; Nagel 1995) and Cognitive Hierarchy (Camerer, Ho & Chong 2004), with each persona's `strategic_depth` setting its recursion depth. Of the games the engine implements, **beauty contest and stag hunt** are reachable from a QSF today, alongside dictator, trust, ultimatum, public goods, prisoner's dilemma, die-roll, gift exchange, Holt-Laury, bribery and common-pool games. Money-request/11-20, minimum-effort coordination and Tullock contest exist in the engine but have no QSF detection path yet.
+**Strategic games.** Where a strategic game is detected, players reason recursively about other players via Level-k (Stahl & Wilson 1994; Nagel 1995) and Cognitive Hierarchy (Camerer, Ho & Chong 2004), with each persona's `strategic_depth` setting its recursion depth. Of the games the engine implements, **beauty contest and stag hunt** are reachable from a QSF today, alongside dictator, trust, ultimatum, public goods, prisoner's dilemma, die-roll, gift exchange, Holt-Laury, bribery and common-pool games. The engine's registry holds 24 games in all; the other twelve — money-request/11-20, minimum-effort coordination, Tullock contest, sender-receiver, public goods with punishment, the three repeated games (PD, trust, public goods), time MPL, BDM, discrete choice and survey-Likert — have no QSF detection path yet.
 
 **Response styles** (78 personas: 6 response-style, 72 domain-specific across 24 categories). Weights:
 
@@ -52,9 +52,9 @@ Alongside these, census-weighted demographics are exported as seven descriptive 
 | Acquiescent Responder | 0.08 | Billiet & McClendon (2000) |
 | Careless Responder | 0.05 | Meade & Craig (2012) |
 
-**Open-ended text.** Compositional assembly (opener + core + elaboration + coda) over 116 domain template sets, 8 structural archetypes, and domain vocabulary banks, with per-participant stylometric fingerprinting (vocabulary richness, sentence length, punctuation rate, filler words, capitalization) held constant across all of a participant's answers. Text is coherent with that participant's numeric responses: straight-liners write short, positive raters don't write negative text.
+**Open-ended text.** Compositional assembly (opener + core + elaboration + coda) over 116 domain template sets, 8 structural archetypes, and domain vocabulary banks, with per-participant stylometric fingerprinting (vocabulary richness, filler and hedge words, contractions, capitalization, typos) held constant across all of a participant's answers. Text is coherent with that participant's numeric responses: straight-liners write short, positive raters don't write negative text.
 
-**Realism layers.** Survey fatigue drift, reverse-item failure that is trait-like within session (Woods 2006), domain-sensitive social desirability (Nederhof 1985), typing-error and reading-speed rates calibrated to education, ex-Gaussian response times, inter-item α targeting and cross-DV correlation.
+**Realism layers.** Survey fatigue drift, reverse-item failure that is trait-like within session (Woods 2006), domain-sensitive social desirability (Nederhof 1985), typing-error rates calibrated to education, ex-Gaussian response times, inter-item α targeting and cross-DV correlation.
 
 A post-generation audit then checks completion-time plausibility, open-ended uniqueness, straight-lining prevalence, open-ended length distribution and rating–text coherence. The first four are repaired automatically; coherence failures are reported for review rather than corrected, since rewriting text to match a rating risks introducing artifacts.
 
@@ -66,14 +66,13 @@ Item-level missingness and dropout are available under advanced settings and are
 
 - Conditions and factors, including embedded-data randomization, with 644 block-name exclusions and 77 regex patterns filtering trash/admin/structural blocks
 - DVs by type: matrix, single-item, numbered items, slider, numeric input, constant sum, rank order, and more
-- Whether a question carries DisplayLogic or SkipLogic (as a per-question flag)
 Generation then respects those types: constant-sum items are renormalized to sum exactly to the total (largest-remainder), and rank-order DVs are valid 1..k permutations rather than independent integers.
 
-**Not detected from the QSF, despite tables existing for it.** Validated instruments (`WELL_KNOWN_SCALES`, 10 entries) and reverse-coded items each have a detector in `qsf_preview.py` with no callers, so no parsed scale comes back carrying an instrument name or a `reverse_items` list — verified across 427 scales in 40 corpus QSFs. Reverse-keyed items still work when you mark them yourself on the Design page or describe them to the builder, whose own `KNOWN_SCALES` table (84 entries, including BFI-10, GAD-7 and PHQ-9) does recognize instruments. The DisplayLogic/SkipLogic dependency-graph builder is uncalled too, so only the per-question flags are populated. All three are tracked in `docs/COVERAGE_ROADMAP.md`.
+**Not detected from the QSF, despite tables existing for it.** Validated instruments (`WELL_KNOWN_SCALES`, 10 entries) and reverse-coded items each have a detector in `qsf_preview.py` with no callers, so no parsed scale comes back carrying an instrument name or a `reverse_items` list — verified across 427 scales in 40 corpus QSFs. Reverse-keyed items still work when you mark them yourself on the Design page or describe them to the builder, whose own `KNOWN_SCALES` table (84 entries, including BFI-10, GAD-7 and PHQ-9) does recognize instruments. Branching logic is the third: a question gets a `has_display_logic` / `has_skip_logic` boolean, but nothing in the repo reads either one, the two logic-parse maps come back empty, and the dependency-graph builder is uncalled — so DisplayLogic and SkipLogic do not reach generation at all. All three are tracked in `docs/COVERAGE_ROADMAP.md`.
 
 Separately from the parser, the app reads pre-registration documents in OSF, AEA Registry and AsPredicted formats and checks them against the current design (shown only when one is uploaded).
 
-Everything detected is editable before generation, and a 5-row live preview shows the exact column structure first.
+Everything detected is editable before generation, and a "Generate Preview (5 rows)" button gives a rough 5-row sample of the DV and open-ended columns beforehand. It is an approximation, not the real layout: it covers the first five scales only and omits the run metadata, timing, quality-flag and `ABE3_*` columns the full export carries.
 
 ## Output package
 
@@ -121,7 +120,7 @@ Pick row and column factors and the app crosses them. A 2×3 — {Dictator game,
 
 **273 research domains** are keyword-detectable, via 3,452 keyword patterns. 189 of them are grouped into the 23 categories below; the remaining 84 are detectable but ungrouped. 116 domains carry dedicated open-ended template sets, 68 of which fall inside the 23 categories. The categories, as named in `DOMAIN_CATEGORIES`: behavioral economics, social psychology, political science, consumer & marketing, organizational behavior, technology & AI, AI alignment & ethics, ethics & moral psychology, clinical psychology, personality psychology, health psychology, health disparities, education, environmental, financial psychology, decision science, trust & credibility, gaming & entertainment, social media research, innovation & creativity, risk & safety, future of work, digital society.
 
-Calibration knowledge base: 187 meta-analytic effect entries, 68 economic-game calibrations, 201 construct norms, 12 cultural adjustments.
+Calibration knowledge base: 187 meta-analytic effect entries, 68 economic-game calibrations, 201 construct norms, 12 cultural adjustments. Of these the game calibrations, construct norms and response-time norms are queried during generation; the meta-analytic effect entries and the cultural adjustments are tables that nothing calls yet (tracked in `docs/COVERAGE_ROADMAP.md`).
 
 ## Research foundations
 

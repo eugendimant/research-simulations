@@ -173,7 +173,7 @@ Runs in this order:
 1. **STEP 0 — Relational/Matching Condition Parsing** (fires FIRST): Detects WHO is matched with WHOM. Political identity detection, ingroup (+0.30) vs outgroup (-0.35 to -0.40). Sets `_handled_by_relational = True` to skip Step 1. Economic game DVs amplify by 1.3×.
 2. **STEP 1 — Simple valence keywords** (ONLY if STEP 0 didn't handle): "positive", "negative", "reward", "punishment". Note: 'lover' and 'hater' are EXCLUDED (identity markers, not valence).
 3. **STEP 2 — Domain-specific semantic effects** (43 domains): Each domain has keyword→effect mappings grounded in literature.
-4. **STEP 3 — Condition trait modifiers**: Political identity → increased extremity/consistency. Outgroup → negative acquiescence bias.
+4. **STEP 3 — Stable-hash jitter**: an MD5-derived nudge of ±0.04 so same-meaning condition labels still differ slightly (never positional). Condition trait modifiers — political identity → extremity/consistency, outgroup → negative acquiescence — are a *separate* method, `_get_condition_trait_modifier()` (`enhanced_simulation_engine.py:6415`), applied as STEP 1 of `_generate_scale_response()`.
 5. **STEP 4 — Domain-aware effect magnitude scaling**: Political + economic game: 1.6×. Political only: 1.3×. Economic game only: 1.2×.
 
 ### Economic Game DV Calibration
@@ -267,7 +267,7 @@ Every simulated participant is ONE person. Their numeric responses and open-text
 Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests one provider. If it fails, the user sees 3 choices IMMEDIATELY (retry / own API key / template). The user is NEVER left waiting for a dead API.
 
 ### Progress Callback Architecture
-- `_report_progress("generating", i, n)` fires EVERY participant (not every 5%)
+- `_report_progress("generating", i, n)` fires EVERY participant **during OE generation** (`enhanced_simulation_engine.py:12367`). The scale-generation loop still fires on an interval — `max(1, min(20, n // 20))`, i.e. every ~5% capped at every 20 (`:11808`)
 - `_report_progress("open_ended_question", idx, total)` fires per-OE-question
 - UI shows: elapsed time, participant count, live LLM stats (AI count vs template count)
 - Post-generation: data source breakdown shown when template fallback was used
