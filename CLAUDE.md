@@ -199,7 +199,7 @@ Runs in this order:
 
 ### Three-Level Cascade:
 1. **LLM Generator** (llm_response_generator.py): 9 free provider entries, in order — Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Gemini 2.5 Flash Lite → Groq GPT-OSS 120B → Groq Qwen3.6 27B → Cerebras GPT-OSS 120B → SambaNova Llama 3.3 70B → Mistral Small → OpenRouter Mistral Small 3.1. `_builtin_providers` in that file is authoritative
-2. **ComprehensiveResponseGenerator** (response_library.py): compositional template engine (opener + intent core + domain elaboration + coda). No Markov chain — `MarkovChainGenerator` lives in `text_generator.py` and nothing in this cascade instantiates it
+2. **ComprehensiveResponseGenerator** (response_library.py): compositional template engine (opener + intent core + domain elaboration + coda). No Markov chain (the unused `text_generator.py` module that held one was removed in v1.2.8.9)
 3. **TextResponseGenerator** (persona_library.py): Basic template fallback
 
 ### Key Principle: NO response should EVER be off-topic
