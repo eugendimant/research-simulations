@@ -15,9 +15,9 @@ WORKFLOW (must follow)
 2) Implement minimal diff (no unrelated edits)
    - Do not touch these unless explicitly required: CHANGELOG.md, any README.md, MEMORY.md
      (exception: the three version lines in simulation_app/README.md that the version rule below requires)
-   - Version bumps: follow CLAUDE.md. Every change to app code bumps all ten version locations
-     together (`python3 scripts/check_version_sync.py` checks them), because the app shows every
-     user a warning banner when they disagree.
+   - Version bumps: follow CLAUDE.md. Every change to app code bumps every version location listed
+     there together (`python3 scripts/check_version_sync.py` checks ten of the eleven; BUILD_ID is
+     checked by eye), because the app shows every user a warning banner when they disagree.
 
 3) Verify locally (required)
    - Determine the correct commands from README/package config (`python3 -m pytest tests -m "not slow"`,
