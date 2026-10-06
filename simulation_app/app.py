@@ -7457,6 +7457,23 @@ def _access_code_matches(supplied: str, secret_name: str) -> bool:
     import hmac
     if not supplied:
         return False
+    plain, digest = "", ""
+    for key, target in ((secret_name, "plain"), (secret_name + "_SHA256", "digest")):
+        value = os.environ.get(key, "")
+        if not value:
+            try:
+                value = str(st.secrets.get(key, "") or "")
+            except Exception:  # no secrets.toml configured
+                value = ""
+        if target == "plain":
+            plain = value
+        else:
+            digest = value.strip().lower()
+    if plain and hmac.compare_digest(supplied.encode(), plain.encode()):
+        return True
+    if digest and hmac.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(), digest):
+        return True
+    return False
 
 
 VALIDITY_NOTICE = (
@@ -7484,23 +7501,6 @@ def _collect_qsf_if_consented(filename: str, content: bytes) -> None:
             collect_qsf_async(filename, content)
     except Exception as _e:  # collection must never affect the workflow
         _app_logging.getLogger(__name__).debug("QSF collection skipped: %s", _e)
-    plain, digest = "", ""
-    for key, target in ((secret_name, "plain"), (secret_name + "_SHA256", "digest")):
-        value = os.environ.get(key, "")
-        if not value:
-            try:
-                value = str(st.secrets.get(key, "") or "")
-            except Exception:  # no secrets.toml configured
-                value = ""
-        if target == "plain":
-            plain = value
-        else:
-            digest = value.strip().lower()
-    if plain and hmac.compare_digest(supplied.encode(), plain.encode()):
-        return True
-    if digest and hmac.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(), digest):
-        return True
-    return False
 
 
 # v1.0.6.3: File-based admin persistence so simulation history survives browser refresh
