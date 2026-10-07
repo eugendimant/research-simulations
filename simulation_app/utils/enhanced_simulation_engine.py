@@ -56,6 +56,15 @@ _JOINT_DV_TYPES = frozenset({
     "rank_order", "ranking", "rank order",
     "constant_sum", "constant sum", "constantsum",
 })
+
+# v1.3.0.4: fewest response options at which a run of identical answers says anything
+# about the respondent. Below it, chance agreement is of a different order: about 77% of
+# the rows of a 3-item binary block are identical before anything touches them, against
+# the 19% that the registry measured on 5- to 9-point instruments. Both straight-line
+# passes (the consistency audit and the registry-calibrated identical-answer pass) are
+# gated on it, because pulling such a block toward a Likert-measured share rewrites
+# honest answers and takes the requested effect with it.
+_MIN_OPTIONS_FOR_STRAIGHTLINE_LOGIC = 5
 # Numeric-DV money/count classification cues are compiled once, just after the
 # `import re` below (see _MONEY_CUE_RE / _COUNT_CUE_RE / _RATING_CTX_RE).
 
@@ -10588,9 +10597,33 @@ class EnhancedSimulationEngine:
                 # binary/3-point scale, or with only three items, most people legitimately
                 # give the same answer to every item, and "repairing" them randomised the
                 # data (and erased the condition effect).
+                #
+                # v1.3.0.4: the item-count half of that rule is relaxed for ONE case. The
+                # identical-answer pass further down puts the registry's share of constant
+                # rows back into every block of three or more items, and it was calibrated
+                # on data this audit had already cleaned: the audit strips them (clipped
+                # +/-1 jitter, which also drains the endpoint bins), the pass restores the
+                # measured share. With five or more scale items in the survey nothing
+                # changes. With 3 or 4 items, the whole survey of a short single-scale
+                # design, switching the audit off left 4.6% of respondents identical before
+                # the pass instead of 0.6% (8 seeds, N = 3,000), so the pass converted fewer,
+                # differently chosen rows and the top bin ended 2.5 points above the next
+                # one (P(7) - P(6) = +0.025 against -0.010 on main; the ceiling-spike guard
+                # failed on 3 of 8 seeds). The audit therefore also runs when the survey has
+                # a block of three or more items, which is exactly where that pass follows.
+                # Single-item DVs and two-item scales get no such pass, so identical rows
+                # across them stay as generated.
                 _min_points = (min(hi - lo + 1 for lo, hi in _col_bounds.values())
                                if _col_bounds else 0)
-                _check_straightlining = len(existing_cols) >= 5 and _min_points >= 5
+                _widest_block = max(
+                    (len(_le.get("columns_generated") or []) for _le in scale_generation_log
+                     if str(_le.get("type", "")).lower() not in _JOINT_DV_TYPES),
+                    default=0,
+                )
+                _check_straightlining = (
+                    _min_points >= _MIN_OPTIONS_FOR_STRAIGHTLINE_LOGIC
+                    and (len(existing_cols) >= 5 or _widest_block >= 3)
+                )
                 for i in range(n if _check_straightlining else 0):
                     vals = [float(df.iloc[i][c]) for c in existing_cols
                             if pd.notna(df.iloc[i][c])]
@@ -12928,6 +12961,17 @@ class EnhancedSimulationEngine:
                 smax = float(log_entry.get("scale_max", 5))
                 if smax - smin <= 0 or smax - smin > 10:
                     continue    # wide/continuous DVs are shaped elsewhere
+                # v1.3.0.4 — the registry's rates were measured on 5- to 9-point
+                # instruments. On a binary, 3- or 4-point block chance agreement is far
+                # higher (about 77% of the rows of a 3-item binary block are identical
+                # as generated, against 19% in the registry for three items), so pulling
+                # the share down to the registry value rewrote honest answers: a
+                # requested d of 0.8 came back as 0.61 on a 3-item binary scale (0.77
+                # without this pass). A declined block is left as it was, the same rule
+                # the registry applies outside the designs it was measured on, and the
+                # consistency audit is gated on the same number of options.
+                if smax - smin + 1 < _MIN_OPTIONS_FOR_STRAIGHTLINE_LOGIC:
+                    continue
                 _rng = random.Random(self.seed + _stable_int_hash(str(log_entry.get("name", ""))))
                 cols = [_source(c) for c in icols]
                 if any(any(v != v for v in col) for col in cols):

@@ -254,9 +254,15 @@ def test_duplicate_specs_do_not_double_the_effect():
 
 
 def test_factorial_marginal_d_matches_the_request_when_both_effects_are_given():
-    """Marginal d of both factors, requested 0.5 each (the averaged version gave 0.25-0.28)."""
+    """Marginal d of both factors, requested 0.5 each (the averaged version gave 0.25-0.28).
+
+    Six seeds, not two: seeds 6001 and 6002 happen to put factor B at 0.354-0.367 on the pre-merge
+    branch, on the merged tree and on its fix alike, a hair either side of the 0.36 bound, while
+    the 12-seed means are 0.49, 0.49 and 0.48 (A: 0.45, 0.45, 0.44; main, which averages the two
+    effects, gives 0.22 and 0.26). The bound is unchanged; the mean is now stable enough to test it.
+    """
     ds_a, ds_b = [], []
-    for seed in (6001, 6002):
+    for seed in range(6001, 6007):
         specs = [_spec("DV", "A1", "A2", 0.5, factor="A"), _spec("DV", "B1", "B2", 0.5, factor="B")]
         e = _engine(CELLS, [_scale("DV")], specs, n=1000, seed=seed, factors=[{"name": "A", "levels": ["A1", "A2"]}, {"name": "B", "levels": ["B1", "B2"]}])
         df, _ = e.generate()
