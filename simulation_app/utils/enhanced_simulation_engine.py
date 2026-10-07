@@ -10597,10 +10597,33 @@ class EnhancedSimulationEngine:
                 # binary/3-point scale, or with only three items, most people legitimately
                 # give the same answer to every item, and "repairing" them randomised the
                 # data (and erased the condition effect).
+                #
+                # v1.3.0.4: the item-count half of that rule is relaxed for ONE case. The
+                # identical-answer pass further down puts the registry's share of constant
+                # rows back into every block of three or more items, and it was calibrated
+                # on data this audit had already cleaned: the audit strips them (clipped
+                # +/-1 jitter, which also drains the endpoint bins), the pass restores the
+                # measured share. With five or more scale items in the survey nothing
+                # changes. With 3 or 4 items, the whole survey of a short single-scale
+                # design, switching the audit off left 4.6% of respondents identical before
+                # the pass instead of 0.6% (8 seeds, N = 3,000), so the pass converted fewer,
+                # differently chosen rows and the top bin ended 2.5 points above the next
+                # one (P(7) - P(6) = +0.025 against -0.010 on main; the ceiling-spike guard
+                # failed on 3 of 8 seeds). The audit therefore also runs when the survey has
+                # a block of three or more items, which is exactly where that pass follows.
+                # Single-item DVs and two-item scales get no such pass, so identical rows
+                # across them stay as generated.
                 _min_points = (min(hi - lo + 1 for lo, hi in _col_bounds.values())
                                if _col_bounds else 0)
-                _check_straightlining = (len(existing_cols) >= 5
-                                         and _min_points >= _MIN_OPTIONS_FOR_STRAIGHTLINE_LOGIC)
+                _widest_block = max(
+                    (len(_le.get("columns_generated") or []) for _le in scale_generation_log
+                     if str(_le.get("type", "")).lower() not in _JOINT_DV_TYPES),
+                    default=0,
+                )
+                _check_straightlining = (
+                    _min_points >= _MIN_OPTIONS_FOR_STRAIGHTLINE_LOGIC
+                    and (len(existing_cols) >= 5 or _widest_block >= 3)
+                )
                 for i in range(n if _check_straightlining else 0):
                     vals = [float(df.iloc[i][c]) for c in existing_cols
                             if pd.notna(df.iloc[i][c])]

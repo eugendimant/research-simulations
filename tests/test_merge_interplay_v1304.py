@@ -8,8 +8,13 @@ answer to every item of a block:
 * the empirical-realism line added an identical-answer pass that runs last and pulls every
   block of three or more items toward a share measured on 5- to 9-point instruments.
 
-Merged naively, that pass broke most constant rows of a binary, 3- or 4-point block (77% of a
-3-item binary block) to reach a Likert-measured 19%, and a requested d of 0.8 came back as 0.61.
+Merged naively they disagree twice, and each disagreement has its own guard here:
+
+1. A single 3- or 4-item Likert block. The realism pass was calibrated on data the audit had
+   already cleaned. With the audit off, 4.6% of respondents were identical before the pass
+   instead of 0.6%, and the top response bin ended 2.5 points above the next one on average.
+2. A binary, 3- or 4-point block. The pass broke most constant rows (77% of a 3-item binary
+   block) to reach a Likert-measured 19%, and a requested d of 0.8 came back as 0.61.
 """
 import contextlib
 import io
@@ -66,6 +71,31 @@ def _d(df, col):
     a = df.loc[df.CONDITION == HI, col].astype(float)
     b = df.loc[df.CONDITION == LO, col].astype(float)
     return float((a.mean() - b.mean()) / np.sqrt((a.var() + b.var()) / 2))
+
+
+# ---------------------------------------------------------------------------
+# 1. A short Likert block keeps the audit -> identical-answer pass order.
+# ---------------------------------------------------------------------------
+def test_short_likert_block_is_cleaned_before_the_identical_answer_pass():
+    """On a 4-item 7-point scale the audit must still strip constant rows (about 0.6% remain)
+    before the registry pass restores the measured share. Switched off, 4.3-4.9% were left."""
+    eng, df, repairs = _run([_scale("Attitude", 4, 7)], n=1500, seed=5)
+    stage = _stage(eng, "identical_answers")
+    assert stage, "the identical-answer pass did not run on a 4-item 7-point block"
+    assert repairs > 0, "the consistency audit did not repair any straight-liners"
+    assert stage[0]["share_before"] < 0.02, (
+        f"{stage[0]['share_before']:.3f} of respondents were already identical before the pass")
+    assert _identical_rows(df, "Attitude", 4) == pytest.approx(stage[0]["target_share"], abs=0.02)
+
+
+def test_audit_leaves_single_item_dvs_alone():
+    """Identical answers across unrelated single-item DVs are not straight-lining and nothing
+    puts them back afterwards, so the audit must not remove them (about 3% of rows remain)."""
+    scales = [_scale("A", 1, 7), _scale("B", 1, 7), _scale("C", 1, 7)]
+    eng, df, repairs = _run(scales, n=1200, seed=3, d=0.5, effect_on="A")
+    assert repairs == 0
+    assert not _stage(eng, "identical_answers")
+    assert float((df[["A_1", "B_1", "C_1"]].nunique(axis=1) == 1).mean()) > 0.015
 
 
 # ---------------------------------------------------------------------------
