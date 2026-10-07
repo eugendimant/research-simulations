@@ -14,7 +14,7 @@ import random
 import re
 from typing import List, Sequence
 
-__version__ = "1.2.9.1"
+__version__ = "1.3.0.4"
 
 # ---------------------------------------------------------------------------
 # Sentence endings

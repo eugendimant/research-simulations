@@ -1,7 +1,7 @@
-## 2026-10-06 — v1.2.9.1
+## 2026-10-06 — v1.3.0.4
 ### Effect fidelity, grammar-safe text, honest copy, hardened survey collection
 
-Built on 1.2.9.0. The free multi-provider AI chain (providers, failover, anti-hang layers, keys
+Built on 1.3.0.3. The free multi-provider AI chain (providers, failover, anti-hang layers, keys
 lookup) is untouched; only the text post-processing after a response is drawn changed.
 
 **Effect sizes**
@@ -192,6 +192,139 @@ safety, numeric text boxes, collector hardening, exported scripts), `test_email_
 servers), `test_html_safety_v1291.py`, `test_export_script_safety_v1291.py`, `test_report_robustness_v1291.py`,
 `test_report_statistics_v1291.py` and `test_report_truthfulness_v1291.py` (with and without scipy),
 `test_design_wiring_v1291.py`, `test_app_hygiene_v1291.py` and `test_text_review_v1291.py`.
+
+## 2026-10-06 — v1.3.0.3
+### Two review findings: a misrouted credential and a mis-origined norm
+
+- **A removed provider's key was being sent to Groq.** Deleting the Cerebras
+  and Mistral detection branches in v1.3.0.0 did not stop those key shapes
+  existing — a user who still holds one pastes it into "AI (your API key)".
+  Both then fell through to the generic ">30 characters means Groq" default
+  and were sent to Groq as a Bearer credential: a request that can only fail,
+  with the key disclosed to a vendor it was never issued for. The same default
+  sits on the un-detected-key fallback in the chain builder, so both paths are
+  fixed. `retired_provider_for_key()` names the shape, `detect_provider_from_key()`
+  returns None for it, no provider is built, and the app says which provider it
+  is and that it is no longer supported rather than "format not recognized".
+- **Construct norms gain an explicit `scale_min`.** `get_construct_norm()`
+  rescaled by a ratio of maxima, which has no notion of where a scale starts.
+  Every zero-based instrument therefore landed below the target scale's own
+  minimum: the NPI's 0.388 proportion of endorsed items became
+  `0.388 × 7/2 = 1.36` on a 1–7 scale instead of `1 + 0.388 × 6 = 3.33`,
+  dragging automatic narcissism calibration to the floor; the PHQ-9's 0–3
+  per-item mean came out at 0.7, below the scale entirely. Twenty-one entries
+  are marked `scale_min=0.0` (forced-choice proportions and 0–k per-item
+  means) and the rescale now preserves position within the range, with SD
+  scaled by the span ratio. An ordinary 1–k Likert is affected only in kind:
+  the midpoint of 1–5 now maps to the midpoint of 1–7 (4.0, was 4.2).
+
+**New tests** (`tests/test_codex_findings_v1303.py`): each retired key shape is
+named, detected as nothing, and builds no provider on either the constructor or
+the runtime path, while supported keys still route; every published mean sits
+inside its own declared range; no norm rescales outside the target scale at 5,
+7 or 9 points; the NPI lands at 3.328; and a 1–k Likert maps endpoint to
+endpoint.
+
+## 2026-10-06 — v1.3.0.2
+### Benchmark honesty: the alpha claim and the within-person SD entry
+
+- `docs/REALISM_BENCHMARK.md` reported alpha moving 0.883 → 0.727 as a result
+  of the realism layer. That block is synthetic and its target reliability was
+  set to the reference's own value, so alpha moved because it was aimed there.
+  On real QSF paths with no stated reliability the engine draws
+  `target_alpha ~ U(0.80, 0.90)` and hits it: across twelve Qualtrics designs,
+  alpha is 0.842 before and 0.843 after. The table now says so, and the three
+  calibrated rows are marked as calibrated.
+- `item.likert.any.within_person_sd_fraction_of_span` declared keying "any" but
+  is computed on raw, un-recoded items from blocks that are all mixed-keyed —
+  which is why it exceeded the item SD, impossible for recoded items on one
+  construct. Measured over four block shapes and two seeds: mixed-keyed 0.314,
+  same-keyed 0.238. The reported "30% too low" was the benchmark stated more
+  broadly than it was measured, not an engine defect. The entry is now
+  mixed-only. No engine behaviour changes.
+
+## 2026-10-06 — v1.3.0.1
+### Recall audit of all 484 literature calibration entries
+
+Sources cannot be read from the build container (the network policy refuses
+every journal, DOI resolver and preprint host), so the 484 entries in
+`scientific_knowledge_base.py` were audited entry by entry against recalled
+knowledge of the literature: citation, design, direction, magnitude against the
+published or meta-analytic estimate, and internal consistency.
+
+Recall is not source verification, and the two are kept structurally apart:
+four new tiers (`recall_consistent`, `recall_corrected`, `recall_uncertain`,
+`unrecognized`) all weigh less than `CITED_UNCHECKED` and none grants
+`may_set_magnitude`; `register_recall()` is the only way in and refuses a tier
+above the recall band, a verdict with no note, or overwriting a record that
+rests on evidence; `doi`, `url`, `quote` and `verified_on` are empty by
+construction; every note is prefixed "RECALL, NOT SOURCE-VERIFIED"; and
+`coverage_summary()["sourced_entries"]` still counts only verified/corrected/
+partial, so this pass cannot move the verification headline.
+
+Verdicts: 200 consistent, 125 corrected, 157 uncertain, 1 unrecognized. 169
+fields across 122 entries changed, each keeping its replaced value in
+`utils/registry/recall_audit.json`, so the pass is reversible from its own
+data. The corrections fix, in kind: replication-crisis magnitudes carried at
+their original size (ego depletion, moral reminders, facial feedback, the decoy
+effect, deindividuation, the ELM); clinical-level means presented as
+general-population norms in nine instruments; `scale_points` holding an item
+count or score range rather than a response-option count; sign and moderator
+reversals; `i_squared=0.0` beside a positive tau; and k/N pasted from a
+different paper than the one supplying the effect.
+
+## 2026-10-06 — v1.3.0.0
+### Free-provider chain cut to four, and Google's new key shape recognised
+
+Cerebras now requires a payment card before issuing a key, and Mistral AI has
+stopped issuing free API keys. Neither slot could be filled by anyone any more,
+so each was a permanent "not configured" row in the admin LLM tab and a setup
+step in `PROVIDER_SETUP.md` ending at a paywall.
+
+- **Cerebras and Mistral AI removed everywhere**: the `cerebras_builtin` and
+  `mistral_builtin` chain entries, the `mistral_env` / `cerebras_env` override
+  blocks, both API URL and model constants, both `BUILTIN_PROVIDER_SECRETS`
+  slots, both `_DEFAULT_*_KEY` constants, their key-detection branches (the
+  `csk-` prefix, the 32-char Mistral heuristic, the "mistral" dropdown hint),
+  their `get_supported_providers()` rows, the admin key and quota tables, the
+  provider dropdown, `secrets.toml.example`, `DEPLOYMENT_SECRETS.md` and the
+  setup guide (renumbered to four steps). `verify_providers()` follows
+  `BUILTIN_PROVIDER_SECRETS`, so "Test providers now" reports four slots.
+- **Chain is now** Google AI Studio (Gemini 3.1 Flash Lite, 2.5 Flash, 2.5
+  Flash Lite) → Groq (GPT-OSS 120B, Qwen3.6 27B) → SambaNova → OpenRouter,
+  then the built-in engine. Seven entries, four keys, three vendors.
+- **Google AI Studio's newer key shape**: keys created from late 2026 start
+  `AQ.` rather than `AIza`. `detect_provider_from_key()` only knew `AIza`, so
+  a new-format key fell through to the ">30 characters" default branch and was
+  sent to **Groq's** endpoint, where a valid Google key can only be rejected.
+  This affected the bring-your-own-key path (the built-in slots resolve by
+  secret name, so a deployment's `GOOGLE_API_KEY` always worked). Both shapes
+  are now recognised, in the generator and in the app's key-format indicator.
+  Authentication itself never branched on the prefix — `_call_llm_api` sends
+  the key as a Bearer header *and* as `?key=` on googleapis.com endpoints —
+  and there is now a test pinning that.
+- **Key scanner extended**: `tests/test_no_secrets_in_repo.py` matched only
+  `AIzaSy...`, so a live `AQ.` key committed to this public repository would
+  have passed the scan.
+- **The "never shorten the chain" rule keeps its teeth**: `KEY_POLICY.md` and
+  `CLAUDE.md` now state its one exception — a provider whose free tier has
+  been withdrawn — rather than leaving the code quietly contradicting the rule.
+- **Staleness sweep**: `methods_summary.md` still advertised "built-in API keys
+  for six free LLM providers" (keys were removed in v1.2.9.3);
+  `docs/internal/benchmark_llm_vs_template.py` imported the now-deleted
+  `CEREBRAS_*` constants and could not run; `DEVELOPMENT_REFERENCE.md` and
+  `technical_methods.md` listed retired models. The February benchmark report
+  is date-stamped as historical rather than rewritten.
+- **Version-location table corrected**: `scripts/check_version_sync.py` checks
+  `utils/instructor_report.py`, which CLAUDE.md's ten-location table omitted —
+  so the first bump failed CI before a single test ran.
+
+**New tests:** both Google key shapes detect as Google and never as another
+vendor; Google auth carries the key as header *and* query param for either
+shape; provider keys are read from a flat secrets file sitting beside
+unrelated `SMTP_*` / `GITHUB_*` entries; "Test providers now" dials only
+(url, model) pairs the generation chain itself uses; a verification sweep
+leaves the chain usable.
 
 
 ## 2026-08-14 — v1.2.8.7

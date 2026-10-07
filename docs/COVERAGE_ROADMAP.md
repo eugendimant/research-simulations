@@ -64,7 +64,7 @@ Regenerate this census rather than editing it — the corpus grows with every
 auto-collect commit.
 
 One sharp edge for callers driving the engine directly: the constant-sum total is
-read from the scale's `scale_max` (`enhanced_simulation_engine.py:11936`), not
+read from the scale's `scale_max` (`enhanced_simulation_engine.py:11390`), not
 from a `total` field. QSF detection sets `scale_max: 100`, so the parser path is
 fine, but a hand-built scale dict that passes `total` and omits `scale_max` falls
 back to `k` and produces rows summing to the item count. Rank-order DVs were
@@ -138,15 +138,15 @@ Ordered by (frequency of need × value ÷ risk). These are larger, mostly
 12b. **Five more implemented-but-uncalled subsystems** (verified 2026-10-06 — each
     is a definition with zero callers repo-wide, so the behavior the docs used to
     claim does not run):
-    - `_validate_effect_sizes()` (`enhanced_simulation_engine.py:1575`) — would
+    - `_validate_effect_sizes()` (`enhanced_simulation_engine.py:1552`) — would
       compare achieved to configured *d* at a 0.15 tolerance.
-    - `_validate_participant_responses()` (`:10026`) — longstring, IRV and
+    - `_validate_participant_responses()` (`:9480`) — longstring, IRV and
       endpoint-utilization checks per persona.
-    - `_detect_careless_patterns()` (`:1479`) — the only implementation of
+    - `_detect_careless_patterns()` (`:1456`) — the only implementation of
       midpoint-overuse detection, so that never reaches an output column.
       (Alternating-pattern detection is *not* lost with it: the live exclusion
-      path detects it separately at `:11708` and folds it into
-      `Max_Straight_Line` at `:11716`.)
+      path detects it separately at `:11161` and folds it into
+      `Max_Straight_Line` at `:11169`.)
     - `_detect_well_known_scale()` (`qsf_preview.py:1508`) and
       `_detect_reverse_coded_items()` (`:1530`) — so no QSF-parsed scale carries an
       instrument name or a `reverse_items` list (0 of 427 scales across 40 QSFs).
@@ -155,40 +155,30 @@ Ordered by (frequency of need × value ÷ risk). These are larger, mostly
       `has_display_logic` / `has_skip_logic` booleans are populated.
     Each is cheap to wire or to delete; leaving them defined invites the docs to
     drift back into describing them as live.
-12c. **Knowledge-base tables imported into the engine and never used there**
-    (re-verified against v1.2.9.0). The import block at
-    `enhanced_simulation_engine.py:278-290` pulls in ten names; three are wired
-    and the rest are dead weight:
-    - Wired: `META_ANALYTIC_DB` — newly consumed in v1.2.8.8's literature
-      anchoring, which replaces the coarse domain multiplier with one derived
-      from a published estimate when the study text names a paradigm the table
-      covers (`:3127`, documented at `:3085`). This resolves the item that used
-      to sit here; automatic effects for *covered* paradigms are now
-      literature-anchored rather than arbitrary.
-    - Wired: `get_game_calibration` (`:7550`, `:7552`) and
-      `compute_fatigue_adjustment` (`:9259`, `:11836`).
-    - Dead in the engine: `get_meta_analytic_effect` (`:284`),
-      `CULTURAL_ADJUSTMENTS` and `get_cultural_adjustment` (`:281`, `:287`),
-      `ORDER_EFFECTS` and `get_order_effect` (`:283`, `:289`),
-      `CONSTRUCT_NORMS` (`:280`) and `RESPONSE_TIME_NORMS` (`:282`). Each is
-      imported and never referenced again in that file.
-    The last two are the surprise: `CONSTRUCT_NORMS` (201 entries) and
-    `RESPONSE_TIME_NORMS` are read only inside `scientific_knowledge_base.py`
-    itself, so the construct-norm nudge and the response-time norms described
-    elsewhere in these docs come from code paths in that module rather than
-    from the engine's own import. `get_order_effect` is called, but only by
-    `compute_fatigue_adjustment` in the same file
-    (`scientific_knowledge_base.py:8073-8075`). Either wire them or drop the
-    imports — an unused import of a 201-entry table reads as a live feature.
-12d. ✅ **Done (v1.2.8.9) — the ten orphaned template sets are reachable.** All
-    116 `DOMAIN_TEMPLATES` keys can now be selected: four of the former orphans
-    became `StudyDomain` members outright, and the other six
-    (`artificial_intelligence`, `climate_change`, `ethical_dilemma`,
-    `gratitude_experience`, `gratitude_intervention`,
-    `narrative_transportation`) are reached through `_DOMAIN_TEMPLATE_ALIASES`
-    (`response_library.py:4662`, 15 source keys), which the lookup consults
-    before the `domain.value` path (`:8639`). Verified by import: the set of
-    template keys minus `StudyDomain` values minus alias targets is empty.
+12c. **Knowledge-base tables with no callers** (verified 2026-10-06). Three of the
+    imported tables in `scientific_knowledge_base.py` are never queried during
+    generation, so their entries do not affect any output:
+    - `META_ANALYTIC_DB` (187 entries) with `get_meta_analytic_effect`, imported
+      at `enhanced_simulation_engine.py:273`/`:279`. The 43 STEP 2 domains use
+      keyword-to-effect literals written into the engine instead, which is why
+      automatic effects are not calibrated to any published magnitude.
+    - `CULTURAL_ADJUSTMENTS` (12 entries) with `get_cultural_adjustment`
+      (`:276`/`:282`), alongside the `CULTURAL_RESPONSE_STYLES` table in item 12.
+    - `ORDER_EFFECTS` with `get_order_effect` (`:278`/`:284`).
+    The tables that *are* queried: `GAME_CALIBRATIONS` (`:7109`),
+    `CONSTRUCT_NORMS` (`:7298`), `RESPONSE_TIME_NORMS` (`:11260`, `:11312`) and
+    `compute_fatigue_adjustment` (`:8777`, `:11290`). Wiring `META_ANALYTIC_DB`
+    into the automatic-effect path is the highest-value item in this cluster —
+    it is the obvious fix for the uncalibrated-magnitude characteristic noted
+    below.
+12d. **Ten orphaned open-ended template sets.** `DOMAIN_TEMPLATES` holds 116
+    keys but lookup goes through `domain.value` (`response_library.py:8622`), so
+    the 10 keys that are not `StudyDomain` values can never be selected:
+    `artificial_intelligence`, `climate_change`, `ethical_dilemma`,
+    `forgiveness`, `gratitude_experience`, `gratitude_intervention`,
+    `moral_cleansing`, `narrative_transportation`, `nostalgia`, `sleep_quality`.
+    Several are domains students plausibly study. Either add the matching
+    `StudyDomain` members or alias the keys.
 13. **Sample-source profiles** (MTurk / Prolific / undergrad / nat-rep) — careless
     base-rate, attention-pass, demographic skew, effect-size attenuation. Meta-DB
     `sample` moderators exist, unused.
@@ -197,34 +187,27 @@ Ordered by (frequency of need × value ÷ risk). These are larger, mostly
     der Linden et al. 2010 GFP matrix; Soto et al. 2011 norms).
 15. **Numeracy latent → numeric scale behavior** (round-number heaping, extremes).
 16. **Special-population age profiles** (children/adolescents/older adults:
-    reading speed, comprehension, scale-use) — the minimum age is user-settable (default 18 at `enhanced_simulation_engine.py:11399` and `:12076`, with a floor of 13 in both UIs, `app.py:5303` and `:10940`) but nothing behavioral keys off it.
+    reading speed, comprehension, scale-use) — the minimum age is user-settable (default 18, lower bound 13 in both UIs; `enhanced_simulation_engine.py:10853`) but nothing behavioral keys off it.
 17. **Length-/demographic-conditioned attrition** (Galesic & Bosnjak 2009).
 18. **Fraud subpopulation** (bots/duplicates/speeders) sized by sample source.
 
 ### Known characteristics (pre-existing, not regressions; noted for transparency)
-- **Automatically-inferred condition effects are literature-anchored only where
-  the knowledge base covers the paradigm.** When no `cohens_d` is configured for a
-  DV, the effect comes from condition wording via the STEP 0-4 detection pipeline,
-  capped at ±0.50 (`enhanced_simulation_engine.py:6458`) before a 0.30 Cohen's-*d*
-  conversion (`:4375`), which bounds the shift reaching generation at roughly ±0.12
-  normalized units. Since v1.2.8.8, a study whose text names a paradigm present in
-  `META_ANALYTIC_DB` gets a multiplier derived from that published estimate instead
-  of the coarse domain guess (`:3127`). Everything the table does not cover is
-  still directional rather than fitted — a contrast such as positive vs. negative
-  feedback can land well above typical literature effects — and a condition named
-  "Control" carries a small automatic effect rather than exactly zero. Configure an
-  explicit effect size for any DV whose magnitude matters. Note the configured-*d*
-  path now uses a different constant (0.109, `:4176`) from the automatic path, so
-  changing one does not move the other.
+- **Automatically-inferred condition effects are directional, not magnitude-calibrated.**
+  When no `cohens_d` is configured for a DV, the effect is derived from condition
+  wording via the STEP 0-4 detection pipeline and capped at ±0.50 before the Cohen's-*d*
+  conversion — which bounds the shift that actually reaches generation at roughly
+  ±0.12 normalized units — but it is not fitted to a target d — a contrast such as positive vs.
+  negative feedback can land well above typical literature effects. A condition
+  named "Control" also carries a small automatic effect rather than exactly zero.
+  Configure an explicit effect size for any DV whose effect magnitude matters.
 - **Cross-scale correlations run low.** Correlations between distinct constructs
-  (Trust–Satisfaction measured at r = 0.374 against the 0.52 target the engine configured, so about 0.72x recovery) are below what multi-construct survey data
+  (e.g. Trust–Satisfaction r ≈ 0.40 measured, against a 0.52 target) are below what multi-construct survey data
   typically shows.
 - **Construct norms apply a small ±0.15 calibration nudge, not a mean anchor** —
   a depression/anxiety/Machiavellianism DV with no manipulation centers near the
   scale's default, not at the published norm mean. Anchoring generated means to
   published construct norms is a worthwhile, separate, deeper change.
-- The **`HBSParticipantFactory` census demographics** are appended to the engine
-  frame and delivered in `Simulation_Diagnostics.csv` as seven
+- The **`HBSParticipantFactory` census demographics** are appended as seven
   descriptive `ABE3_*` columns (education, income, party ID, ideology, state,
   region, response style) indexed by `i % n_states` — position-misaligned with
   the persona that generated each row — and do not drive DVs. There is no

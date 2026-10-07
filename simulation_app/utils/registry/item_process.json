@@ -1,0 +1,3582 @@
+{
+  "schema_version": 1,
+  "generated_by": "tools/derive_item_benchmarks.py",
+  "generated_on": "2026-10-06",
+  "sources": [
+    {
+      "dataset": "IPIP Big Five 50-item markers",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+      "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+      "bytes": 2292873
+    },
+    {
+      "dataset": "Short Dark Triad",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+      "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+      "bytes": 1073422
+    },
+    {
+      "dataset": "Humor Styles Questionnaire",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+      "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+      "bytes": 93693
+    },
+    {
+      "dataset": "Right-Wing Authoritarianism Scale",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+      "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+      "bytes": 2684000
+    }
+  ],
+  "entries": [
+    {
+      "entry_id": "item.likert5.block8to10.item_sd",
+      "quantity": "sd",
+      "value": 1.1841821875010612,
+      "dispersion": 0.0932635040563111,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          5
+        ],
+        "items_per_block": [
+          8,
+          10
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect"
+      ]
+    },
+    {
+      "entry_id": "item.likert5.block8to10.item_mean",
+      "quantity": "mean",
+      "value": 3.0755657645702685,
+      "dispersion": 0.18390309306332572,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          5
+        ],
+        "items_per_block": [
+          8,
+          10
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect"
+      ]
+    },
+    {
+      "entry_id": "item.likert5.block8to10.floor_rate",
+      "quantity": "proportion",
+      "value": 0.15807916122973437,
+      "dispersion": 0.03967907333112883,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          5
+        ],
+        "items_per_block": [
+          8,
+          10
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect"
+      ]
+    },
+    {
+      "entry_id": "item.likert5.block8to10.ceiling_rate",
+      "quantity": "proportion",
+      "value": 0.17966258648577169,
+      "dispersion": 0.04503758718062288,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          5
+        ],
+        "items_per_block": [
+          8,
+          10
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect"
+      ]
+    },
+    {
+      "entry_id": "item.likert5.block8to10.endpoint_occupancy",
+      "quantity": "proportion",
+      "value": 0.337741747715506,
+      "dispersion": 0.05742860046982846,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          5
+        ],
+        "items_per_block": [
+          8,
+          10
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect"
+      ]
+    },
+    {
+      "entry_id": "item.likert5.block8to10.mean_abs_skew",
+      "quantity": "mean",
+      "value": 0.47120534553975874,
+      "dispersion": 0.3010601717763657,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          5
+        ],
+        "items_per_block": [
+          8,
+          10
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect"
+      ]
+    },
+    {
+      "entry_id": "item.likert5.block8to10.mean_excess_kurtosis",
+      "quantity": "mean",
+      "value": -0.5126909055579325,
+      "dispersion": 0.6377362766377369,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          5
+        ],
+        "items_per_block": [
+          8,
+          10
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect"
+      ]
+    },
+    {
+      "entry_id": "item.likert5.block8to10.within_person_sd",
+      "quantity": "sd",
+      "value": 1.2513723711084859,
+      "dispersion": 0.1281042345946426,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          5
+        ],
+        "items_per_block": [
+          8,
+          10
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect"
+      ]
+    },
+    {
+      "entry_id": "item.likert5.block8to10.distinct_options_used",
+      "quantity": "mean",
+      "value": 3.757742936317678,
+      "dispersion": 0.1717824566608895,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          5
+        ],
+        "items_per_block": [
+          8,
+          10
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect"
+      ]
+    },
+    {
+      "entry_id": "item.likert5.block8to10.long_string_median",
+      "quantity": "mean",
+      "value": 2.090909090909091,
+      "dispersion": 0.30151134457776363,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          5
+        ],
+        "items_per_block": [
+          8,
+          10
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect"
+      ]
+    },
+    {
+      "entry_id": "item.likert5.block8to10.long_string_p99",
+      "quantity": "mean",
+      "value": 5.815454545454548,
+      "dispersion": 1.0057769497892037,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          5
+        ],
+        "items_per_block": [
+          8,
+          10
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect"
+      ]
+    },
+    {
+      "entry_id": "item.likert5.block8to10.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.002650973667319799,
+      "dispersion": 0.0014874116763454568,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          5
+        ],
+        "items_per_block": [
+          8,
+          10
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect"
+      ]
+    },
+    {
+      "entry_id": "item.likert5.block8to10.same_keyed.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.03319271758436945,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          5
+        ],
+        "items_per_block": [
+          8,
+          10
+        ],
+        "keying": "same",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Short Dark Triad :: M (n=18016, k=9)"
+        ],
+        "datasets": [
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Derived from a single same-keyed block, so the value is an order of magnitude, not a precise rate",
+        "Roughly 20x the mixed-keyed rate: straight-lining is a property of the instrument's keying, not only of the respondent",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert5.full_instrument.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.0012449620465311594,
+      "dispersion": 0.00021096518374199435,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          5
+        ],
+        "items_per_block": [
+          22,
+          50
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: __full_instrument__ (n=19718, k=50)",
+          "Short Dark Triad :: __full_instrument__ (n=17740, k=27)",
+          "Humor Styles Questionnaire :: __full_instrument__ (n=993, k=32)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Answering identically across a whole 22-50 item instrument is rarer than within any one block, so this must not be applied per block"
+      ]
+    },
+    {
+      "entry_id": "item.likert9.polarised.item_sd",
+      "quantity": "sd",
+      "value": 2.336993592706921,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          9
+        ],
+        "items_per_block": [
+          20,
+          25
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Right-Wing Authoritarianism Scale :: __full_instrument__ (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Right-Wing Authoritarianism Scale"
+        ],
+        "sources": [
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "A polarised political instrument: strongly bimodal (positive excess kurtosis) where 5-point attitude scales are flat. This is a wide-polarised-scale profile, not a general 9-point one",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert9.polarised.item_mean",
+      "quantity": "mean",
+      "value": 4.8987415477084895,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          9
+        ],
+        "items_per_block": [
+          20,
+          25
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Right-Wing Authoritarianism Scale :: __full_instrument__ (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Right-Wing Authoritarianism Scale"
+        ],
+        "sources": [
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "A polarised political instrument: strongly bimodal (positive excess kurtosis) where 5-point attitude scales are flat. This is a wide-polarised-scale profile, not a general 9-point one",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert9.polarised.floor_rate",
+      "quantity": "proportion",
+      "value": 0.25686044327573254,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          9
+        ],
+        "items_per_block": [
+          20,
+          25
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Right-Wing Authoritarianism Scale :: __full_instrument__ (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Right-Wing Authoritarianism Scale"
+        ],
+        "sources": [
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "A polarised political instrument: strongly bimodal (positive excess kurtosis) where 5-point attitude scales are flat. This is a wide-polarised-scale profile, not a general 9-point one",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert9.polarised.ceiling_rate",
+      "quantity": "proportion",
+      "value": 0.22991641622839973,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          9
+        ],
+        "items_per_block": [
+          20,
+          25
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Right-Wing Authoritarianism Scale :: __full_instrument__ (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Right-Wing Authoritarianism Scale"
+        ],
+        "sources": [
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "A polarised political instrument: strongly bimodal (positive excess kurtosis) where 5-point attitude scales are flat. This is a wide-polarised-scale profile, not a general 9-point one",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert9.polarised.endpoint_occupancy",
+      "quantity": "proportion",
+      "value": 0.4867768595041323,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          9
+        ],
+        "items_per_block": [
+          20,
+          25
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Right-Wing Authoritarianism Scale :: __full_instrument__ (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Right-Wing Authoritarianism Scale"
+        ],
+        "sources": [
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "A polarised political instrument: strongly bimodal (positive excess kurtosis) where 5-point attitude scales are flat. This is a wide-polarised-scale profile, not a general 9-point one",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert9.polarised.mean_abs_skew",
+      "quantity": "mean",
+      "value": 1.323987492018447,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          9
+        ],
+        "items_per_block": [
+          20,
+          25
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Right-Wing Authoritarianism Scale :: __full_instrument__ (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Right-Wing Authoritarianism Scale"
+        ],
+        "sources": [
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "A polarised political instrument: strongly bimodal (positive excess kurtosis) where 5-point attitude scales are flat. This is a wide-polarised-scale profile, not a general 9-point one",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert9.polarised.mean_excess_kurtosis",
+      "quantity": "mean",
+      "value": 0.8241636145047718,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          9
+        ],
+        "items_per_block": [
+          20,
+          25
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Right-Wing Authoritarianism Scale :: __full_instrument__ (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Right-Wing Authoritarianism Scale"
+        ],
+        "sources": [
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "A polarised political instrument: strongly bimodal (positive excess kurtosis) where 5-point attitude scales are flat. This is a wide-polarised-scale profile, not a general 9-point one",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert9.polarised.within_person_sd",
+      "quantity": "sd",
+      "value": 3.1709835164920195,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          9
+        ],
+        "items_per_block": [
+          20,
+          25
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Right-Wing Authoritarianism Scale :: __full_instrument__ (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Right-Wing Authoritarianism Scale"
+        ],
+        "sources": [
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "A polarised political instrument: strongly bimodal (positive excess kurtosis) where 5-point attitude scales are flat. This is a wide-polarised-scale profile, not a general 9-point one",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert9.polarised.distinct_options_used",
+      "quantity": "mean",
+      "value": 6.231404958677686,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          9
+        ],
+        "items_per_block": [
+          20,
+          25
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Right-Wing Authoritarianism Scale :: __full_instrument__ (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Right-Wing Authoritarianism Scale"
+        ],
+        "sources": [
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "A polarised political instrument: strongly bimodal (positive excess kurtosis) where 5-point attitude scales are flat. This is a wide-polarised-scale profile, not a general 9-point one",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert9.polarised.long_string_median",
+      "quantity": "mean",
+      "value": 2.0,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          9
+        ],
+        "items_per_block": [
+          20,
+          25
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Right-Wing Authoritarianism Scale :: __full_instrument__ (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Right-Wing Authoritarianism Scale"
+        ],
+        "sources": [
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "A polarised political instrument: strongly bimodal (positive excess kurtosis) where 5-point attitude scales are flat. This is a wide-polarised-scale profile, not a general 9-point one",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert9.polarised.long_string_p99",
+      "quantity": "mean",
+      "value": 5.0,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "raw_points",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          9
+        ],
+        "items_per_block": [
+          20,
+          25
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Right-Wing Authoritarianism Scale :: __full_instrument__ (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Right-Wing Authoritarianism Scale"
+        ],
+        "sources": [
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "A polarised political instrument: strongly bimodal (positive excess kurtosis) where 5-point attitude scales are flat. This is a wide-polarised-scale profile, not a general 9-point one",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert9.polarised.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.00041322314049586776,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": [
+          9
+        ],
+        "items_per_block": [
+          20,
+          25
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Right-Wing Authoritarianism Scale :: __full_instrument__ (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Right-Wing Authoritarianism Scale"
+        ],
+        "sources": [
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "A polarised political instrument: strongly bimodal (positive excess kurtosis) where 5-point attitude scales are flat. This is a wide-polarised-scale profile, not a general 9-point one",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert.mixed.k3.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.07074414564730545,
+      "dispersion": 0.03653307329643503,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          3,
+          3
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)",
+          "Right-Wing Authoritarianism Scale :: full (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Right-Wing Authoritarianism Scale",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          },
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Measured over every contiguous 3-item window of each block, so it is the rate for a block of that width rather than for a whole instrument"
+      ]
+    },
+    {
+      "entry_id": "item.likert.mixed.k4.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.027580909025573874,
+      "dispersion": 0.021790929869932016,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          4,
+          4
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)",
+          "Right-Wing Authoritarianism Scale :: full (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Right-Wing Authoritarianism Scale",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          },
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Measured over every contiguous 4-item window of each block, so it is the rate for a block of that width rather than for a whole instrument"
+      ]
+    },
+    {
+      "entry_id": "item.likert.mixed.k5.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.013185288245651273,
+      "dispersion": 0.01268433023102644,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          5,
+          5
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)",
+          "Right-Wing Authoritarianism Scale :: full (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Right-Wing Authoritarianism Scale",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          },
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Measured over every contiguous 5-item window of each block, so it is the rate for a block of that width rather than for a whole instrument"
+      ]
+    },
+    {
+      "entry_id": "item.likert.mixed.k6.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.007039451040479588,
+      "dispersion": 0.0063440708212476405,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          6,
+          6
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)",
+          "Right-Wing Authoritarianism Scale :: full (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Right-Wing Authoritarianism Scale",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          },
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Measured over every contiguous 6-item window of each block, so it is the rate for a block of that width rather than for a whole instrument"
+      ]
+    },
+    {
+      "entry_id": "item.likert.mixed.k7.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.0042002085948763136,
+      "dispersion": 0.0027768635170192816,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          7,
+          7
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)",
+          "Right-Wing Authoritarianism Scale :: full (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Right-Wing Authoritarianism Scale",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          },
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Measured over every contiguous 7-item window of each block, so it is the rate for a block of that width rather than for a whole instrument"
+      ]
+    },
+    {
+      "entry_id": "item.likert.mixed.k8.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.0029763969991408105,
+      "dispersion": 0.0017365101451320595,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          8,
+          8
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)",
+          "Right-Wing Authoritarianism Scale :: full (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Right-Wing Authoritarianism Scale",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          },
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Measured over every contiguous 8-item window of each block, so it is the rate for a block of that width rather than for a whole instrument"
+      ]
+    },
+    {
+      "entry_id": "item.likert.mixed.k9.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.001972576238870038,
+      "dispersion": 0.0007632912906459266,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          9,
+          9
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Right-Wing Authoritarianism Scale :: full (n=9680, k=22)"
+        ],
+        "datasets": [
+          "IPIP Big Five 50-item markers",
+          "Right-Wing Authoritarianism Scale",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Measured over every contiguous 9-item window of each block, so it is the rate for a block of that width rather than for a whole instrument"
+      ]
+    },
+    {
+      "entry_id": "item.likert.mixed.k10.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.0016920657720134891,
+      "dispersion": 0.0007117233900890399,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          10,
+          10
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Right-Wing Authoritarianism Scale :: full (n=9680, k=22)"
+        ],
+        "datasets": [
+          "IPIP Big Five 50-item markers",
+          "Right-Wing Authoritarianism Scale"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Measured over every contiguous 10-item window of each block, so it is the rate for a block of that width rather than for a whole instrument"
+      ]
+    },
+    {
+      "entry_id": "item.likert.same.k3.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.19380392032479063,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          3,
+          3
+        ],
+        "keying": "same",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Short Dark Triad :: M (n=18016, k=9)"
+        ],
+        "datasets": [
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Measured over every contiguous 3-item window of each block, so it is the rate for a block of that width rather than for a whole instrument",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert.same.k4.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.11863528715216104,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          4,
+          4
+        ],
+        "keying": "same",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Short Dark Triad :: M (n=18016, k=9)"
+        ],
+        "datasets": [
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Measured over every contiguous 4-item window of each block, so it is the rate for a block of that width rather than for a whole instrument",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert.same.k5.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.0811500888099467,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          5,
+          5
+        ],
+        "keying": "same",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Short Dark Triad :: M (n=18016, k=9)"
+        ],
+        "datasets": [
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Measured over every contiguous 5-item window of each block, so it is the rate for a block of that width rather than for a whole instrument",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert.same.k6.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.05636656305506217,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          6,
+          6
+        ],
+        "keying": "same",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Short Dark Triad :: M (n=18016, k=9)"
+        ],
+        "datasets": [
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Measured over every contiguous 6-item window of each block, so it is the rate for a block of that width rather than for a whole instrument",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert.same.k7.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.045126554174067496,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          7,
+          7
+        ],
+        "keying": "same",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Short Dark Triad :: M (n=18016, k=9)"
+        ],
+        "datasets": [
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Measured over every contiguous 7-item window of each block, so it is the rate for a block of that width rather than for a whole instrument",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert.same.k8.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.03635657193605684,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          8,
+          8
+        ],
+        "keying": "same",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Short Dark Triad :: M (n=18016, k=9)"
+        ],
+        "datasets": [
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Measured over every contiguous 8-item window of each block, so it is the rate for a block of that width rather than for a whole instrument",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert.same.k9.straightlined_share",
+      "quantity": "proportion",
+      "value": 0.03319271758436945,
+      "dispersion": null,
+      "dispersion_kind": "none",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          9,
+          9
+        ],
+        "keying": "same",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "Short Dark Triad :: M (n=18016, k=9)"
+        ],
+        "datasets": [
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Measured over every contiguous 9-item window of each block, so it is the rate for a block of that width rather than for a whole instrument",
+        "Derived from a single contributing block, so the value is an order of magnitude rather than a precise rate"
+      ]
+    },
+    {
+      "entry_id": "item.likert.any.item_sd_fraction_of_span",
+      "quantity": "proportion",
+      "value": 0.2948368958908188,
+      "dispersion": 0.019047339230996024,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          1,
+          100
+        ],
+        "keying": "any",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: M (n=18016, k=9)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)",
+          "Right-Wing Authoritarianism Scale :: full (n=9680, k=22)",
+          "IPIP Big Five 50-item markers :: __full_instrument__ (n=19718, k=50)",
+          "Short Dark Triad :: __full_instrument__ (n=17740, k=27)",
+          "Humor Styles Questionnaire :: __full_instrument__ (n=993, k=32)",
+          "Right-Wing Authoritarianism Scale :: __full_instrument__ (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Right-Wing Authoritarianism Scale",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          },
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Emitted only because the fraction agreed across 5-point and 9-point instruments; the coefficient of variation across contributing blocks is the width of that agreement"
+      ]
+    },
+    {
+      "entry_id": "item.likert.any.within_person_sd_fraction_of_span",
+      "quantity": "proportion",
+      "value": 0.3186603879886428,
+      "dispersion": 0.0445234810636718,
+      "dispersion_kind": "across_blocks",
+      "effect_scale": "proportion",
+      "construct": "",
+      "paradigm": null,
+      "applicability": {
+        "scale_points": null,
+        "items_per_block": [
+          8,
+          50
+        ],
+        "keying": "mixed",
+        "design": "any",
+        "population": "any",
+        "repetition": "any"
+      },
+      "k_studies": null,
+      "n_participants": null,
+      "tier": "T0_MEASURED",
+      "provenance": {
+        "kind": "dataset",
+        "note": "Keying-restricted on 2026-10-06. Every contributing block is mixed-keyed, and within-person SD is computed on raw, un-recoded items, so a reverse-keyed item contributes the full keying gap to a consistent respondent's spread. Declaring this 'any' let it be compared with same-keyed blocks, where the real value is much lower; measured on the engine, a same-keyed block sits at 0.238 of span and a mixed-keyed one at 0.314 against this 0.319, so the apparent '30% too low' was the benchmark being stated more broadly than it was measured. Item SD is keying-invariant (0.2978 same vs 0.2966 mixed) and its entry stays 'any'.",
+        "script": "tools/derive_item_benchmarks.py",
+        "retrieved": "2026-10-06",
+        "measured_in_population": "online_volunteer",
+        "contributing_blocks": [
+          "IPIP Big Five 50-item markers :: E (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: N (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: A (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: C (n=19718, k=10)",
+          "IPIP Big Five 50-item markers :: O (n=19718, k=10)",
+          "Short Dark Triad :: M (n=18016, k=9)",
+          "Short Dark Triad :: N (n=18039, k=9)",
+          "Short Dark Triad :: P (n=18008, k=9)",
+          "Humor Styles Questionnaire :: sub0 (n=1037, k=8)",
+          "Humor Styles Questionnaire :: sub1 (n=1046, k=8)",
+          "Humor Styles Questionnaire :: sub2 (n=1052, k=8)",
+          "Humor Styles Questionnaire :: sub3 (n=1053, k=8)",
+          "Right-Wing Authoritarianism Scale :: full (n=9680, k=22)",
+          "IPIP Big Five 50-item markers :: __full_instrument__ (n=19718, k=50)",
+          "Short Dark Triad :: __full_instrument__ (n=17740, k=27)",
+          "Humor Styles Questionnaire :: __full_instrument__ (n=993, k=32)",
+          "Right-Wing Authoritarianism Scale :: __full_instrument__ (n=9680, k=22)"
+        ],
+        "datasets": [
+          "Humor Styles Questionnaire",
+          "IPIP Big Five 50-item markers",
+          "Right-Wing Authoritarianism Scale",
+          "Short Dark Triad"
+        ],
+        "sources": [
+          {
+            "dataset": "IPIP Big Five 50-item markers",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/BIG5/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/BIG5.zip",
+            "sha256": "ccf2440c364b7cf4aa131b83968084aa7c7388be5808ff1920a27b3d6a07f3d9",
+            "bytes": 2292873
+          },
+          {
+            "dataset": "Short Dark Triad",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/SD3/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/SD3.zip",
+            "sha256": "80f82fb13da1679001f08cee9bf2be23c48ffa2392d561e3da8b757a63167d84",
+            "bytes": 1073422
+          },
+          {
+            "dataset": "Humor Styles Questionnaire",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSQ/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/HSQ.zip",
+            "sha256": "87d406adf61cabdf7301c39098adc9fe12c6769921b9141132eb9dbe6c8dadf4",
+            "bytes": 93693
+          },
+          {
+            "dataset": "Right-Wing Authoritarianism Scale",
+            "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/RWAS/data.csv",
+            "canonical_source": "https://openpsychometrics.org/_rawdata/RWAS.zip",
+            "sha256": "7a28e15865d344e17f47634ac564777c5b0e947d77b381d4481fc06975060e74",
+            "bytes": 2684000
+          }
+        ],
+        "license": "none stated; source declares research-reuse intent",
+        "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+        "mirror_warning": "fetched from a third-party GitHub mirror of openpsychometrics.org; row counts agree with the source index, but the canonical host should be re-fetched when it becomes reachable"
+      },
+      "caveats": [
+        "Measured in self-selected internet volunteer samples, not a probability sample and not a paid experiment panel. The entry is not scoped to that population, because it is the best available human reference for online data collection generally - but it is a RANGE, and the dispersion field is the honest width of it",
+        "Single-group instruments: these benchmark response process only and must never be used to calibrate a condition effect",
+        "Emitted only because the fraction agreed across 5-point and 9-point instruments; the coefficient of variation across contributing blocks is the width of that agreement"
+      ]
+    }
+  ],
+  "full_instrument_profiles": [
+    {
+      "dataset": "IPIP Big Five 50-item markers",
+      "scale_points": 5,
+      "block": "__full_instrument__",
+      "n_rows": 19718,
+      "n_items": 50,
+      "scale_span": 4.0,
+      "item_sd_fraction_of_span": 0.2966953125440047,
+      "within_person_sd_fraction_of_span": 0.3289334142073743,
+      "item_mean": 3.1691124860533524,
+      "item_sd": 1.1867812501760189,
+      "mean_abs_skew": 0.4977709452961285,
+      "mean_excess_kurtosis": -0.5198044999017999,
+      "floor_rate": 0.15009737295871792,
+      "ceiling_rate": 0.20278222943503393,
+      "endpoint_occupancy": 0.3528796023937518,
+      "midpoint_rate": 0.21170098387260372,
+      "straightlined_share": 0.0013185921493052033,
+      "long_string_mean": 4.138452175677046,
+      "long_string_median": 4.0,
+      "long_string_p90": 6.0,
+      "long_string_p99": 9.0,
+      "within_person_sd": 1.3157336568294973,
+      "distinct_options_used": 4.881174561314535
+    },
+    {
+      "dataset": "Short Dark Triad",
+      "scale_points": 5,
+      "block": "__full_instrument__",
+      "n_rows": 17740,
+      "n_items": 27,
+      "scale_span": 4.0,
+      "item_sd_fraction_of_span": 0.3057952975360588,
+      "within_person_sd_fraction_of_span": 0.30560698688175797,
+      "item_mean": 3.2421019666791926,
+      "item_sd": 1.223181190144235,
+      "mean_abs_skew": 0.46298306706254766,
+      "mean_excess_kurtosis": -0.6108406708128379,
+      "floor_rate": 0.12823499937366903,
+      "ceiling_rate": 0.209695603156708,
+      "endpoint_occupancy": 0.337930602530377,
+      "midpoint_rate": 0.18399515637396133,
+      "straightlined_share": 0.0014092446448703494,
+      "long_string_mean": 3.8589064261555808,
+      "long_string_median": 3.0,
+      "long_string_p90": 6.0,
+      "long_string_p99": 10.0,
+      "within_person_sd": 1.2224279475270319,
+      "distinct_options_used": 4.640417136414881
+    },
+    {
+      "dataset": "Humor Styles Questionnaire",
+      "scale_points": 5,
+      "block": "__full_instrument__",
+      "n_rows": 993,
+      "n_items": 32,
+      "scale_span": 4.0,
+      "item_sd_fraction_of_span": 0.2841596727627518,
+      "within_person_sd_fraction_of_span": 0.32334485625067144,
+      "item_mean": 2.989772155085599,
+      "item_sd": 1.1366386910510071,
+      "mean_abs_skew": 0.5246783198475846,
+      "mean_excess_kurtosis": -0.2539673083555021,
+      "floor_rate": 0.16739048338368578,
+      "ceiling_rate": 0.160813192346425,
+      "endpoint_occupancy": 0.3282036757301108,
+      "midpoint_rate": 0.21865558912386707,
+      "straightlined_share": 0.0010070493454179255,
+      "long_string_mean": 3.1289023162134946,
+      "long_string_median": 3.0,
+      "long_string_p90": 4.0,
+      "long_string_p99": 7.0,
+      "within_person_sd": 1.2933794250026858,
+      "distinct_options_used": 4.817724068479356
+    },
+    {
+      "dataset": "Right-Wing Authoritarianism Scale",
+      "scale_points": 9,
+      "block": "__full_instrument__",
+      "n_rows": 9680,
+      "n_items": 22,
+      "scale_span": 8.0,
+      "item_sd_fraction_of_span": 0.2921241990883651,
+      "within_person_sd_fraction_of_span": 0.39637293956150244,
+      "item_mean": 4.8987415477084895,
+      "item_sd": 2.336993592706921,
+      "mean_abs_skew": 1.323987492018447,
+      "mean_excess_kurtosis": 0.8241636145047718,
+      "floor_rate": 0.25686044327573254,
+      "ceiling_rate": 0.22991641622839973,
+      "endpoint_occupancy": 0.4867768595041323,
+      "midpoint_rate": 0.05733001502629602,
+      "straightlined_share": 0.00041322314049586776,
+      "long_string_mean": 2.31146694214876,
+      "long_string_median": 2.0,
+      "long_string_p90": 3.0,
+      "long_string_p99": 5.0,
+      "within_person_sd": 3.1709835164920195,
+      "distinct_options_used": 6.231404958677686
+    }
+  ],
+  "block_profiles": [
+    {
+      "dataset": "IPIP Big Five 50-item markers",
+      "scale_points": 5,
+      "block": "E",
+      "n_rows": 19718,
+      "n_items": 10,
+      "scale_span": 4.0,
+      "item_sd_fraction_of_span": 0.32318388799994674,
+      "within_person_sd_fraction_of_span": 0.3283283639667141,
+      "item_mean": 3.076721777056497,
+      "item_sd": 1.292735551999787,
+      "mean_abs_skew": 0.2825603670312516,
+      "mean_excess_kurtosis": -1.007634001775956,
+      "floor_rate": 0.15734354396997668,
+      "ceiling_rate": 0.18809717009838728,
+      "endpoint_occupancy": 0.34544071406836396,
+      "midpoint_rate": 0.22167562633127091,
+      "straightlined_share": 0.0018764580586266356,
+      "long_string_mean": 2.1114210366162895,
+      "long_string_median": 2.0,
+      "long_string_p90": 3.0,
+      "long_string_p99": 6.0,
+      "within_person_sd": 1.3133134558668564,
+      "distinct_options_used": 3.9472055989451262,
+      "straightlining_by_width": {
+        "3": 0.057365097880109545,
+        "4": 0.02052511845594308,
+        "5": 0.00981336849579065,
+        "6": 0.005680089258545492,
+        "7": 0.003968455218582006,
+        "8": 0.0028569496568279407,
+        "9": 0.002307536261284106,
+        "10": 0.0018764580586266356
+      }
+    },
+    {
+      "dataset": "IPIP Big Five 50-item markers",
+      "scale_points": 5,
+      "block": "N",
+      "n_rows": 19718,
+      "n_items": 10,
+      "scale_span": 4.0,
+      "item_sd_fraction_of_span": 0.31747173903279574,
+      "within_person_sd_fraction_of_span": 0.28347193541727833,
+      "item_mean": 3.095349426919566,
+      "item_sd": 1.269886956131183,
+      "mean_abs_skew": 0.20909380245027606,
+      "mean_excess_kurtosis": -0.9775065850133217,
+      "floor_rate": 0.13898975555330156,
+      "ceiling_rate": 0.1747286743077391,
+      "endpoint_occupancy": 0.3137184298610407,
+      "midpoint_rate": 0.22397809108428846,
+      "straightlined_share": 0.002738614463941576,
+      "long_string_mean": 3.130642052946546,
+      "long_string_median": 3.0,
+      "long_string_p90": 5.0,
+      "long_string_p99": 8.0,
+      "within_person_sd": 1.1338877416691133,
+      "distinct_options_used": 3.6853129120600467,
+      "straightlining_by_width": {
+        "3": 0.15677299928998883,
+        "4": 0.08598380015359426,
+        "5": 0.048973864827399675,
+        "6": 0.025276397200527434,
+        "7": 0.01037123440511208,
+        "8": 0.005967474726983804,
+        "9": 0.0032204077492646315,
+        "10": 0.002738614463941576
+      }
+    },
+    {
+      "dataset": "IPIP Big Five 50-item markers",
+      "scale_points": 5,
+      "block": "A",
+      "n_rows": 19718,
+      "n_items": 10,
+      "scale_span": 4.0,
+      "item_sd_fraction_of_span": 0.2821380510448551,
+      "within_person_sd_fraction_of_span": 0.34352075959476996,
+      "item_mean": 3.2049345775433613,
+      "item_sd": 1.1285522041794205,
+      "mean_abs_skew": 0.814514350801066,
+      "mean_excess_kurtosis": -0.09539697935399309,
+      "floor_rate": 0.16771477837508875,
+      "ceiling_rate": 0.2268587077796937,
+      "endpoint_occupancy": 0.39457348615478244,
+      "midpoint_rate": 0.17661527538289887,
+      "straightlined_share": 0.0016735977279642967,
+      "long_string_mean": 2.3182371437265443,
+      "long_string_median": 2.0,
+      "long_string_p90": 3.0,
+      "long_string_p99": 5.0,
+      "within_person_sd": 1.3740830383790799,
+      "distinct_options_used": 3.8341109646008724,
+      "straightlining_by_width": {
+        "3": 0.06568871082259864,
+        "4": 0.01633025661831829,
+        "5": 0.007810122730500052,
+        "6": 0.004300639010041586,
+        "7": 0.0029161172532711226,
+        "8": 0.0020793183892889745,
+        "9": 0.0018003854346282586,
+        "10": 0.0016735977279642967
+      }
+    },
+    {
+      "dataset": "IPIP Big Five 50-item markers",
+      "scale_points": 5,
+      "block": "C",
+      "n_rows": 19718,
+      "n_items": 10,
+      "scale_span": 4.0,
+      "item_sd_fraction_of_span": 0.29761556408946843,
+      "within_person_sd_fraction_of_span": 0.3101591704761661,
+      "item_mean": 3.154909220002029,
+      "item_sd": 1.1904622563578737,
+      "mean_abs_skew": 0.3423193796299035,
+      "mean_excess_kurtosis": -0.705868893989561,
+      "floor_rate": 0.13332488081955574,
+      "ceiling_rate": 0.1734861547824323,
+      "endpoint_occupancy": 0.306811035601988,
+      "midpoint_rate": 0.24411197890252562,
+      "straightlined_share": 0.001775027893295466,
+      "long_string_mean": 2.2800994015620244,
+      "long_string_median": 2.0,
+      "long_string_p90": 3.0,
+      "long_string_p99": 6.0,
+      "within_person_sd": 1.2406366819046644,
+      "distinct_options_used": 3.932143219393448,
+      "straightlining_by_width": {
+        "3": 0.060528451161375396,
+        "4": 0.019474591743584544,
+        "5": 0.008435608750042262,
+        "6": 0.004645501572167562,
+        "7": 0.003220407749264631,
+        "8": 0.0024343239679480676,
+        "9": 0.0020032457652905972,
+        "10": 0.001775027893295466
+      }
+    },
+    {
+      "dataset": "IPIP Big Five 50-item markers",
+      "scale_points": 5,
+      "block": "O",
+      "n_rows": 19718,
+      "n_items": 10,
+      "scale_span": 4.0,
+      "item_sd_fraction_of_span": 0.2630673205529578,
+      "within_person_sd_fraction_of_span": 0.33877482733227465,
+      "item_mean": 3.313647428745308,
+      "item_sd": 1.0522692822118311,
+      "mean_abs_skew": 0.8403668265681448,
+      "mean_excess_kurtosis": 0.18738396062383197,
+      "floor_rate": 0.1531139060756669,
+      "ceiling_rate": 0.25074044020691755,
+      "endpoint_occupancy": 0.40385434628258443,
+      "midpoint_rate": 0.1921239476620347,
+      "straightlined_share": 0.0015721675626331271,
+      "long_string_mean": 2.3320316462115835,
+      "long_string_median": 2.0,
+      "long_string_p90": 4.0,
+      "long_string_p99": 6.0,
+      "within_person_sd": 1.3550993093290986,
+      "distinct_options_used": 3.8774723602799472,
+      "straightlining_by_width": {
+        "3": 0.0657711228319302,
+        "4": 0.026393578021532176,
+        "5": 0.007209994252290633,
+        "6": 0.003965919464448727,
+        "7": 0.002370930114616087,
+        "8": 0.0018595530310714407,
+        "9": 0.0016228826452987118,
+        "10": 0.0015721675626331271
+      }
+    },
+    {
+      "dataset": "Short Dark Triad",
+      "scale_points": 5,
+      "block": "M",
+      "n_rows": 18016,
+      "n_items": 9,
+      "scale_span": 4.0,
+      "item_sd_fraction_of_span": 0.28482753349645623,
+      "within_person_sd_fraction_of_span": 0.22532143879578337,
+      "item_mean": 3.7117747187685026,
+      "item_sd": 1.139310133985825,
+      "mean_abs_skew": 0.7681851418963918,
+      "mean_excess_kurtosis": 0.07753521116656738,
+      "floor_rate": 0.06382598184329977,
+      "ceiling_rate": 0.31388148805999605,
+      "endpoint_occupancy": 0.37770746990329584,
+      "midpoint_rate": 0.15541123939214527,
+      "straightlined_share": 0.03319271758436945,
+      "long_string_mean": 3.2179174067495557,
+      "long_string_median": 3.0,
+      "long_string_p90": 5.0,
+      "long_string_p99": 9.0,
+      "within_person_sd": 0.9012857551831335,
+      "distinct_options_used": 3.146203374777975,
+      "straightlining_by_width": {
+        "3": 0.19380392032479063,
+        "4": 0.11863528715216104,
+        "5": 0.0811500888099467,
+        "6": 0.05636656305506217,
+        "7": 0.045126554174067496,
+        "8": 0.03635657193605684,
+        "9": 0.03319271758436945
+      }
+    },
+    {
+      "dataset": "Short Dark Triad",
+      "scale_points": 5,
+      "block": "N",
+      "n_rows": 18039,
+      "n_items": 9,
+      "scale_span": 4.0,
+      "item_sd_fraction_of_span": 0.3073916542036809,
+      "within_person_sd_fraction_of_span": 0.3037529905523724,
+      "item_mean": 3.0286354873083625,
+      "item_sd": 1.2295666168147237,
+      "mean_abs_skew": 0.26186063370471613,
+      "mean_excess_kurtosis": -0.9369285230210854,
+      "floor_rate": 0.13986362880425743,
+      "ceiling_rate": 0.14107704910964516,
+      "endpoint_occupancy": 0.2809406779139026,
+      "midpoint_rate": 0.21930878159050451,
+      "straightlined_share": 0.0018293696989855313,
+      "long_string_mean": 2.320915793558401,
+      "long_string_median": 2.0,
+      "long_string_p90": 3.0,
+      "long_string_p99": 5.0,
+      "within_person_sd": 1.2150119622094897,
+      "distinct_options_used": 3.7895116137258165,
+      "straightlining_by_width": {
+        "3": 0.07055348332580995,
+        "4": 0.021970914869634307,
+        "5": 0.009712290038250457,
+        "6": 0.004753589445091191,
+        "7": 0.003030471016501284,
+        "8": 0.002106546926104551,
+        "9": 0.0018293696989855313
+      }
+    },
+    {
+      "dataset": "Short Dark Triad",
+      "scale_points": 5,
+      "block": "P",
+      "n_rows": 18008,
+      "n_items": 9,
+      "scale_span": 4.0,
+      "item_sd_fraction_of_span": 0.3253425999796648,
+      "within_person_sd_fraction_of_span": 0.315105930118017,
+      "item_mean": 2.984037958438225,
+      "item_sd": 1.3013703999186592,
+      "mean_abs_skew": 0.35798547136303843,
+      "mean_excess_kurtosis": -0.9743603459267322,
+      "floor_rate": 0.18123426625203612,
+      "ceiling_rate": 0.1733365417838985,
+      "endpoint_occupancy": 0.35457080803593466,
+      "midpoint_rate": 0.17724838343452293,
+      "straightlined_share": 0.0024433585073300756,
+      "long_string_mean": 2.3521768103065304,
+      "long_string_median": 2.0,
+      "long_string_p90": 4.0,
+      "long_string_p99": 6.0,
+      "within_person_sd": 1.260423720472068,
+      "distinct_options_used": 3.8703909373611727,
+      "straightlining_by_width": {
+        "3": 0.07065113917623914,
+        "4": 0.028191174292906854,
+        "5": 0.011339404709018213,
+        "6": 0.006622056863616171,
+        "7": 0.004275877387827632,
+        "8": 0.002554420257663261,
+        "9": 0.0024433585073300756
+      }
+    },
+    {
+      "dataset": "Humor Styles Questionnaire",
+      "scale_points": 5,
+      "block": "sub0",
+      "n_rows": 1037,
+      "n_items": 8,
+      "scale_span": 4.0,
+      "item_sd_fraction_of_span": 0.2547772207016862,
+      "within_person_sd_fraction_of_span": 0.3711410601422864,
+      "item_mean": 2.8701783992285437,
+      "item_sd": 1.0191088828067447,
+      "mean_abs_skew": 1.101522876051356,
+      "mean_excess_kurtosis": 1.0062456090806917,
+      "floor_rate": 0.24469623915139826,
+      "ceiling_rate": 0.2058823529411765,
+      "endpoint_occupancy": 0.4505785920925748,
+      "midpoint_rate": 0.15200096432015428,
+      "straightlined_share": 0.0019286403085824494,
+      "long_string_mean": 1.811957569913211,
+      "long_string_median": 2.0,
+      "long_string_p90": 2.0,
+      "long_string_p99": 4.0,
+      "within_person_sd": 1.4845642405691457,
+      "distinct_options_used": 3.7193828351012534,
+      "straightlining_by_width": {
+        "3": 0.02410800385728062,
+        "4": 0.008100289296046287,
+        "5": 0.004339440694310511,
+        "6": 0.002571520411443266,
+        "7": 0.0019286403085824494,
+        "8": 0.0019286403085824494
+      }
+    },
+    {
+      "dataset": "Humor Styles Questionnaire",
+      "scale_points": 5,
+      "block": "sub1",
+      "n_rows": 1046,
+      "n_items": 8,
+      "scale_span": 4.0,
+      "item_sd_fraction_of_span": 0.282866080775667,
+      "within_person_sd_fraction_of_span": 0.26493870548529175,
+      "item_mean": 3.382409177820268,
+      "item_sd": 1.131464323102668,
+      "mean_abs_skew": 0.41621653394134006,
+      "mean_excess_kurtosis": -0.48137031801859537,
+      "floor_rate": 0.08293499043977057,
+      "ceiling_rate": 0.21498565965583175,
+      "endpoint_occupancy": 0.2979206500956023,
+      "midpoint_rate": 0.24032026768642448,
+      "straightlined_share": 0.0038240917782026767,
+      "long_string_mean": 2.480879541108987,
+      "long_string_median": 2.0,
+      "long_string_p90": 4.0,
+      "long_string_p99": 6.0,
+      "within_person_sd": 1.059754821941167,
+      "distinct_options_used": 3.413001912045889,
+      "straightlining_by_width": {
+        "3": 0.10548119821542383,
+        "4": 0.04703632887189292,
+        "5": 0.02390057361376673,
+        "6": 0.008604206500956023,
+        "7": 0.0057361376673040155,
+        "8": 0.0038240917782026767
+      }
+    },
+    {
+      "dataset": "Humor Styles Questionnaire",
+      "scale_points": 5,
+      "block": "sub2",
+      "n_rows": 1052,
+      "n_items": 8,
+      "scale_span": 4.0,
+      "item_sd_fraction_of_span": 0.3056677339674123,
+      "within_person_sd_fraction_of_span": 0.31105859218888643,
+      "item_mean": 2.95615494296578,
+      "item_sd": 1.2226709358696493,
+      "mean_abs_skew": 0.27513330467755814,
+      "mean_excess_kurtosis": -0.8797494666832298,
+      "floor_rate": 0.15648764258555134,
+      "ceiling_rate": 0.13177281368821292,
+      "endpoint_occupancy": 0.2882604562737643,
+      "midpoint_rate": 0.24061311787072243,
+      "straightlined_share": 0.0028517110266159697,
+      "long_string_mean": 1.9933460076045628,
+      "long_string_median": 2.0,
+      "long_string_p90": 3.0,
+      "long_string_p99": 5.490000000000009,
+      "within_person_sd": 1.2442343687555457,
+      "distinct_options_used": 3.7718631178707223,
+      "straightlining_by_width": {
+        "3": 0.05243979721166033,
+        "4": 0.01634980988593156,
+        "5": 0.007842205323193917,
+        "6": 0.005703422053231939,
+        "7": 0.003326996197718631,
+        "8": 0.0028517110266159697
+      }
+    },
+    {
+      "dataset": "Humor Styles Questionnaire",
+      "scale_points": 5,
+      "block": "sub3",
+      "n_rows": 1053,
+      "n_items": 8,
+      "scale_span": 4.0,
+      "item_sd_fraction_of_span": 0.2969791632797832,
+      "within_person_sd_fraction_of_span": 0.2710216852742782,
+      "item_mean": 2.764245014245014,
+      "item_sd": 1.1879166531191327,
+      "mean_abs_skew": 0.28168525471869504,
+      "mean_excess_kurtosis": -0.7744144170593062,
+      "floor_rate": 0.18316714150047483,
+      "ceiling_rate": 0.09532288698955366,
+      "endpoint_occupancy": 0.27849002849002846,
+      "midpoint_rate": 0.24358974358974358,
+      "straightlined_share": 0.006647673314339981,
+      "long_string_mean": 2.4415954415954415,
+      "long_string_median": 2.0,
+      "long_string_p90": 4.0,
+      "long_string_p99": 6.480000000000018,
+      "within_person_sd": 1.084086741097113,
+      "distinct_options_used": 3.4947768281101617,
+      "straightlining_by_width": {
+        "3": 0.098448876226654,
+        "4": 0.03684710351377018,
+        "5": 0.017331433998100665,
+        "6": 0.011396011396011395,
+        "7": 0.008547008547008548,
+        "8": 0.006647673314339981
+      }
+    },
+    {
+      "dataset": "Right-Wing Authoritarianism Scale",
+      "scale_points": 9,
+      "block": "full",
+      "n_rows": 9680,
+      "n_items": 22,
+      "scale_span": 8.0,
+      "item_sd_fraction_of_span": 0.2921241990883651,
+      "within_person_sd_fraction_of_span": 0.39637293956150244,
+      "item_mean": 4.8987415477084895,
+      "item_sd": 2.336993592706921,
+      "mean_abs_skew": 1.323987492018447,
+      "mean_excess_kurtosis": 0.8241636145047718,
+      "floor_rate": 0.25686044327573254,
+      "ceiling_rate": 0.22991641622839973,
+      "endpoint_occupancy": 0.4867768595041323,
+      "midpoint_rate": 0.05733001502629602,
+      "straightlined_share": 0.00041322314049586776,
+      "long_string_mean": 2.31146694214876,
+      "long_string_median": 2.0,
+      "long_string_p90": 3.0,
+      "long_string_p99": 5.0,
+      "within_person_sd": 3.1709835164920195,
+      "distinct_options_used": 6.231404958677686,
+      "straightlining_by_width": {
+        "3": 0.021120867768595043,
+        "4": 0.0037679425837320577,
+        "5": 0.0015151515151515154,
+        "6": 0.0009540593096742829,
+        "7": 0.0007102272727272727,
+        "8": 0.0006060606060606062,
+        "9": 0.0005534238488783944,
+        "10": 0.0005165289256198347
+      }
+    }
+  ]
+}

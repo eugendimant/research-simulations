@@ -372,6 +372,46 @@ class HBSValidator:
             ),
         }
 
+    def _straightlining_range(self, n_items: int) -> Tuple[float, float]:
+        """Acceptable straight-lining rate for a block of this width.
+
+        The old benchmark was a flat (3%, 8%) whatever the instrument looked like,
+        and `_correct_straightlining` forces the data INTO the range — so a wrong
+        range does not merely mis-report, it rewrites the data to match itself.
+        Measured over every contiguous window of four published instruments
+        (48,431 respondents), the real rate is strongly width-dependent: 7.1% at 3
+        items falling to 0.17% at 10 for mixed-keyed blocks, and 3-6x that for
+        same-keyed ones. A flat 3-8% is therefore roughly right only around 4
+        items and forces an order-of-magnitude error at either end.
+
+        The band spans both keyings at the measured width, with 50% slack, because
+        the validator sees the delivered columns and not the instrument's key.
+        Falls back to the previous constant whenever the registry declines.
+        """
+        default = tuple(self._benchmarks["straightlining_rate"]["expected_range"])
+        try:
+            from . import empirical_registry as _reg
+            from . import design_signature as _ds
+        except Exception:
+            try:
+                import empirical_registry as _reg  # type: ignore
+                import design_signature as _ds     # type: ignore
+            except Exception:
+                return default
+        k = int(n_items or 0)
+        if k < 3:
+            return default
+        vals = []
+        for keying in ("mixed", "same"):
+            sig = _ds.for_block(n_items=k, keying=keying)
+            hit = _reg.lookup_best(f"item.likert.{keying}.k{k}",
+                                   "straightlined_share", sig)
+            if hit is not None:
+                vals.append(float(hit.value))
+        if not vals:
+            return default
+        return (max(0.0, 0.5 * min(vals)), min(1.0, 1.5 * max(vals)))
+
     def _check_straightlining(self, df: Any) -> Dict[str, Any]:
         """Check proportion of participants who straight-line scale items."""
         scale_cols = self._find_scale_columns(df)
@@ -386,7 +426,7 @@ class HBSValidator:
                 ),
             }
 
-        lo, hi = self._benchmarks["straightlining_rate"]["expected_range"]
+        lo, hi = self._straightlining_range(len(scale_cols))
         n_rows = self._nrows(df)
         if n_rows == 0:
             return {

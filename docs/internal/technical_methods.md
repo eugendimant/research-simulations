@@ -168,7 +168,7 @@ The system uses a primary AI-powered generator with a template-based fallback.
 **Primary (LLM-Powered):**
 
 1. **Batch prompt construction**: For each question × condition × sentiment bucket, a prompt is built that includes study context, experimental condition, and N participant profiles (each specifying verbosity, formality, engagement, and sentiment)
-2. **LLM API call**: The prompt is sent to an OpenAI-compatible chat completion endpoint (e.g., Groq, Cerebras, OpenRouter). The LLM returns a JSON array of N responses
+2. **LLM API call**: The prompt is sent to an OpenAI-compatible chat completion endpoint (e.g., Google AI, Groq, SambaNova, OpenRouter). The LLM returns a JSON array of N responses
 3. **Pool storage**: Responses are stored in a keyed pool (key = MD5 of question + condition + sentiment)
 4. **Draw-with-replacement**: Individual participants draw randomly from the pool without depleting it
 5. **Deep variation**: Each drawn response passes through 7 transformation layers to ensure uniqueness
@@ -218,11 +218,13 @@ Where `participants_per_bucket = sample_size / (n_conditions × 5 sentiments)`.
 
 | Priority | Provider | Model | Rate Limit (Free) |
 |----------|----------|-------|--------------------|
-| 1 | Google AI Studio | Gemini 2.5 Flash Lite | Built-in key |
-| 2 | Google AI Studio | Gemma 3 27B | Built-in key |
-| 3 | Groq | Llama 3.3 70B | 14,400 req/day |
-| 4 | Cerebras | Llama 3.1 8B | 1M tokens/day |
-| 5 | OpenRouter | Llama 3.3 70B | Free models |
+| 1 | Google AI Studio | Gemini 3.1 Flash Lite | 28 req/min |
+| 2 | Google AI Studio | Gemini 2.5 Flash | 14 req/min |
+| 3 | Google AI Studio | Gemini 2.5 Flash Lite | 28 req/min |
+| 4 | Groq | GPT-OSS 120B | ~1,000 req/day |
+| 5 | Groq | Qwen3.6 27B | 14,400 req/day |
+| 6 | SambaNova | Llama 3.3 70B | 20 req/min |
+| 7 | OpenRouter | Mistral Small 3.1 | Free models |
 
 Providers are tried in priority order; if one fails or rate-limits, the next is attempted automatically. Users can optionally provide their own API keys for higher rate limits.
 

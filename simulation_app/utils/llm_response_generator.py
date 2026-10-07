@@ -6,12 +6,13 @@ realistic, question-specific, persona-aligned open-ended survey responses.
 
 Architecture:
 - Multi-provider: Google AI Studio (Gemini 3.1 Flash Lite + Gemini 2.5 Flash/Lite),
-  Groq (GPT-OSS 120B + Qwen3.6 27B), Cerebras (GPT-OSS 120B),
-  Mistral AI (Mistral Small), SambaNova (Llama 3.3 70B),
+  Groq (GPT-OSS 120B + Qwen3.6 27B), SambaNova (Llama 3.3 70B),
   OpenRouter (Mistral Small 3.1) — with automatic key detection, per-provider
   rate limiting, and intelligent failover. Google AI prioritized for reliability.
-  v1.2.8.7: migrated BOTH Llama-3.3-70B endpoints off retired model IDs —
-  Groq (decommissioned 2026-08-16) and Cerebras (retired 2026-02-16).
+  v1.3.0.0: Cerebras and Mistral AI were removed from the chain — neither
+  offers a usable free tier any more (Cerebras requires a payment card,
+  Mistral no longer issues free API keys), so a slot for either could only
+  ever report "not configured".
 - Large batch sizes: 20 responses per API call (within 32K context)
 - Smart pool scaling: calculates exact pool size needed from sample_size
 - Draw-with-replacement + deep variation: a pool of 50 base responses
@@ -85,23 +86,11 @@ GOOGLE_AI_MODEL_PRIMARY = "gemini-3.1-flash-lite"   # newest free lite — prima
 GOOGLE_AI_MODEL = "gemini-2.5-flash-lite"           # 30 RPM, 250K TPM (cost-efficient fallback)
 GOOGLE_AI_MODEL_HIGHVOL = "gemini-2.5-flash"        # 15 RPM, 1M TPM (high-quality volume fallback)
 
-CEREBRAS_API_URL = "https://api.cerebras.ai/v1/chat/completions"
-# v1.2.8.7: Cerebras retired `llama-3.3-70b` on 2026-02-16 — this entry had been
-# silently dead for months (found while migrating Groq off the same base model).
-# Cerebras' own recommended successor is GPT-OSS 120B; note Cerebras uses bare
-# model IDs (no vendor prefix), unlike Groq's `openai/gpt-oss-120b`.
-CEREBRAS_MODEL = "gpt-oss-120b"
-
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODEL = "mistralai/mistral-small-3.1-24b-instruct:free"
 
 SAMBANOVA_API_URL = "https://api.sambanova.ai/v1/chat/completions"
 SAMBANOVA_MODEL = "Meta-Llama-3.3-70B-Instruct"  # v1.2.1.8: Migrated from 3.1 (deprecated April 2025)
-
-# v1.2.1.1: Mistral AI — direct API access, generous free tier
-# Free tier: 1B tokens/month, no credit card required, 2 RPM limit
-MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
-MISTRAL_MODEL = "mistral-small-latest"  # Free tier model
 
 # v1.0.5.8: Additional user-selectable providers for fallback API key entry
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
@@ -137,12 +126,45 @@ def _load_deployment_key(*names: str) -> str:
     return ""
 
 
-_DEFAULT_GROQ_KEY = _load_deployment_key("GROQ_API_KEY")
-_DEFAULT_CEREBRAS_KEY = _load_deployment_key("CEREBRAS_API_KEY")
-_DEFAULT_GOOGLE_AI_KEY = _load_deployment_key("GOOGLE_API_KEY", "GEMINI_API_KEY")
-_DEFAULT_OPENROUTER_KEY = _load_deployment_key("OPENROUTER_API_KEY")
-_DEFAULT_MISTRAL_KEY = _load_deployment_key("MISTRAL_API_KEY")
-_DEFAULT_SAMBANOVA_KEY = _load_deployment_key("SAMBANOVA_API_KEY")
+# Documented secret names for the built-in (free-tier) provider slots, in the
+# order the provider chain tries them. The deployment sets these as environment
+# variables or Streamlit secrets; the repository never carries key material.
+# Where a tuple has several names, the first non-empty one wins.
+BUILTIN_PROVIDER_SECRETS: Dict[str, Tuple[str, ...]] = {
+    "google_ai": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+    "groq": ("GROQ_API_KEY",),
+    "sambanova": ("SAMBANOVA_API_KEY",),
+    "openrouter": ("OPENROUTER_API_KEY",),
+}
+
+
+def builtin_provider_key_status() -> Dict[str, bool]:
+    """Report which built-in provider slots have a key configured right now.
+
+    Returns a mapping of provider slot name -> True when at least one of its
+    documented secret names resolves to a non-empty value. Used by the UI to
+    tell "no keys configured" apart from "configured keys are failing", and by
+    the admin diagnostics page.
+    """
+    return {
+        slot: bool(_load_deployment_key(*names))
+        for slot, names in BUILTIN_PROVIDER_SECRETS.items()
+    }
+
+
+def missing_builtin_provider_secrets() -> List[str]:
+    """Return the primary secret name of every unconfigured built-in slot."""
+    return [
+        BUILTIN_PROVIDER_SECRETS[slot][0]
+        for slot, configured in builtin_provider_key_status().items()
+        if not configured
+    ]
+
+
+_DEFAULT_GROQ_KEY = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["groq"])
+_DEFAULT_GOOGLE_AI_KEY = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["google_ai"])
+_DEFAULT_OPENROUTER_KEY = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["openrouter"])
+_DEFAULT_SAMBANOVA_KEY = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["sambanova"])
 
 # Legacy alias
 _DEFAULT_API_KEY = _DEFAULT_GROQ_KEY
@@ -614,11 +636,11 @@ class _RateLimiter:
     def __init__(self, max_rpm: int = 28) -> None:
         self._max_rpm = max_rpm
         self._timestamps: List[float] = []
-        # v1.2.1.5: Dynamic cap based on RPM — low-RPM providers (e.g. Mistral at
-        # 2 RPM) need longer waits between calls by design.  After 2 rapid calls
+        # v1.2.1.5: Dynamic cap based on RPM — low-RPM providers need longer
+        # waits between calls by design.  After 2 rapid calls
         # the 3rd can need up to ~60s sleep (full window).  Cap = 2.1× inter-call
         # interval (clamped to 61s) so the full sliding window is respected.
-        _inter_call_secs = 60.0 / max(1, max_rpm)  # e.g. 30s for 2 RPM
+        _inter_call_secs = 60.0 / max(1, max_rpm)  # e.g. 2.1s at 28 RPM
         self._max_wait_cap = min(61.0, max(15.0, _inter_call_secs * 2.1))
 
     def wait_if_needed(self) -> bool:
@@ -2085,13 +2107,42 @@ def _is_low_quality_response(text: str, topic_tokens: Optional[List[str]] = None
 # ---------------------------------------------------------------------------
 # Key auto-detection for multi-provider support
 # ---------------------------------------------------------------------------
+#: Key shapes belonging to providers this app no longer supports. They are
+#: matched BEFORE the generic ">30 characters means Groq" default, because that
+#: default would otherwise send the user's credential to a vendor it does not
+#: belong to: a rejected request, and the key disclosed to the wrong company.
+#: Dropping a provider's chain entry is not a reason to start leaking its keys.
+_RETIRED_KEY_SHAPES: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
+    # Cerebras — unambiguous prefix. Free tier now requires a payment card.
+    ("Cerebras", re.compile(r"^csk-[A-Za-z0-9_\-]{10,}$")),
+    # Mistral AI — 32 alphanumeric characters, no prefix. This was always a
+    # heuristic rather than a documented format, but it is the shape the app
+    # itself told users to paste, so it is refused rather than forwarded.
+    ("Mistral AI", re.compile(r"^[a-zA-Z0-9]{32}$")),
+)
+
+
+def retired_provider_for_key(api_key: str) -> Optional[str]:
+    """Return the display name of a removed provider whose key shape this is.
+
+    Returns None for every other key, including an empty one. Callers must not
+    build a provider for a key this names: the provider is gone, so there is no
+    endpoint it belongs to, and the generic fallback would hand it to Groq.
+    """
+    key = (api_key or "").strip()
+    if not key:
+        return None
+    for name, pattern in _RETIRED_KEY_SHAPES:
+        if pattern.match(key):
+            return name
+    return None
 def detect_provider_from_key(api_key: str, provider_hint: str = "") -> Optional[Dict[str, str]]:
     """Auto-detect LLM provider from API key prefix.
 
     Args:
         api_key: The API key to detect.
         provider_hint: Optional display name from dropdown selection (e.g.
-            "Mistral AI (Mistral Small) — Free") used when key format alone
+            "SambaNova (Llama 3.3 70B) — Free") used when key format alone
             is ambiguous.
 
     Returns dict with 'name', 'api_url', 'model' or None if unrecognized.
@@ -2101,11 +2152,16 @@ def detect_provider_from_key(api_key: str, provider_hint: str = "") -> Optional[
     key = api_key.strip()
     if key.startswith("gsk_"):
         return {"name": "groq", "api_url": GROQ_API_URL, "model": GROQ_MODEL}
-    elif key.startswith("csk-"):
-        return {"name": "cerebras", "api_url": CEREBRAS_API_URL, "model": CEREBRAS_MODEL}
     elif key.startswith("sk-or-"):
         return {"name": "openrouter", "api_url": OPENROUTER_API_URL, "model": OPENROUTER_MODEL}
-    elif key.startswith("AIza"):
+    elif key.startswith("AIza") or key.startswith("AQ."):
+        # v1.3.0.0: Google AI Studio issues two key shapes. The long-standing
+        # one starts "AIza"; keys created from late 2026 start "AQ." instead.
+        # Both authenticate the same way (see _call_llm_api, which sends the
+        # key as a Bearer header AND as ?key= on googleapis.com endpoints), so
+        # the only thing a new-format key needed was to be recognised here —
+        # without this branch it fell through to the >30-char default and was
+        # sent to Groq's endpoint, where it can only ever be rejected.
         return {"name": "google_ai", "api_url": GOOGLE_AI_API_URL, "model": GOOGLE_AI_MODEL}
     elif key.startswith("snova-") or key.startswith("sambanova-"):
         return {"name": "sambanova", "api_url": SAMBANOVA_API_URL, "model": SAMBANOVA_MODEL}
@@ -2118,14 +2174,14 @@ def detect_provider_from_key(api_key: str, provider_hint: str = "") -> Optional[
 
     # v1.2.1.3: Use dropdown hint for providers without distinctive key prefixes
     _hint_lower = (provider_hint or "").lower()
-    if "mistral" in _hint_lower and "openrouter" not in _hint_lower:
-        return {"name": "mistral", "api_url": MISTRAL_API_URL, "model": MISTRAL_MODEL}
-    elif "sambanova" in _hint_lower:
+    if "sambanova" in _hint_lower:
         return {"name": "sambanova", "api_url": SAMBANOVA_API_URL, "model": SAMBANOVA_MODEL}
 
-    # v1.2.1.3: Heuristic — Mistral keys are exactly 32 alphanumeric chars, no prefix
-    if re.match(r'^[a-zA-Z0-9]{32}$', key):
-        return {"name": "mistral", "api_url": MISTRAL_API_URL, "model": MISTRAL_MODEL}
+    # v1.3.0.0: a key belonging to a provider this app dropped is refused here,
+    # before the Groq default below could forward the credential to a vendor it
+    # was never issued for.
+    if retired_provider_for_key(key):
+        return None
 
     if len(key) > 30:
         # Default to Groq for unrecognized long keys
@@ -2144,13 +2200,6 @@ def get_supported_providers() -> List[Dict[str, str]]:
             "recommended": True,
         },
         {
-            "name": "Cerebras",
-            "prefix": "csk-...",
-            "url": "https://cloud.cerebras.ai",
-            "free_tier": "1M tokens/day",
-            "recommended": False,
-        },
-        {
             "name": "OpenRouter",
             "prefix": "sk-or-...",
             "url": "https://openrouter.ai",
@@ -2159,17 +2208,10 @@ def get_supported_providers() -> List[Dict[str, str]]:
         },
         {
             "name": "Google AI Studio (Gemini)",
-            "prefix": "AIza...",
+            "prefix": "AIza... or AQ....",
             "url": "https://aistudio.google.com",
             "free_tier": "Gemini 2.5 Flash (15 RPM, 1M TPM) + Flash Lite (30 RPM, 250K TPM)",
             "recommended": True,
-        },
-        {
-            "name": "Mistral AI",
-            "prefix": "32-char alphanumeric",
-            "url": "https://console.mistral.ai",
-            "free_tier": "1B tokens/month (2 RPM)",
-            "recommended": False,
         },
         {
             "name": "SambaNova",
@@ -2375,9 +2417,9 @@ class LLMResponseGenerator:
     """Generate open-ended survey responses using free LLM APIs.
 
     Multi-provider architecture with automatic failover:
-    1. Built-in keys: Gemini Flash, Groq, Cerebras, SambaNova, Mistral AI, OpenRouter (seamless)
-    2. User-provided key (auto-detected: Groq, Cerebras, Google AI, SambaNova, Mistral AI, OpenRouter, OpenAI)
-    3. Environment variable overrides (Google AI, Cerebras, Mistral AI, SambaNova, OpenRouter)
+    1. Built-in keys: Gemini Flash, Groq, SambaNova, OpenRouter (seamless)
+    2. User-provided key (auto-detected: Groq, Google AI, SambaNova, OpenRouter, OpenAI)
+    3. Environment variable overrides (Google AI, Groq, SambaNova, OpenRouter)
     4. Template fallback (always works)
 
     Draw-with-replacement + deep variation means a pool of ~50 base
@@ -2457,50 +2499,61 @@ class LLMResponseGenerator:
         self._max_recent_starts: int = 200  # Rolling window size
 
         # Build provider chain with per-provider rate limits.
-        # Priority: Gemini Flash → Gemini Lite → Groq → Cerebras → SambaNova → Mistral → OpenRouter
+        # Priority: Gemini Flash → Gemini Lite → Groq → SambaNova → OpenRouter
         self._providers: List[_LLMProvider] = []
         user_key = api_key or os.environ.get("LLM_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
-        _all_builtin_keys = {_DEFAULT_GROQ_KEY, _DEFAULT_CEREBRAS_KEY,
-                             _DEFAULT_GOOGLE_AI_KEY, _DEFAULT_OPENROUTER_KEY,
-                             _DEFAULT_MISTRAL_KEY, _DEFAULT_SAMBANOVA_KEY}
+        # v1.2.9.1: Resolve deployment keys HERE rather than relying on the
+        # module-import-time constants. Streamlit secrets and environment
+        # variables can become readable after this module is first imported
+        # (and tests set them per-case), so re-reading per instance is what
+        # makes a configured deployment actually pick its keys up.
+        # v1.2.9.3: keys come from the deployment environment ONLY — env vars
+        # or st.secrets. There is no in-repository key store: a key committed
+        # to a repository is readable by anyone who can read the repository,
+        # and stays readable in history after it is removed.
+        def _resolve(_slot: str, _fallback: str) -> str:
+            return _load_deployment_key(*BUILTIN_PROVIDER_SECRETS[_slot]) or _fallback
+
+        _k_groq = _resolve("groq", _DEFAULT_GROQ_KEY)
+        _k_google = _resolve("google_ai", _DEFAULT_GOOGLE_AI_KEY)
+        _k_openrouter = _resolve("openrouter", _DEFAULT_OPENROUTER_KEY)
+        _k_sambanova = _resolve("sambanova", _DEFAULT_SAMBANOVA_KEY)
+        _all_builtin_keys = {k for k in (_k_groq, _k_google,
+                                         _k_openrouter, _k_sambanova) if k}
 
         # Built-in providers (in priority order) — ranked by free-tier generosity:
         # 1. Google AI Gemini 2.5 Flash:      15 RPM, 1M TPM (high-quality volume)
         # 2. Google AI Gemini 2.5 Flash Lite: 30 RPM, 250K TPM (cost-efficient)
-        # 3. Groq Llama 3.3 70B:              ~30 RPM, 14,400 RPD (very generous)
-        # 4. Cerebras Llama 3.3 70B:          ~30 RPM, 1M tokens/day
-        # 5. SambaNova Llama 3.3 70B:         20 RPM, persistent free tier
-        # 6. Mistral AI Mistral Small:        2 RPM, 1B tokens/month (huge budget, low rate)
-        # 7. OpenRouter Mistral Small 3.1:    varies by model (last resort)
+        # 3. Groq GPT-OSS 120B / Qwen3.6 27B: ~28 RPM, generous daily allowance
+        # 4. SambaNova Llama 3.3 70B:         20 RPM, persistent free tier
+        # 5. OpenRouter Mistral Small 3.1:    varies by model (last resort)
         # NOTE: Google AI at top — confirmed accessible and reliable on OpenAI-compat endpoint.
         # v1.1.0.7: Replaced gemma-3-27b-it (404 on OpenAI endpoint) with gemini-2.5-flash.
-        # v1.2.1.2: Added SambaNova + Mistral AI as built-in; reordered by free-tier value.
+        # v1.3.0.0: Dropped the Cerebras and Mistral AI slots — both free tiers
+        # are gone (card required / no free keys issued), so neither could be
+        # configured. Four distinct keys across three vendors remain.
         _builtin_providers = [
             # v1.2.7.7: newest free lite model first (best free-tier value, fewest
             # wasted tokens), then 2.5 flash/lite as fallback within Google.
             ("google_ai_3_lite", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_PRIMARY,
-             _DEFAULT_GOOGLE_AI_KEY, 28, 1500, 20),
+             _k_google, 28, 1500, 20),
             ("google_ai_flash", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL_HIGHVOL,
-             _DEFAULT_GOOGLE_AI_KEY, 14, 1500, 20),
+             _k_google, 14, 1500, 20),
             ("google_ai_lite", GOOGLE_AI_API_URL, GOOGLE_AI_MODEL,
-             _DEFAULT_GOOGLE_AI_KEY, 28, 1500, 20),
+             _k_google, 28, 1500, 20),
             # v1.2.8.7: post-decommission Groq pair. GPT-OSS 120B first (capability),
             # then Qwen3.6 27B — two independent model lines behind one key, so a
             # future retirement of either degrades instead of breaking the link.
             # GPT-OSS free tier is ~1K requests/day, hence the explicit RPD cap;
             # Qwen carries the standard, far larger allowance.
             ("groq_builtin", GROQ_API_URL, GROQ_MODEL,
-             _DEFAULT_GROQ_KEY, 28, 1000, 20),
+             _k_groq, 28, 1000, 20),
             ("groq_qwen_builtin", GROQ_API_URL, GROQ_MODEL_FALLBACK,
-             _DEFAULT_GROQ_KEY, 28, 0, 20),
-            ("cerebras_builtin", CEREBRAS_API_URL, CEREBRAS_MODEL,
-             _DEFAULT_CEREBRAS_KEY, 28, 0, 20),
+             _k_groq, 28, 0, 20),
             ("sambanova_builtin", SAMBANOVA_API_URL, SAMBANOVA_MODEL,
-             _DEFAULT_SAMBANOVA_KEY, 20, 0, 20),
-            ("mistral_builtin", MISTRAL_API_URL, MISTRAL_MODEL,
-             _DEFAULT_MISTRAL_KEY, 2, 0, 20),
+             _k_sambanova, 20, 0, 20),
             ("openrouter_builtin", OPENROUTER_API_URL, OPENROUTER_MODEL,
-             _DEFAULT_OPENROUTER_KEY, 20, 0, 20),
+             _k_openrouter, 20, 0, 20),
         ]
         for name, url, model, key, rpm, rpd, max_bs in _builtin_providers:
             if key:
@@ -2509,9 +2562,12 @@ class LLMResponseGenerator:
                     max_rpm=rpm, max_rpd=rpd, max_batch_size=max_bs,
                 ))
 
-        # Env-var Google AI key (user's own key — may have different limits)
-        _google_ai_key = os.environ.get("GOOGLE_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
-        if _google_ai_key and _google_ai_key != _DEFAULT_GOOGLE_AI_KEY:
+        # Deployment/env Google AI key (may have different limits).
+        # v1.2.9.2: read via _load_deployment_key, not os.environ — a key set
+        # only in st.secrets (the documented Streamlit Cloud path) was
+        # otherwise dropped here whenever the built-in slot was already held.
+        _google_ai_key = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["google_ai"])
+        if _google_ai_key and _google_ai_key != _k_google:
             _or_idx = next((i for i, p in enumerate(self._providers)
                            if p.name == "groq_builtin"), len(self._providers))
             self._providers.insert(_or_idx, _LLMProvider(
@@ -2520,9 +2576,23 @@ class LLMResponseGenerator:
                 max_rpm=8, max_rpd=20,
             ))
 
-        # SambaNova Cloud — env-var override (user's own key, may have different limits)
-        _sambanova_key = os.environ.get("SAMBANOVA_API_KEY", "")
-        if _sambanova_key and _sambanova_key != _DEFAULT_SAMBANOVA_KEY:
+        # Groq — deployment/env override (may have different limits).
+        # v1.2.9.2: groq had no override block at all; its deployment key only
+        # reached the chain via the user_key path, which reads os.environ and
+        # skips any key already held by a built-in slot, so a GROQ_API_KEY set
+        # only in st.secrets could be dropped.
+        _groq_key = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["groq"])
+        if _groq_key and _groq_key != _k_groq:
+            _or_idx = next((i for i, p in enumerate(self._providers)
+                           if p.name == "openrouter_builtin"), len(self._providers))
+            self._providers.insert(_or_idx, _LLMProvider(
+                name="groq_env", api_url=GROQ_API_URL, model=GROQ_MODEL,
+                api_key=_groq_key, max_rpm=28, max_rpd=0, max_batch_size=20,
+            ))
+
+        # SambaNova Cloud — deployment/env override (may have different limits)
+        _sambanova_key = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS["sambanova"])
+        if _sambanova_key and _sambanova_key != _k_sambanova:
             _or_idx = next((i for i, p in enumerate(self._providers)
                            if p.name == "openrouter_builtin"), len(self._providers))
             self._providers.insert(_or_idx, _LLMProvider(
@@ -2531,23 +2601,11 @@ class LLMResponseGenerator:
                 max_rpm=20, max_rpd=0, max_batch_size=20,
             ))
 
-        # Mistral AI — env-var override (user's own key, may have different limits)
-        _mistral_key = os.environ.get("MISTRAL_API_KEY", "")
-        if _mistral_key and _mistral_key != _DEFAULT_MISTRAL_KEY:
-            _or_idx = next((i for i, p in enumerate(self._providers)
-                           if p.name == "openrouter_builtin"), len(self._providers))
-            self._providers.insert(_or_idx, _LLMProvider(
-                name="mistral_env", api_url=MISTRAL_API_URL,
-                model=MISTRAL_MODEL, api_key=_mistral_key,
-                max_rpm=2, max_rpd=0, max_batch_size=20,
-            ))
-
-        # Extra env-var providers (if someone configures them manually)
-        for env_var, name, url, model in [
-            ("CEREBRAS_API_KEY", "cerebras_env", CEREBRAS_API_URL, CEREBRAS_MODEL),
-            ("OPENROUTER_API_KEY", "openrouter_env", OPENROUTER_API_URL, OPENROUTER_MODEL),
+        # Extra deployment-configured providers (env vars or st.secrets)
+        for _slot, name, url, model in [
+            ("openrouter", "openrouter_env", OPENROUTER_API_URL, OPENROUTER_MODEL),
         ]:
-            env_key = os.environ.get(env_var, "")
+            env_key = _load_deployment_key(*BUILTIN_PROVIDER_SECRETS[_slot])
             if env_key and not any(p.api_key == env_key for p in self._providers):
                 self._providers.append(_LLMProvider(
                     name=name, api_url=url, model=model, api_key=env_key,
@@ -2556,9 +2614,9 @@ class LLMResponseGenerator:
         # User-provided key (appended AFTER all built-ins and env-vars so it's
         # tried last — we want to use the tool's own capacity first)
         # v1.2.1.4: Provider-specific RPM for user keys — prevents rate limit
-        # mismatches (e.g. Mistral at 2 RPM being configured as 28 RPM).
-        _PROVIDER_RPM = {"mistral": 2, "sambanova": 20, "groq": 28,
-                         "cerebras": 28, "google_ai": 14, "openrouter": 20, "openai": 20}
+        # mismatches (e.g. a 14 RPM provider being configured as 28 RPM).
+        _PROVIDER_RPM = {"sambanova": 20, "groq": 28,
+                         "google_ai": 14, "openrouter": 20, "openai": 20}
         if user_key and user_key not in _all_builtin_keys:
             _provider_hint = os.environ.get("LLM_PROVIDER_HINT", "")
             detected = detect_provider_from_key(user_key, provider_hint=_provider_hint)
@@ -2571,6 +2629,15 @@ class LLMResponseGenerator:
                     api_key=user_key,
                     max_rpm=_user_rpm,
                 ))
+            elif retired_provider_for_key(user_key):
+                # v1.3.0.0: detection returned None because this is a removed
+                # provider's key. The Groq default below is exactly what must
+                # not happen to it — no provider is built, and the user falls
+                # back to the built-in engine with their key untouched.
+                logger.warning(
+                    "User key matches %s, a provider this app no longer "
+                    "supports; no provider was built for it (the key was NOT "
+                    "sent anywhere).", retired_provider_for_key(user_key))
             else:
                 self._providers.append(_LLMProvider(
                     name="groq_user",
@@ -2584,7 +2651,8 @@ class LLMResponseGenerator:
         # v1.9.1: Diagnostic logging — log provider chain for debugging
         _provider_summary = []
         for p in self._providers:
-            _key_prefix = p.api_key[:8] + "..." if p.api_key else "(none)"
+            # v1.2.9.1: never log key bytes — a prefix is still key material.
+            _key_prefix = "(key set)" if p.api_key else "(none)"
             _provider_summary.append(f"{p.name}({_key_prefix})")
         logger.info("LLM provider chain: %s | api_available=%s",
                     " → ".join(_provider_summary) if _provider_summary else "(empty)",
@@ -2734,12 +2802,23 @@ class LLMResponseGenerator:
             latency_ms: int — response time in milliseconds (0 if failed)
             provider: str — which provider responded (empty if failed)
             error: str — error message if failed (empty if ok)
+            reason: str — "not_configured" (no key supplied by the deployment or
+                the user) or "unreachable" (keys present, providers failing).
+                Present only when ok is False.
+            missing_secrets: List[str] — documented secret names still unset
+                (only when reason is "not_configured").
 
         Used by the UI to warn users BEFORE starting generation if LLM
         providers are slow or unavailable, and offer alternative methods.
         """
+        if not any(p.api_key for p in self._providers):
+            return {"ok": False, "latency_ms": 0, "provider": "",
+                    "reason": "not_configured",
+                    "missing_secrets": missing_builtin_provider_secrets(),
+                    "error": "No API keys configured"}
         if not self.is_llm_available:
-            return {"ok": False, "latency_ms": 0, "provider": "", "error": "No providers available"}
+            return {"ok": False, "latency_ms": 0, "provider": "",
+                    "reason": "unreachable", "error": "No providers available"}
 
         _test_prompt = (
             "Generate one short sentence (10-20 words) expressing a neutral opinion "
@@ -2768,6 +2847,7 @@ class LLMResponseGenerator:
 
         _latency = int((time.time() - _start) * 1000)
         return {"ok": False, "latency_ms": _latency, "provider": "",
+                "reason": "unreachable",
                 "error": "All providers failed health check"}
 
     @property
@@ -3125,8 +3205,8 @@ class LLMResponseGenerator:
         self._providers = [p for p in self._providers if "user_runtime" not in p.name]
 
         # v1.2.1.4: Provider-specific RPM to avoid rate limit mismatches
-        _rpm_map = {"mistral": 2, "sambanova": 20, "groq": 28,
-                    "cerebras": 28, "google_ai": 14, "openrouter": 20, "openai": 20}
+        _rpm_map = {"sambanova": 20, "groq": 28,
+                    "google_ai": 14, "openrouter": 20, "openai": 20}
         _detected_name = (detected["name"] if detected else "").lower()
         _runtime_rpm = _rpm_map.get(_detected_name, 20)
 
@@ -3586,6 +3666,92 @@ class LLMResponseGenerator:
     # ------------------------------------------------------------------
     # Connectivity check (used by UI to show status)
     # ------------------------------------------------------------------
+    def verify_providers(self, timeout: int = 10) -> List[Dict[str, Any]]:
+        """Test every built-in provider slot and report its state.
+
+        Makes ONE minimal authenticated call per configured slot (a 1-token
+        completion) so the result reflects whether the key actually works —
+        not merely whether it is present. A slot with no key is reported as
+        ``not_configured`` without any network call.
+
+        Returns one dict per slot, in provider order, with keys:
+            slot        provider slot name ("google_ai", "groq", ...)
+            secret      the primary secret name the deployment should set
+            status      "ok" | "failed" | "not_configured"
+            detail      human-readable reason (never contains key material)
+            latency_ms  round-trip time for a successful call, else None
+
+        Never returns, logs or embeds key material: `detail` is scrubbed of
+        every configured key before it leaves this method, because some
+        provider error bodies echo the credential back.
+        """
+        results: List[Dict[str, Any]] = []
+        _secrets = {p.api_key for p in self._providers if p.api_key}
+
+        def _scrub(text: str) -> str:
+            """Remove any configured key from provider-supplied error text."""
+            cleaned = str(text)
+            for _key in _secrets:
+                if _key and _key in cleaned:
+                    cleaned = cleaned.replace(_key, "***")
+            return cleaned[:300]
+
+        for slot, names in BUILTIN_PROVIDER_SECRETS.items():
+            secret_name = names[0]
+            key = _load_deployment_key(*names)
+            if not key:
+                results.append({
+                    "slot": slot, "secret": secret_name,
+                    "status": "not_configured",
+                    "detail": f"{secret_name} is not set",
+                    "latency_ms": None,
+                })
+                continue
+
+            # Use the chain's own URL/model for this slot so the test exercises
+            # the same endpoint generation will use.
+            provider = next((p for p in self._providers if p.api_key == key), None)
+            if provider is None:
+                results.append({
+                    "slot": slot, "secret": secret_name,
+                    "status": "failed",
+                    "detail": "key is set but no provider was built for this slot",
+                    "latency_ms": None,
+                })
+                continue
+
+            started = time.time()
+            try:
+                raw = _call_llm_api(
+                    provider.api_url, provider.api_key, provider.model,
+                    "Reply with exactly: OK", "Test",
+                    temperature=0.0, max_tokens=5, timeout=timeout,
+                )
+                elapsed = int((time.time() - started) * 1000)
+                if raw is not None:
+                    results.append({
+                        "slot": slot, "secret": secret_name, "status": "ok",
+                        "detail": f"{provider.model} responded",
+                        "latency_ms": elapsed,
+                    })
+                else:
+                    results.append({
+                        "slot": slot, "secret": secret_name, "status": "failed",
+                        "detail": "no response (key rejected, rate-limited, "
+                                  "or model unavailable)",
+                        "latency_ms": None,
+                    })
+            except Exception as exc:
+                results.append({
+                    "slot": slot, "secret": secret_name, "status": "failed",
+                    "detail": _scrub(exc), "latency_ms": None,
+                })
+
+        # A verification sweep must not leave providers disabled for the run.
+        for p in self._providers:
+            p.reset()
+        return results
+
     def check_connectivity(self, timeout: int = 8) -> Dict[str, Any]:
         """Quick connectivity test — loops through ALL providers.
 
@@ -3597,8 +3763,14 @@ class LLMResponseGenerator:
 
         Returns dict with 'available', 'provider', 'error' keys.
         """
-        if not self._providers:
-            return {"available": False, "provider": "none", "error": "No API keys configured"}
+        if not any(p.api_key for p in self._providers):
+            # v1.2.9.1: "nothing configured" is a DIFFERENT condition from
+            # "configured providers are down" — the UI must not tell the user
+            # to wait a few hours for a key that was never set.
+            return {"available": False, "provider": "none",
+                    "reason": "not_configured",
+                    "missing_secrets": missing_builtin_provider_secrets(),
+                    "error": "No API keys configured"}
 
         last_error = "No providers available"
         _failed_providers: List[str] = []
@@ -3628,5 +3800,6 @@ class LLMResponseGenerator:
             p.reset()
 
         return {"available": False, "provider": "none",
+                "reason": "unreachable",
                 "error": f"All providers failed: {last_error}",
                 "tried": _failed_providers}

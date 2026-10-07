@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.2.9.1 - Effect fidelity and text safety: a requested Cohen's d now holds on long scales (8-20 items), two- and three-point scales and economic-game outcomes, inferred effects can be switched off for a true null and every run reports the effects built in versus observed; open-ended text is edited only at grammatical positions and numeric text boxes get numbers; straight-line repair no longer erases effects on short or binary scales; the design step says that every design is generated between-subjects; the survey-collection endpoint validates and rate-limits uploads; noncommercial license added
+Version: 1.3.0.4 - Reliable, observable instructor email (split delivery, retries, delivery log, admin tab); exact, honest instructor analysis; the survey's own DVs on the Design page; requested effect sizes that hold next to other scales; hardened HTML, exported scripts and QSF collection (see docs/CHANGELOG.md).
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.2.9.1"
+__version__ = "1.3.0.4"
 
 
 # =============================================================================

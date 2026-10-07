@@ -28,7 +28,7 @@ import re
 from html.parser import HTMLParser
 from typing import List, Optional, Tuple
 
-__version__ = "1.2.9.1"
+__version__ = "1.3.0.4"
 
 # A second line of defence for the browser that opens the report: no script, no network, no frames,
 # no forms, inline styles and inline (data:) images only. Enforced by the browser itself, so it holds

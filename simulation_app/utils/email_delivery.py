@@ -48,7 +48,7 @@ from email.utils import format_datetime, formataddr, getaddresses, make_msgid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-__version__ = "1.2.9.1"
+__version__ = "1.3.0.4"
 
 logger = logging.getLogger(__name__)
 
