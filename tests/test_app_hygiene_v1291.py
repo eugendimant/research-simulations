@@ -104,7 +104,9 @@ def _scale_mean_d(csv_bytes: bytes, high: str, low: str, name: str = "Satisfacti
     (["Alpha", "Bravo", "Charlie"], "Bravo", "Charlie"),
 ])
 def test_effect_ui_text_metadata_and_data_all_say_the_high_condition_scores_higher(apptest_env, levels, high, low):
-    at = _generate_page(levels, n=40 * len(levels) + 40)
+    # 150 per cell and a pinned seed: with ~50 per cell the observed d for a request of 0.8 has an SD of
+    # about 0.25, so a ">0.3" check failed by chance on roughly one run in thirty (seen once on CI).
+    at = _generate_page(levels, n=150 * len(levels), extra_state={"_user_seed_value": 7})
     _configure_effect(at, high, low, d=0.8)
     assert not [r for r in at.radio if r.key == "effect_direction"], "the redundant Higher/Lower radio must be gone"
     messages = [s.value for s in at.success if "Effect configured" in s.value]

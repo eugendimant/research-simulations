@@ -74,6 +74,42 @@ about five minutes.
 With neither set, the corresponding page stays locked. This is the intended
 default: no secret, no access.
 
+## Instructor and student email (optional)
+
+When a run finishes, the app can email the instructor the generated dataset, the
+analysis and the student package. This needs an SMTP account. With the SMTP
+secrets unset the app still works; the notification is skipped and the admin page
+(`?admin=1`, tab **Email Delivery**) says so.
+
+| Secret name | Meaning | Default |
+|-------------|---------|---------|
+| `SMTP_SERVER`, `SMTP_USERNAME`, `SMTP_PASSWORD` | the sending account (all three are required) | unset |
+| `SMTP_PORT` | port | `587` |
+| `SMTP_USE_TLS` | STARTTLS on the connection | `true` |
+| `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME` | the From header | the username, "Behavioral Experiment Simulation Tool" |
+| `INSTRUCTOR_NOTIFICATION_EMAIL` | who receives the instructor mail; **several addresses may be listed, separated by commas** | the address built into the app |
+| `INSTRUCTOR_EMAIL_MODE` | `split` sends a summary mail with the analysis in the body, then a threaded second mail with the attachments; `single` sends one mail | `split` |
+| `EMAIL_MAX_MESSAGE_MB` | largest message the app will send (the app shrinks or drops attachments to fit) | `15` |
+| `INSTRUCTOR_EMAIL_MAX_PER_SESSION_PER_HOUR`, `INSTRUCTOR_EMAIL_MAX_PER_DAY` | caps on instructor mail so the mailbox cannot be flooded | `12` per session per hour, `200` per day |
+| `USER_EMAIL_MAX_PER_SESSION_PER_HOUR`, `USER_EMAIL_MAX_PER_HOUR`, `USER_EMAIL_MAX_PER_DAY` | caps on mail triggered by students (their own copy of the package) | `5`, `60`, `100` |
+
+Every send attempt is logged (one masked `EMAIL-DELIVERY` line in the app log and
+`data/email_delivery_log.jsonl`) and shown on the admin page, which also has a
+test-email button with selectable content (body only, `.md`, `.html`, `.zip`,
+3 MB, 10 MB) so you can find out what your mail system holds back.
+
+Two things help when mail is accepted by the SMTP server but never shows up:
+
+- **List a second recipient outside your main mail system**, for example
+  `INSTRUCTOR_NOTIFICATION_EMAIL = "you@university.edu, you@gmail.com"`. If one
+  inbox receives the mail and the other does not, the filter is on the receiving
+  side.
+- **Use a From address that matches the sending account.** A From address on the
+  recipient's own domain sent through a different server is treated as spoofing
+  by Microsoft 365 and is quietly junked or quarantined. The admin tab warns
+  about this. Search Junk and the Microsoft 365 quarantine for the Message-ID the
+  tab prints.
+
 ## Setting them on Streamlit Community Cloud
 
 1. Open the app at https://share.streamlit.io and pick it.
@@ -87,6 +123,11 @@ default: no secret, no access.
    OPENROUTER_API_KEY = "..."
    ADMIN_PASSWORD = "..."
    ANALYTICS_DASHBOARD_PASSWORD = "..."
+   # optional, for the instructor email (see above)
+   SMTP_SERVER = "..."
+   SMTP_USERNAME = "..."
+   SMTP_PASSWORD = "..."
+   INSTRUCTOR_NOTIFICATION_EMAIL = "first@example.edu, second@example.com"
    ```
 
 4. **Save**. Streamlit restarts the app; the keys are picked up on the next run.
