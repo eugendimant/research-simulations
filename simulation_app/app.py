@@ -56,7 +56,7 @@ from html import escape as html_escape  # v1.2.9.1: escape user/QSF text before 
 # Where deeply imported modules don't hot-reload properly.
 
 REQUIRED_UTILS_VERSION = "1.3.0.4"
-BUILD_ID = "20261006-v13004-reliable-email-exact-reports"  # Change this to force cache invalidation
+BUILD_ID = "20261007-v13004-reliable-email-exact-reports"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when

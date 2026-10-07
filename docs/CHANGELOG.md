@@ -1,25 +1,29 @@
-## 2026-10-06 — v1.3.0.4
+## 2026-10-07 — v1.3.0.4
 ### Effect fidelity, grammar-safe text, honest copy, hardened survey collection
 
 Built on 1.3.0.3. The free multi-provider AI chain (providers, failover, anti-hang layers, keys
 lookup) is untouched; only the text post-processing after a response is drawn changed.
 
 **Effect sizes**
-- A requested Cohen's d now holds on long scales. Measured over 12 independent seeds per cell
-  (7-point scale, N = 1,200), observed/requested was 1.00 at 1-3 items, 1.07 at 5, 1.16 at 8,
-  1.19 at 12, 1.24 at 15 and 1.25 at 20; two-point scales gave 0.71-0.75. `_explicit_effect_scale()`
-  gains a long-scale divisor and 2-/3-point factors. On fresh seeds the average observed/requested is
-  1.01 over 18 scale shapes (0.93-1.08). Paired with 1.2.9.0 on 12 identical cells and seeds, the mean
-  absolute error falls from 27% to 4.7% and the worst cell from 98% to 8%. One seed alone moves d by
-  about 0.1 at N = 2,400, so never calibrate on a single seed.
+- A requested Cohen's d now holds on long and narrow scales. Measured over 12 independent seeds per cell
+  (N = 1,200) on `main` 1.3.0.3, observed/requested was 1.12 at 8 items, 1.22 at 12 and 1.29 at 20 on a
+  7-point scale, and 0.75, -0.04 and 0.67 on 2-point scales with 1, 3 and 6 items. `_explicit_effect_scale()`
+  gains a long-scale divisor and 2-/3-point factors, and the identical-answer step of the realism layer
+  now leaves scales with fewer than five response options alone. On the same 18 cells and seeds (401-412,
+  not used for fitting) the average observed/requested is 0.98 (0.88-1.05) and the absolute error of the
+  cell means falls from 19.8% on `main` to 3.8%, the worst cell from 104% to 12%. One seed alone moves d
+  by about 0.1 at N = 2,400, so never calibrate on a single seed.
 - Economic-game outcomes keep the requested effect. The game model overwrote it (observed d -0.02,
   0.13 and 0.09 for a requested 0.5); it is restored afterwards (0.50, 0.50, 0.50).
-- Straight-line repair: the run audit repairs only scales with 5+ items and 5+ response options, and the HBS
-  validator skips every item with fewer than five observed response options. On binary/3-point scales it
-  randomised honest data and erased the condition effect (observed/requested 0.02 on a three-item binary
-  scale and 0.49 on a three-item 3-point scale in 1.2.9.0; 0.93 and 0.99 now). The validator pools numbered
-  items across scales, so a three-item 7-point scale can still be repaired when the straight-line rate exceeds
-  its benchmark (all-equal rows 248 -> 38 at N = 1,500, against 64 on `main`).
+- Straight-line handling: every pass that edits runs of identical answers needs five response options (the run
+  audit, the identical-answer step of the realism layer, the HBS validator, which skips every item with fewer than
+  five observed options). The audit also needs five or more scale items or one block of three or more, because the
+  realism step was calibrated on audited data. On binary/3-point scales these passes randomised honest data and
+  erased the condition effect (observed/requested -0.04 on a three-item binary scale and 0.60 on a three-item
+  3-point scale on `main` 1.3.0.3; 0.92 and 1.01 now) and, on the corpus's binary blocks, took Cronbach's alpha
+  from the designed 0.81 to 0.52 (0.74 to 0.21-0.46 on 3-point blocks). The validator pools numbered items across
+  scales, so a three-item 7-point scale can still be repaired when the straight-line rate exceeds its benchmark
+  (all-equal rows 248 -> 38 at N = 1,500, against 64 on `main`).
 - True-null option ("Also infer small differences from the condition names", Advanced Settings,
   `auto_effects=False`): no inferred offsets and no name-based trait modifiers. For conditions named
   by a specified effect, name-based trait modifiers are skipped too. Label matching uses whole words

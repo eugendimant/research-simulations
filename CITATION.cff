@@ -3,7 +3,7 @@ message: "If you use this software, please cite it as below and name the softwar
 title: "Behavioral Experiment Simulation Tool"
 type: software
 version: "1.3.0.4"
-date-released: "2026-10-06"
+date-released: "2026-10-07"
 authors:
   - family-names: Dimant
     given-names: Eugen

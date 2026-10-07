@@ -934,7 +934,10 @@ def test_changelog_numeric_text_box_count_matches_the_corpus():
     from utils.enhanced_simulation_engine import clean_question_text, infer_numeric_answer_spec
     from utils.qsf_preview import QSFPreviewParser
 
-    files = sorted((_APP_DIR / "example_files").glob("*.qsf"))
+    # The figures in the changelog were counted on the 302 files that existed when they were measured;
+    # demo files added to the folder later are not part of that corpus.
+    added_later = {"2026_10_06_Demo_study_design.qsf"}
+    files = sorted(path for path in (_APP_DIR / "example_files").glob("*.qsf") if path.name not in added_later)
     if len(files) != 302:
         pytest.skip("the changelog counts the 302-file corpus; the example folder has changed")
     total = numeric = 0
