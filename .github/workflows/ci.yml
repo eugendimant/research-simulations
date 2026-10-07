@@ -10,7 +10,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The fast suite has about 1,000 tests and takes 25-30 minutes on a hosted runner (it took 13 minutes
+    # at 750 tests); a 30-minute limit cancelled the Python 3.12 job right at the end.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -31,7 +33,7 @@ jobs:
       - name: Lint (ruff F,B,S - see pyproject.toml)
         run: ruff check simulation_app tests scripts --exclude simulation_app/experimental_features
       - name: Tests (fast suite)
-        run: python -m pytest tests -m "not slow" -q -p no:cacheprovider
+        run: python -m pytest tests -m "not slow" -q -p no:cacheprovider --durations=15
 
   slow:
     # Long-running stress / full-matrix tests: weekly schedule or manual dispatch only.

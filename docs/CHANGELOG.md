@@ -37,7 +37,7 @@ lookup) is untouched; only the text post-processing after a response is drawn ch
   Strategy" now describes this instead of a table of hard-coded keyword magnitudes.
 
 **Open-ended text**
-- Flagged defects per 1,000 answers: 453 -> 0.9 (24 corpus files, 24k answers, same seeds). Gone:
+- Flagged defects per 1,000 answers: 447 -> 0.5 (24 corpus files, 24k answers, same seeds; baseline `main` 1.2.9.0, whose offline text engine 1.3.0.3 did not change; re-measured on the merged tree). Gone:
   fillers inside phrases, "Click to write the question text" echoed into answers, HTML entities,
   instruction text, keyword-soup topics, foreign question fragments, "something I in favor of",
   a/an mismatches, cut-off endings.
