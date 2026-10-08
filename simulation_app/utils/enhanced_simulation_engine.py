@@ -14654,9 +14654,16 @@ class EnhancedSimulationEngine:
                                 logger.warning("disable_permanently() failed on budget exceed: %s", _dp_err)
 
                 participant_condition = conditions.iloc[i]
+                _visibility_condition = participant_condition
+                # v1.3.0.6: a repeated-measures question that belongs to one within-condition is written for THAT
+                # condition (see within_design); everything else about the cascade is unchanged.
+                if q.get("_condition_override"):
+                    participant_condition = str(q["_condition_override"])
+                elif q.get("_condition_suffix"):
+                    participant_condition = f"{participant_condition} - {q['_condition_suffix']}"
 
                 # Check if this participant's condition allows them to see this question
-                if not self.survey_flow_handler.is_question_visible(col_name, participant_condition):
+                if not self.survey_flow_handler.is_question_visible(col_name, _visibility_condition):
                     # Participant wouldn't see this question - leave blank (NA)
                     responses.append("")
                     # v1.2.2.3: Must also append to _sources_for_col to keep lists aligned.
@@ -14680,6 +14687,8 @@ class EnhancedSimulationEngine:
                     from .persona_library import Persona
                     persona = Persona(name="default", description="Default responder", weight=1.0, traits={})
                 response_vals = participant_item_responses[i]
+                if q.get("_response_slice"):  # v1.3.0.6: only this within-condition's answers shape its text
+                    response_vals = response_vals[int(q["_response_slice"][0]):int(q["_response_slice"][1])]
                 # v1.0.6.1: Filter NaN before computing mean to prevent propagation
                 _clean_resp = [float(v) for v in response_vals if v is not None and not (isinstance(v, float) and np.isnan(v))] if response_vals else []
                 response_mean = float(np.mean(_clean_resp)) if _clean_resp else None

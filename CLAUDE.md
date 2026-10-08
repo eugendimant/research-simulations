@@ -274,8 +274,9 @@ Runs in this order:
   block and receive no effect or correlation shift (the effect is scaled up by the careless share so the sample-level d_av holds).
   Attrition removes the LATER presentation positions. Guards: `test_a_careless_person_is_careless_in_every_condition`,
   `test_attrition_removes_the_later_conditions`.
+- **Text follows the condition.** An open-ended question bound to a within-condition (block name contains one condition label, `within_condition`, or `per_condition`) is replicated per condition with `_condition_override` / `_condition_suffix` / `_response_slice` (three small hooks in the OE loop); the LLM/anti-hang rules are untouched because it is the same loop. Fixed order adds no drift by default and records a note. Guards: `test_open_ended_questions_are_bound_*`, `test_fixed_order_adds_no_drift_*`.
 - **Reports never run between-subjects tests on repeated data.** `instructor_report.is_repeated_design(metadata)` routes the Markdown/HTML
-  instructor reports to `within_report` (paired t, RM-ANOVA with Mauchly/GG/HF, mixed ANOVA, Wilcoxon/Friedman; numpy only through
+  instructor reports to `within_report` (paired t, RM-ANOVA with Mauchly/GG/HF, mixed ANOVA with the between factors as full factors and Type III SS, Wilcoxon/Friedman; numpy only through
   `within_stats`), and the student summary to `within_report.summary_sections`. Guards: `tests/test_within_report_v1306.py`.
 - **The selector is real on both paths.** QSF: `design_type_select` (mirrored in `design_type_choice`); builder: `builder_design_type_input`;
   both feed `design_config` and `_design_config_for_engine`. A QSF with repeated, unrandomized blocks only gets a *suggestion*

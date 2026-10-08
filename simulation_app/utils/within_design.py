@@ -286,7 +286,13 @@ def normalize_design(
     spec.within_correlation = float(min(0.95, max(0.0, r if math.isfinite(r) else DEFAULT_WITHIN_CORRELATION)))
     cs = str(design.get("correlation_structure") or "exchangeable").strip().lower()
     spec.correlation_structure = cs if cs in CORRELATION_STRUCTURES else "exchangeable"
-    spec.order_effects = bool(design.get("order_effects", True))
+    # Under a fixed order any drift is confounded with the conditions, so it is off unless asked for explicitly.
+    spec.order_effects = bool(design.get("order_effects", spec.order != "fixed"))
+    if spec.order == "fixed":
+        spec.notes.append(
+            "Fixed presentation order: the order of the conditions is confounded with the conditions themselves"
+            + (" and a fatigue drift was requested, so it is confounded with the contrast too."
+               if spec.order_effects else "; no order / fatigue drift was added."))
     try:
         od = float(design.get("order_effect_d", DEFAULT_ORDER_EFFECT_D))
     except (TypeError, ValueError):
@@ -678,6 +684,29 @@ def wide_columns_for(metadata: Dict[str, Any], dv: str) -> Dict[str, Dict[str, A
     return wide.get(dv) or {}
 
 
+def _oe_cell_indices(q: Dict[str, Any], cells: List[Dict[str, Any]]) -> Optional[List[int]]:
+    """Which within-conditions an open-ended question belongs to: ``None`` = asked once per participant.
+
+    A question is bound to a condition when it says so (``within_condition``), is asked in every condition
+    (``per_condition``), or sits in a survey block whose name contains exactly one condition label.
+    """
+    def n(x: Any) -> str:
+        return _norm(re.sub(r"[_\-/.:]+", " ", str(x or "")))
+
+    lab = q.get("within_condition")
+    if lab:
+        hit = [i for i, c in enumerate(cells) if n(c["label"]) == n(lab)]
+        return hit or None
+    if q.get("per_condition"):
+        return list(range(len(cells)))
+    block = n(q.get("block_name"))
+    if not block:
+        return None
+    hits = [i for i, c in enumerate(cells)
+            if n(c["label"]) and re.search(r"(?<![^\W_])" + re.escape(n(c["label"])) + r"(?![^\W_])", block)]
+    return hits if len(hits) == 1 else None
+
+
 def generate_repeated(engine: Any) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """Generate a within/mixed dataset for ``engine`` (an ``EnhancedSimulationEngine`` built with a design)."""
     from . import enhanced_simulation_engine as E
@@ -727,6 +756,40 @@ def generate_repeated(engine: Any) -> Tuple[pd.DataFrame, Dict[str, Any]]:
                     E._stable_int_hash(f"{pfx}|target_alpha") & 0x7FFFFFFF).uniform(0.80, 0.90))
             replicas.append(rep)
 
+    # open-ended questions: bound to a condition -> written for that condition (own column per condition),
+    # otherwise asked once. Item offsets let each condition's text follow that condition's own ratings.
+    item_offsets = []
+    running = 0
+    for _j in range(K):
+        start = running
+        for rep in replicas[_j * n_dv:(_j + 1) * n_dv]:
+            running += max(1, int(float(rep.get("num_items", 1) or 1)))
+        item_offsets.append((start, running))
+    oe_list: List[Dict[str, Any]] = []
+    oe_columns: Dict[str, Dict[str, str]] = {}
+    oe_once: List[str] = []
+    oe_bases: set = set()
+    for q in engine.open_ended_questions or []:
+        base_raw = str(q.get("name", "Open_Response"))
+        base = E._clean_column_name(base_raw)
+        idx = _oe_cell_indices(q, cells)
+        if idx is None:
+            oe_list.append(dict(q))
+            oe_once.append(base)
+            continue
+        oe_bases.add(base)
+        oe_columns[base] = {}
+        for j in idx:
+            rq = dict(q)
+            rq["name"] = rq["variable_name"] = f"{base_raw}_occ{j + 1}"
+            rq["_response_slice"] = list(item_offsets[j])
+            if mixed:
+                rq["_condition_suffix"] = cells[j]["label"]
+            else:
+                rq["_condition_override"] = cells[j]["label"]
+            oe_list.append(rq)
+            oe_columns[base][cells[j]["label"]] = f"{base}_{cells[j]['slug']}"
+
     kw = dict(ctor)
     ctx = dict(ctor.get("study_context") or {})
     try:
@@ -738,7 +801,7 @@ def generate_repeated(engine: Any) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     kw.update(
         conditions=list(group_labels) if mixed else [ALL_PARTICIPANTS_LABEL],
         factors=[dict(f) for f in spec.between_factors] if mixed else [],
-        scales=replicas, effect_sizes=[], auto_effects=False, dropout_rate=0.0,
+        scales=replicas, open_ended_questions=oe_list, effect_sizes=[], auto_effects=False, dropout_rate=0.0,
         correlation_matrix=latent, study_context=ctx, design=None,
         condition_allocation=(ctor.get("condition_allocation") if mixed else None),
     )
@@ -973,7 +1036,7 @@ def generate_repeated(engine: Any) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     cell_cols: Dict[int, List[str]] = {j: [] for j in range(K)}
     for c in df.columns:
         m = re.match(r"^(.*)_occ(\d+)(?:_.*)?$", str(c))
-        if m and m.group(1) in {p for _, _, p in live}:
+        if m and m.group(1) in ({p for _, _, p in live} | oe_bases):
             cell_cols[int(m.group(2)) - 1].append(c)
     for i in np.where(completed < K)[0]:
         for j in range(K):
@@ -990,7 +1053,7 @@ def generate_repeated(engine: Any) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     rename: Dict[str, str] = {}
     for c in df.columns:
         m = re.match(r"^(.*)_occ(\d+)((?:_.*)?)$", str(c))
-        if m and m.group(1) in {p for _, _, p in live}:
+        if m and m.group(1) in ({p for _, _, p in live} | oe_bases):
             rename[c] = f"{m.group(1)}_{cells[int(m.group(2)) - 1]['slug']}{m.group(3)}"
     df = df.rename(columns=rename)
     if not mixed:
@@ -1009,7 +1072,7 @@ def generate_repeated(engine: Any) -> Tuple[pd.DataFrame, Dict[str, Any]]:
             d.pop("inner_mean", None)
 
     md = _compose_metadata(engine, inner, md_in, df, spec, group_labels, wide_map, rename, effects_log, spec_rows,
-                           coupling_log, eff_order, completed, careless, forced, live, r_target)
+                           coupling_log, eff_order, completed, careless, forced, live, r_target, oe_columns, oe_once)
     # the outer engine adopts the inner run's bookkeeping so the exports/explainer see the wide columns
     engine.column_info = [(rename.get(c, c), d) for c, d in (inner.column_info or [])]
     engine.validation_log = list(getattr(inner, "validation_log", []) or []) + [
@@ -1020,7 +1083,7 @@ def generate_repeated(engine: Any) -> Tuple[pd.DataFrame, Dict[str, Any]]:
 
 
 def _compose_metadata(engine, inner, md_in, df, spec, group_labels, wide_map, rename, effects_log, spec_rows,
-                      coupling_log, eff_order, completed, careless, forced, live, r_target):
+                      coupling_log, eff_order, completed, careless, forced, live, r_target, oe_columns, oe_once):
     md = dict(md_in)
     K = len(spec.cells)
     md["conditions"] = list(engine.conditions)
@@ -1039,6 +1102,17 @@ def _compose_metadata(engine, inner, md_in, df, spec, group_labels, wide_map, re
             e2["name"] = f"{m.group(1)} ({cell['label']})"
         gl.append(e2)
     md["scale_generation_log"] = gl
+    oq = []
+    for q in md.get("open_ended_questions") or []:
+        if isinstance(q, dict):
+            nm = str(q.get("variable_name") or q.get("name") or "")
+            m = re.match(r"^(.*)_occ(\d+)$", nm)
+            if m:
+                q = dict(q)
+                q["name"] = q["variable_name"] = f"{m.group(1).replace(' ', '_')}_{spec.cells[int(m.group(2)) - 1]['slug']}"
+                q["within_condition"] = spec.cells[int(m.group(2)) - 1]["label"]
+        oq.append(q)
+    md["open_ended_questions"] = oq
     cd = md["column_descriptions"]
     cd["Order"] = "Presentation order of the within-subject conditions for this participant (first > last)"
     for j, c in enumerate(spec.cells):
@@ -1059,11 +1133,15 @@ def _compose_metadata(engine, inner, md_in, df, spec, group_labels, wide_map, re
         "coupling": coupling_log,
         "attrition": {"rate_configured": float(engine.dropout_rate), "dropped": int((completed < len(spec.cells)).sum()),
                       "pattern": "a participant who drops out loses the conditions presented after the last one finished"},
+        "open_ended_columns": {k: dict(v) for k, v in oe_columns.items()},
+        "open_ended_once": list(oe_once),
         "careless": {"n_flagged_straight_line": int(careless.sum()), "blocks_made_consistent": int(forced)},
         "order_effect": {"enabled": bool(spec.order_effects), "d_per_position": float(spec.order_effect_d)},
     })
     md["design"] = design
     md["design_type"] = spec.type
+    if spec.notes:
+        md["generation_warnings"] = list(md.get("generation_warnings") or []) + list(spec.notes)
     md["effect_sizes_configured"] = [
         {"variable": _spec_value(s, "variable"), "factor": _spec_value(s, "factor"),
          "level_high": _spec_value(s, "level_high"), "level_low": _spec_value(s, "level_low"),
@@ -1146,8 +1224,10 @@ def build_long_format(df: pd.DataFrame, metadata: Dict[str, Any]) -> pd.DataFram
         raise ValueError("build_long_format needs the data of a within-subjects or mixed run")
     cells = d["cells"]
     wide_cols = d.get("wide_columns") or {}
+    oe_cols = d.get("open_ended_columns") or {}
     measure_cols = {c for per in wide_cols.values() for info in per.values()
                     for c in list(info.get("items") or []) + ([info["mean"]] if info.get("mean") else [])}
+    measure_cols |= {c for per in oe_cols.values() for c in per.values()}
     pos_cols = {f"Position_{c['slug']}" for c in cells}
     person_cols = [c for c in df.columns if c not in measure_cols and c not in pos_cols
                    and c not in ("Conditions_Completed",)]
@@ -1171,6 +1251,9 @@ def build_long_format(df: pd.DataFrame, metadata: Dict[str, Any]) -> pd.DataFram
                 part[f"{dv}_{i + 1}"] = df[c].to_numpy() if c in df.columns else np.nan
             if info.get("mean") and info["mean"] in df.columns:
                 part[f"{dv}_mean"] = df[info["mean"]].to_numpy()
+        for base, per in oe_cols.items():
+            col = per.get(cell["label"])
+            part[base] = df[col].to_numpy() if (col and col in df.columns) else ""
         pieces.append(part)
     long_df = pd.concat(pieces, ignore_index=True)
     sort_cols = [c for c in ("PARTICIPANT_ID", "Position") if c in long_df.columns]

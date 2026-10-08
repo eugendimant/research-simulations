@@ -2,7 +2,7 @@
 
 Pins the contract of ``utils/within_design.py`` and the ``design=`` argument of ``EnhancedSimulationEngine``:
 
-* a between-subjects run is untouched (output hashes recorded at commit 6d97a95, before repeated measures existed),
+* a between-subjects run is untouched (output hashes recorded on the integration head eecf4c7, which already contains the repeated-measures hook),
 * wide layout: ``<Measure>_<Condition>_<i>`` / ``..._mean``, one row per participant, one attention check,
 * a long file with one row per participant and condition that agrees with the wide data,
 * the requested effect is d_av (recovered on average), d_z is reported, inferred effects work, a true null is a null,
@@ -58,13 +58,13 @@ def _d_av(df, meta, dv, a, b):
 # ---------------------------------------------------------------------------------------------
 # 1. between-subjects designs are untouched
 # ---------------------------------------------------------------------------------------------
-# md5 (first 12 hex digits) of df.to_csv and of the metadata JSON (without the timestamp), measured on commit 6d97a95
+# md5 (first 12 hex digits) of df.to_csv and of the metadata JSON (without the timestamp), measured on the integration head eecf4c7 (the same configurations gave the pre-integration hashes on 6d97a95)
 BASELINE_HASHES = {
-    "basic_1": ["c5eb40f7bf11", "2d2e0799c09e"],
-    "basic_2": ["02dafb4e74aa", "a55ac4b7e009"],
-    "basic_3": ["46ab9f3ba04e", "4c59dfcf6349"],
-    "effects_4": ["abeb1e7edbfe", "de724f666cf9"],
-    "factorial_oe_5": ["23bdcc55315c", "2cf218128aa5"],
+    "basic_1": ["f29a321a06b4", "9efd3ec0dcb5"],
+    "basic_2": ["0dda120ad65e", "fc684765385f"],
+    "basic_3": ["66e61ce23c71", "fcfb79dde944"],
+    "effects_4": ["f98161e88664", "0ee5f9cc0f68"],
+    "factorial_oe_5": ["12b3a5a6725a", "b953fbe58479"],
 }
 
 
@@ -385,7 +385,8 @@ def test_factorial_within_effects_add_per_factor():
 # 6. order, attrition, careless responding
 # ---------------------------------------------------------------------------------------------
 def test_order_drift_is_switchable_and_small():
-    on = _within(["A", "B", "C"], n=400, seed=61, auto_effects=False, design={"order": "fixed", "order_effect_d": -0.2})
+    on = _within(["A", "B", "C"], n=400, seed=61, auto_effects=False,
+                 design={"order": "fixed", "order_effects": True, "order_effect_d": -0.2})
     df_on, _ = on.generate()
     off = _within(["A", "B", "C"], n=400, seed=61, auto_effects=False, design={"order": "fixed", "order_effects": False})
     df_off, _ = off.generate()
@@ -515,3 +516,94 @@ def test_wave_numbers_and_digits_are_ignored_when_matching_questions():
               {"name": "Wave 3", "questions": ["Wave 3: how satisfied are you?"]}]
     out = W.suggest_design_from_blocks(blocks)
     assert out["suggest"] == "within" and len(out["blocks"]) == 3
+
+
+# ---------------------------------------------------------------------------------------------
+# fixed order: no drift by default, and the confound is stated
+# ---------------------------------------------------------------------------------------------
+def test_fixed_order_adds_no_drift_by_default_and_says_why():
+    e = _within(["A", "B", "C"], n=60, seed=4, design={"order": "fixed"})
+    assert e.design_spec.order_effects is False
+    df, md = e.generate()
+    assert md["design"]["order_effect"]["enabled"] is False
+    assert any("confounded" in w for w in md["generation_warnings"])
+    assert any("confounded" in n for n in md["design"]["notes"])
+    with_drift = _within(["A", "B", "C"], n=60, seed=4, design={"order": "fixed", "order_effects": True})
+    assert with_drift.design_spec.order_effects is True
+    assert any("confounded with the contrast" in n for n in with_drift.design_spec.notes)
+
+
+def test_counterbalanced_orders_keep_the_default_drift():
+    for order in ("random", "latin_square", "full"):
+        assert _within(["A", "B", "C"], n=30, seed=4, design={"order": order}).design_spec.order_effects is True
+
+
+# ---------------------------------------------------------------------------------------------
+# open-ended questions follow the within-conditions
+# ---------------------------------------------------------------------------------------------
+def _oe_run(**kw):
+    lv = ["Gain frame", "Loss frame"]
+    oe = [{"name": "Why", "question_text": "Why did you rate it this way?", "block_name": "Gain frame"},
+          {"name": "Why2", "question_text": "Why did you rate it this way?", "block_name": "Loss frame survey"},
+          {"name": "Comments", "question_text": "Any final comments?", "block_name": "Wrap-up"},
+          {"name": "Both", "question_text": "Describe your reaction.", "per_condition": True},
+          {"name": "Ambiguous", "question_text": "Anything else?", "block_name": "Gain frame and Loss frame"}]
+    e = EnhancedSimulationEngine(
+        study_title="Framing donation appeals", study_description="Gain and loss framing of a charity appeal.", sample_size=40,
+        conditions=lv, factors=[{"name": "Frame", "levels": lv}], scales=[_scale("Donation", 3)], additional_vars=[],
+        demographics=DEMO, seed=2, open_ended_questions=oe, design={"type": "within"}, **kw)
+    e.llm_generator and e.llm_generator.disable_permanently("test")
+    return e, *e.generate()
+
+
+def test_open_ended_questions_are_bound_to_their_condition_block_or_asked_once():
+    _, df, md = _oe_run()
+    d = md["design"]
+    assert d["open_ended_columns"]["Why"] == {"Gain frame": "Why_Gain_frame"}
+    assert d["open_ended_columns"]["Why2"] == {"Loss frame": "Why2_Loss_frame"}
+    assert set(d["open_ended_columns"]["Both"]) == {"Gain frame", "Loss frame"}
+    assert set(d["open_ended_once"]) == {"Comments", "Ambiguous"}
+    for col in ("Why_Gain_frame", "Why2_Loss_frame", "Both_Gain_frame", "Both_Loss_frame", "Comments", "Ambiguous"):
+        assert col in df.columns and (df[col].astype(str).str.len() > 0).all()
+    assert not any("_occ" in c for c in df.columns)
+    assert df["Both_Gain_frame"].tolist() != df["Both_Loss_frame"].tolist()
+    names = {q.get("name") for q in md["open_ended_questions"]}
+    assert {"Why_Gain_frame", "Both_Loss_frame", "Comments"} <= names
+
+
+def test_a_condition_bound_question_is_blank_for_people_who_never_reached_it():
+    _, df, md = _oe_run(dropout_rate=0.5)
+    gone = df["Conditions_Completed"] < df["Position_Gain_frame"]
+    assert gone.any()
+    assert (df.loc[gone, "Both_Gain_frame"].isna() | (df.loc[gone, "Both_Gain_frame"] == "")).all()
+
+
+def test_long_format_carries_condition_bound_text_in_its_own_rows():
+    _, df, md = _oe_run()
+    long = W.build_long_format(df, md)
+    gain = long[long["Condition"] == "Gain frame"].set_index("PARTICIPANT_ID")
+    assert gain["Both"].tolist() == df.set_index("PARTICIPANT_ID")["Both_Gain_frame"].tolist()
+    assert (long[long["Condition"] == "Loss frame"]["Why"].astype(str) == "").all()
+    assert "Comments" in long.columns
+
+
+def test_open_ended_text_in_a_mixed_design_names_the_group_and_the_condition():
+    lv = ["Treatment", "Control"]
+    e = EnhancedSimulationEngine(
+        study_title="Training", study_description="A training programme.", sample_size=30, conditions=lv,
+        factors=[{"name": "Group", "levels": lv}], scales=[_scale("Skill", 3)], additional_vars=[], demographics=DEMO, seed=3,
+        open_ended_questions=[{"name": "Reflect", "question_text": "Reflect on the session.", "per_condition": True}],
+        design={"type": "mixed", "within_factors": [{"name": "Time", "levels": ["Pre", "Post"]}]})
+    e.llm_generator and e.llm_generator.disable_permanently("test")
+    df, md = e.generate()
+    assert {"Reflect_Pre", "Reflect_Post"} <= set(df.columns)
+
+
+def test_whole_sample_correlation_lands_within_005_of_the_request_with_careless_responders():
+    """r is what the analyst sees in the whole sample (careless responders who repeat an answer included)."""
+    for target in (0.3, 0.6):
+        vals = []
+        for seed in (1, 2, 3):
+            df, _ = _within(["A", "B", "C"], n=300, seed=seed, design={"within_correlation": target, "order": "latin_square"}).generate()
+            vals.append(_mean_r(df, "Attitude", ["A", "B", "C"]))
+        assert abs(float(np.mean(vals)) - target) < 0.05, (target, vals)

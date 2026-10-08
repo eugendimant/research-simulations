@@ -322,73 +322,131 @@ def rm_anova(Y: Any, levels: Optional[Sequence[int]] = None, names: Optional[Seq
     return out
 
 
-def mixed_anova(Y: Any, groups: Any, levels: Optional[Sequence[int]] = None,
-                names: Optional[Sequence[str]] = None, between_name: str = "Group") -> Dict[str, Any]:
-    """Mixed ANOVA: one between-subjects grouping (``groups``) x the within factor(s) in the columns of ``Y``.
+def _sum_code(labels: np.ndarray) -> Tuple[np.ndarray, List[Any]]:
+    """Sum-to-zero (effect) coding of one factor: (n x (m-1)) columns, last level = -1 on every column."""
+    levels = list(dict.fromkeys(labels.tolist()))
+    m = len(levels)
+    X = np.zeros((len(labels), max(m - 1, 0)))
+    for j in range(m - 1):
+        X[labels == levels[j], j] = 1.0
+        X[labels == levels[-1], j] = -1.0
+    return X, levels
 
-    Rows: the between effect, each within term, and each Group x within-term interaction. Within terms share
-    the pooled within-group covariance, so Mauchly and the corrections use it. Complete cases only.
+
+def _between_columns(factor_labels: List[np.ndarray]) -> Tuple[np.ndarray, List[Tuple[Tuple[int, ...], slice]]]:
+    """Design matrix of a full-factorial between-subjects model in sum coding (intercept first) and the column
+    block of every term (a tuple of factor indices)."""
+    n = len(factor_labels[0])
+    mains = [_sum_code(lab)[0] for lab in factor_labels]
+    cols = [np.ones((n, 1))]
+    blocks: List[Tuple[Tuple[int, ...], slice]] = []
+    start = 1
+    for size in range(1, len(factor_labels) + 1):
+        for combo in itertools.combinations(range(len(factor_labels)), size):
+            M = mains[combo[0]]
+            for c in combo[1:]:
+                M = (M[:, :, None] * mains[c][:, None, :]).reshape(n, -1)
+            cols.append(M)
+            blocks.append((combo, slice(start, start + M.shape[1])))
+            start += M.shape[1]
+    return np.hstack(cols), blocks
+
+
+def _rss(X: np.ndarray, Z: np.ndarray) -> float:
+    beta = np.linalg.lstsq(X, Z, rcond=None)[0]
+    return float(((Z - X @ beta) ** 2).sum())
+
+
+def mixed_anova(Y: Any, groups: Any, levels: Optional[Sequence[int]] = None,
+                names: Optional[Sequence[str]] = None, between_name: str = "Group",
+                between_names: Optional[Sequence[str]] = None) -> Dict[str, Any]:
+    """Mixed ANOVA: between-subjects factor(s) x the within factor(s) in the columns of ``Y``.
+
+    ``groups`` is one label per participant (one pooled grouping variable, named ``between_name``) or an
+    ``n x B`` array / list of B label vectors, one per between-subjects FACTOR (named ``between_names``): the
+    between factors then enter as full factors with all their interactions. Type III sums of squares with
+    sum-to-zero coding (the test of each term adjusted for all others, as SPSS and R's ``car::Anova(type=3)`` report
+    them); for balanced cells they equal the classical Type I values. Rows: every between term, every within term
+    and every between x within interaction. Within terms share the pooled within-cell covariance, so Mauchly's
+    test and the Greenhouse-Geisser / Huynh-Feldt corrections use it. Complete cases only.
     """
     Ya = np.asarray(Y, dtype=float)
-    ga = np.asarray(groups)
+    ga = np.asarray(groups, dtype=object)
+    if ga.ndim == 1:
+        ga = ga[:, None]
     keep = np.all(np.isfinite(Ya), axis=1)
     Ya, ga = Ya[keep], ga[keep]
     n, K = Ya.shape if Ya.ndim == 2 else (0, 0)
-    glabels = list(dict.fromkeys(ga.tolist()))
-    G = len(glabels)
+    B = ga.shape[1]
+    bnames = list(between_names) if between_names else ([between_name] if B == 1 else [f"Between {i + 1}" for i in range(B)])
     levels = list(levels) if levels else [K]
     names = list(names) if names else ([f"Factor {i + 1}" for i in range(len(levels))] if len(levels) > 1
                                        else ["Condition"])
-    out: Dict[str, Any] = {"n": int(n), "groups": glabels, "group_n": [], "levels": levels, "names": names,
-                           "terms": [], "ok": False}
-    gi = np.array([glabels.index(x) for x in ga.tolist()], dtype=int)
-    ns = np.array([int(np.sum(gi == g)) for g in range(G)])
-    out["group_n"] = ns.tolist()
-    if G < 2 or n <= G + 1 or K < 2 or int(np.prod(levels)) != K or (ns < 2).any():
+    factor_labels = [np.array([str(v) for v in ga[:, j]]) for j in range(B)] if n else []
+    out: Dict[str, Any] = {"n": int(n), "groups": [], "group_n": [], "levels": levels, "names": names,
+                           "between_names": bnames, "terms": [], "ok": False}
+    if n == 0 or K < 2 or int(np.prod(levels)) != K:
         return out
-    # between-subjects effect on the person means
-    pm = Ya.mean(1)
-    gm = np.array([pm[gi == g].mean() for g in range(G)])
-    ss_b = K * float(np.sum(ns * (gm - pm.mean()) ** 2))
-    ss_w = K * float(np.sum((pm - gm[gi]) ** 2))
-    df_b, df_w = G - 1, n - G
-    f_b = (ss_b / df_b) / (ss_w / df_w) if ss_w > 1e-12 else (float("inf") if ss_b > 1e-12 else 0.0)
-    out["terms"].append({"term": between_name, "type": "between", "df1": df_b, "df2": df_w, "ss": ss_b,
-                         "ss_error": ss_w, "f": float(f_b), "p": _p_f(f_b, df_b, df_w),
-                         "p_gg": _p_f(f_b, df_b, df_w), "p_hf": _p_f(f_b, df_b, df_w),
-                         "partial_eta2": float(ss_b / (ss_b + ss_w)) if (ss_b + ss_w) > 0 else _NAN,
-                         "eps_gg": 1.0, "eps_hf": 1.0, "mauchly_w": _NAN, "mauchly_p": _NAN})
-    for term in _terms(len(levels)):
-        L = _term_matrix(levels, term)
-        Z = Ya @ L.T
-        d = L.shape[0]
-        zbar = Z.mean(0)
-        zg = np.array([Z[gi == g].mean(0) for g in range(G)])
-        ss_t = n * float(np.sum(zbar ** 2))
-        ss_gt = float(np.sum(ns[:, None] * (zg - zbar[None, :]) ** 2))
-        resid = Z - zg[gi]
-        ss_e = float(np.sum(resid ** 2))
-        dfe = d * (n - G)
-        S = (resid.T @ resid) / (n - G)
-        sph = _sphericity(np.atleast_2d(S), n - G)
-        for label, ss_eff, df1, typ in ((_term_name(term, names), ss_t, d, "within"),
-                                       (f"{between_name} x {_term_name(term, names)}", ss_gt, d * (G - 1),
-                                        "interaction")):
-            row = {"term": label, "type": typ, "df1": df1, "df2": dfe, "ss": ss_eff, "ss_error": ss_e,
-                   "ms": ss_eff / df1, "ms_error": ss_e / dfe}
-            if ss_e <= 1e-12:
-                row.update(f=float("inf") if ss_eff > 1e-12 else 0.0, p=0.0 if ss_eff > 1e-12 else 1.0)
+    cell_keys = [" x ".join(r) for r in zip(*factor_labels)]
+    cells = list(dict.fromkeys(cell_keys))
+    out["groups"] = cells
+    out["group_n"] = [cell_keys.count(c) for c in cells]
+    G = len(cells)
+    X, blocks = _between_columns(factor_labels)
+    rank = int(np.linalg.matrix_rank(X))
+    df_err_unit = n - rank
+    if G < 2 or df_err_unit < 2 or min(out["group_n"]) < 2 or any(len(set(f.tolist())) < 2 for f in factor_labels):
+        return out
+
+    def term_name(combo: Tuple[int, ...]) -> str:
+        return " x ".join(bnames[i] for i in combo)
+
+    def rows_for(Z: np.ndarray, within_label: Optional[str], within_df: int) -> List[Dict[str, Any]]:
+        beta = np.linalg.lstsq(X, Z, rcond=None)[0]
+        resid = Z - X @ beta
+        rss_full = float((resid ** 2).sum())
+        d = Z.shape[1]
+        dfe = d * df_err_unit
+        rows: List[Dict[str, Any]] = []
+        spec_terms = [((), slice(0, 1))] + blocks
+        sph = {"mauchly_w": _NAN, "mauchly_chi2": _NAN, "mauchly_p": _NAN, "eps_gg": 1.0, "eps_hf": 1.0}
+        if within_label is not None and d > 1:
+            sph = _sphericity((resid.T @ resid) / df_err_unit, df_err_unit)
+        for combo, sl in spec_terms:
+            if within_label is None and combo == ():
+                continue                                    # the grand mean is not reported for the between part
+            keep_cols = [c for c in range(X.shape[1]) if not (sl.start <= c < sl.stop)]
+            ss = _rss(X[:, keep_cols], Z) - rss_full
+            df1 = (sl.stop - sl.start) * d if within_label is not None else (sl.stop - sl.start)
+            if within_label is None:
+                label, typ = term_name(combo), "between"
+            elif combo == ():
+                label, typ = within_label, "within"
             else:
-                f = (ss_eff / df1) / (ss_e / dfe)
+                label, typ = f"{term_name(combo)} x {within_label}", "interaction"
+            row: Dict[str, Any] = {"term": label, "type": typ, "df1": df1, "df2": dfe, "ss": ss, "ss_error": rss_full,
+                                   "ms": ss / df1, "ms_error": rss_full / dfe}
+            if rss_full <= 1e-12:
+                row.update(f=float("inf") if ss > 1e-12 else 0.0, p=0.0 if ss > 1e-12 else 1.0)
+            else:
+                f = (ss / df1) / (rss_full / dfe)
                 row.update(f=float(f), p=_p_f(f, df1, dfe))
-            row.update(sph)
-            if d > 1 and math.isfinite(row["f"]):
+            row.update(sph if typ != "between" else {"mauchly_w": _NAN, "mauchly_chi2": _NAN, "mauchly_p": _NAN,
+                                                     "eps_gg": 1.0, "eps_hf": 1.0})
+            if typ != "between" and within_df > 1 and math.isfinite(row["f"]):
                 row["p_gg"] = _p_f(row["f"], df1 * sph["eps_gg"], dfe * sph["eps_gg"])
                 row["p_hf"] = _p_f(row["f"], df1 * sph["eps_hf"], dfe * sph["eps_hf"])
             else:
                 row["p_gg"] = row["p_hf"] = row["p"]
-            row["partial_eta2"] = float(ss_eff / (ss_eff + ss_e)) if (ss_eff + ss_e) > 0 else _NAN
-            out["terms"].append(row)
+            row["partial_eta2"] = float(ss / (ss + rss_full)) if (ss + rss_full) > 0 else _NAN
+            rows.append(row)
+        return rows
+
+    out["terms"].extend(rows_for(Ya.mean(1, keepdims=True), None, 1))
+    for term in _terms(len(levels)):
+        L = _term_matrix(levels, term)
+        out["terms"].extend(rows_for(Ya @ L.T, _term_name(term, names), L.shape[0]))
+    out["method"] = "Type III sums of squares, sum-to-zero coding"
     out["ok"] = True
     return out
 

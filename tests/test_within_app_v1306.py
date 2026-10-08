@@ -266,3 +266,38 @@ def test_preview_rows_use_the_repeated_measures_layout(apptest_env):
     frame = at.session_state["preview_df"]
     assert len(frame) == 5 and {"Order", "Position_Pre", "Position_Post"} <= set(frame.columns)
     assert any(c.startswith("LoyaltyQuestions_Pre_") for c in frame.columns)
+
+
+def test_fixed_order_warns_on_the_design_page_and_adds_no_drift(apptest_env):
+    H = _helpers()
+    at = H._qsf_generate_page(n=40)
+    H._goto(at, 2)
+    next(s for s in at.selectbox if s.key == "design_type_select").select(WITHIN_OPTION)
+    at.run()
+    assert not [w for w in at.warning if "confounded" in w.value]
+    next(s for s in at.selectbox if s.key == "rm_order").select("fixed")
+    at.run()
+    _no_exception(at)
+    assert [w for w in at.warning if "confounded with the conditions themselves" in w.value]
+    assert at.session_state["design_config"]["order_effects"] is False
+    H._goto(at, 3)
+    files = H._click_generate(at)
+    d = json.loads(files["Metadata.json"])["design"]
+    assert d["order"] == "fixed" and d["order_effect"]["enabled"] is False and d["notes"]
+
+
+def test_open_ended_question_asked_in_every_condition_gets_a_column_per_condition(apptest_env):
+    H = _helpers()
+    conds = ["Pre", "Post"]
+    oe = [{"variable_name": "Why", "name": "Why", "question_text": "Why did you answer this way?", "source_type": "text",
+           "question_context": "reasons for the ratings", "question_purpose": "DV Response", "context_type": "general"}]
+    at = H._generate_page(conds, n=40, advanced=False, extra_state={
+        "builder_design_type": "within", "confirmed_open_ended": oe,
+        "design_config": {"order": "latin_square", "within_correlation": 0.5, "oe_every_condition": True}})
+    files = H._click_generate(at)
+    wide = _csv(files, "Simulated_Data.csv")
+    assert {"Why_Pre", "Why_Post"} <= set(wide.columns)
+    d = json.loads(files["Metadata.json"])["design"]
+    assert d["open_ended_columns"]["Why"] == {"Pre": "Why_Pre", "Post": "Why_Post"}
+    long = _csv(files, "Simulated_Data_Long.csv")
+    assert "Why" in long.columns and len(long) == 80

@@ -370,7 +370,7 @@ def _design_config_for_engine(conditions: List[str]) -> Tuple[Optional[Dict[str,
         "type": dtype,
         "order": cfg.get("order", "random"),
         "within_correlation": float(cfg.get("within_correlation", 0.5)),
-        "order_effects": bool(cfg.get("order_effects", True)),
+        "order_effects": bool(cfg.get("order_effects", cfg.get("order", "random") != "fixed")),
     }
     if dtype == "mixed":
         levels = _parse_level_list(cfg.get("within_levels"))
@@ -482,12 +482,25 @@ def _render_repeated_setup(design_type: str, *, conditions: List[str], levels_wi
             "Correlation of the same measure across conditions (within-person r)", min_value=0.0, max_value=0.9,
             value=float(saved.get("within_correlation", 0.5)), step=0.05, key="rm_corr",
             help="Test-retest and repeated-measures correlations of attitude measures typically fall between 0.4 and 0.7.")
+        fixed = order == "fixed"
         fatigue = st.checkbox(
-            "Add small order / fatigue effects", value=bool(saved.get("order_effects", True)), key="rm_order_effects",
+            "Add small order / fatigue effects", value=bool(saved.get(f"order_effects_{order}", not fixed)),
+            key=f"rm_order_effects_{order}",
             help="Later conditions score slightly lower (0.05 SD per position). Switch off for a pure condition effect.")
+        if fixed:
+            st.warning("Same order for everyone: the order of the conditions is confounded with the conditions themselves "
+                       "(any practice or fatigue looks like a condition effect). No drift is added unless you tick the box. "
+                       "Counterbalance the order to separate the two.")
+        oe_every = st.checkbox(
+            "Ask open-ended questions in every condition", value=bool(saved.get("oe_every_condition", False)),
+            key="rm_oe_every_condition",
+            help="Off: a text question is answered once per participant, unless it sits in a survey block named after one "
+                 "condition (then it is written for that condition). On: every text question is answered in every condition, "
+                 "in its own column (Question_Condition), written for that condition.")
         st.caption("Effect sizes you set on a within factor are d_av: the mean difference divided by the average SD of the two "
                    "conditions, comparable to a between-subjects d. The report also gives the paired d_z.")
-    cfg.update(order=order, within_correlation=float(corr), order_effects=bool(fatigue))
+    cfg.update(order=order, within_correlation=float(corr), order_effects=bool(fatigue), oe_every_condition=bool(oe_every),
+               **{f"order_effects_{order}": bool(fatigue)})
     st.session_state["design_config"] = cfg
 
 
@@ -15454,6 +15467,9 @@ if active_page == 3:
                         _engine_conditions = _within_levels
                         clean_factors = [{"name": "Condition", "levels": list(_within_levels)}]
                     condition_allocation = None
+                if (st.session_state.get("design_config") or {}).get("oe_every_condition"):
+                    for _oe_q in open_ended_questions_for_engine:  # one text answer per condition, written for it
+                        _oe_q["per_condition"] = True
                 if scoped_effects:
                     _design_cfg["simple_effects"] = [dict(e) for e in scoped_effects]
                 _design_cfg.pop("levels", None)

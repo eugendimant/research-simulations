@@ -344,3 +344,95 @@ def test_between_report_is_still_the_between_report():
     text, html = _both(df, md)
     assert "Repeated-measures ANOVA" not in text and "Paired comparisons" not in text
     assert "Welch" in text or "pooled-variance" in text or "t-test" in text
+
+
+# ---------------------------------------------------------------------------------------------
+# mixed ANOVA with several between factors / more than two groups (Type III, sum-to-zero coding)
+# ---------------------------------------------------------------------------------------------
+def _factorial_data(seed=14, n_cell=10, K=3):
+    rng = np.random.RandomState(seed)
+    a = np.repeat(["a1", "a2"], 2 * n_cell)
+    b = np.tile(np.repeat(["b1", "b2"], n_cell), 2)
+    eff_a = np.where(a == "a1", 0.5, 0.0)[:, None] * np.array([0, 0.4, 0.8])
+    eff_b = np.where(b == "b1", 0.3, 0.0)[:, None] + 0.4 * (a == "a1")[:, None] * (b == "b2")[:, None] * np.array([0, 1, 0])
+    Y = rng.randn(len(a), 1) + rng.randn(len(a), K) + eff_a + eff_b
+    return Y, a, b
+
+
+def test_two_between_factors_match_the_classical_balanced_decomposition(stats_mode):
+    Y, a, b = _factorial_data()
+    n, K = Y.shape
+    m = Y.mean(1)                                  # person means (between part)
+    gm = m.mean()
+    cell = {(x, y): m[(a == x) & (b == y)] for x in ("a1", "a2") for y in ("b1", "b2")}
+    n_c = 10
+    ma = {x: np.mean([cell[(x, y)].mean() for y in ("b1", "b2")]) for x in ("a1", "a2")}
+    mb = {y: np.mean([cell[(x, y)].mean() for x in ("a1", "a2")]) for y in ("b1", "b2")}
+    ss_a = 2 * n_c * sum((ma[x] - gm) ** 2 for x in ma)
+    ss_b = 2 * n_c * sum((mb[y] - gm) ** 2 for y in mb)
+    ss_ab = n_c * sum((cell[(x, y)].mean() - ma[x] - mb[y] + gm) ** 2 for x in ma for y in mb)
+    ss_err = sum(((cell[k] - cell[k].mean()) ** 2).sum() for k in cell)
+    df_e = n - 4
+    res = WS.mixed_anova(Y, np.column_stack([a, b]), [K], ["Time"], between_names=["A", "B"])
+    rows = {t["term"]: t for t in res["terms"]}
+    for name, ss in (("A", ss_a), ("B", ss_b), ("A x B", ss_ab)):
+        assert rows[name]["f"] == pytest.approx((ss / 1) / (ss_err / df_e), rel=1e-9), name
+        assert (rows[name]["df1"], rows[name]["df2"]) == (1, df_e)
+    # within part: Time and its interactions share the error of the full between model
+    assert {"Time", "A x Time", "B x Time", "A x B x Time"} <= set(rows)
+    zt = Y @ WS.helmert_contrasts(K).T             # orthonormal time contrasts
+    ss_time = n * float((zt.mean(0) ** 2).sum())
+    resid = sum(((zt[(a == x) & (b == y)] - zt[(a == x) & (b == y)].mean(0)) ** 2).sum() for x in ("a1", "a2") for y in ("b1", "b2"))
+    assert rows["Time"]["f"] == pytest.approx((ss_time / (K - 1)) / (resid / (df_e * (K - 1))), rel=1e-9)
+    assert (rows["A x Time"]["df1"], rows["A x Time"]["df2"]) == (K - 1, (K - 1) * df_e)
+    if HAS_SCIPY:
+        assert rows["A"]["p"] == pytest.approx(sp_stats.f.sf(rows["A"]["f"], 1, df_e), rel=1e-9)
+
+
+def test_unbalanced_type_iii_main_effect_equals_the_unweighted_marginal_contrast(stats_mode):
+    rng = np.random.RandomState(3)
+    sizes = {("a1", "b1"): 18, ("a1", "b2"): 7, ("a2", "b1"): 6, ("a2", "b2"): 15}
+    a, b = [], []
+    for (x, y), k in sizes.items():
+        a += [x] * k
+        b += [y] * k
+    a, b = np.array(a), np.array(b)
+    Y = rng.randn(len(a), 1) + rng.randn(len(a), 2) + np.where(a == "a1", 0.6, 0.0)[:, None] + np.where(b == "b1", 0.4, 0.0)[:, None]
+    m = Y.mean(1)
+    cm = {k: m[(a == k[0]) & (b == k[1])].mean() for k in sizes}
+    mse = sum(((m[(a == k[0]) & (b == k[1])] - cm[k]) ** 2).sum() for k in sizes) / (len(a) - 4)
+    psi = (cm[("a1", "b1")] + cm[("a1", "b2")]) / 2 - (cm[("a2", "b1")] + cm[("a2", "b2")]) / 2
+    var_unit = 0.25 * sum(1.0 / k for k in sizes.values())
+    f_hand = psi ** 2 / (var_unit * mse)
+    res = WS.mixed_anova(Y, np.column_stack([a, b]), [2], ["Time"], between_names=["A", "B"])
+    row = next(t for t in res["terms"] if t["term"] == "A")
+    assert row["f"] == pytest.approx(f_hand, rel=1e-9)
+    assert res["method"].startswith("Type III")
+
+
+def test_three_groups_are_one_factor_with_two_degrees_of_freedom(stats_mode):
+    rng = np.random.RandomState(11)
+    g = np.repeat(["g1", "g2", "g3"], 12)
+    Y = rng.randn(36, 1) + rng.randn(36, 2) + np.array([[0.0], [0.5], [1.0]])[np.repeat([0, 1, 2], 12)]
+    res = WS.mixed_anova(Y, g, [2], ["Time"], between_name="Dose")
+    row = next(t for t in res["terms"] if t["term"] == "Dose")
+    assert (row["df1"], row["df2"]) == (2, 33)
+    m = Y.mean(1)
+    f_hand = (12 * sum((m[g == k].mean() - m.mean()) ** 2 for k in ("g1", "g2", "g3")) / 2) / (
+        sum(((m[g == k] - m[g == k].mean()) ** 2).sum() for k in ("g1", "g2", "g3")) / 33)
+    assert row["f"] == pytest.approx(f_hand, rel=1e-9)
+
+
+def test_report_for_two_between_factors_lists_every_term():
+    conds = ["Training x Online", "Training x Live", "Waitlist x Online", "Waitlist x Live"]
+    e = EnhancedSimulationEngine(
+        study_title="Training study", study_description="A training programme, online or live, and skill ratings.",
+        sample_size=120, conditions=conds,
+        factors=[{"name": "Programme", "levels": ["Training", "Waitlist"]}, {"name": "Mode", "levels": ["Online", "Live"]}],
+        scales=[_scale("Skill", 3)], additional_vars=[], demographics={"gender_quota": 50}, seed=21,
+        design={"type": "mixed", "within_factors": [{"name": "Time", "levels": ["Pre", "Post"]}]})
+    df, md = e.generate()
+    text, html = _both(df, md)
+    for term in ("Programme x Mode", "Programme x Time", "Mode x Time", "Programme x Mode x Time"):
+        assert term in text and term in html, term
+    assert "full factors" in text

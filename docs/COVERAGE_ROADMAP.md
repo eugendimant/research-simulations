@@ -98,8 +98,8 @@ Ordered by (frequency of need × value ÷ risk). These are larger, mostly
 1. ~~**Within-subjects done properly**~~ — **Done (v1.3.0.6)**: `design_type="within"/"mixed"`
    generates repeated measures in wide and long layouts (`utils/within_design.py`), with a
    shared person-level latent (default r = 0.5), d_av effects, counterbalancing, attrition and a
-   repeated-measures report. Still open: person-specific growth slopes, and tailoring open-ended text
-   to the within condition.
+   repeated-measures report, condition-bound open-ended text, and a Type III mixed ANOVA with the
+   between factors as full factors. Still open: person-specific growth slopes.
 2. **Slider continuous realism** — sliders generate as bounded integers;
    feeling-thermometers/VAS could use finer granularity + endpoint heaping.
    Low risk. **Re-prioritized 2026-10-06:** this was ranked "modest value" on a

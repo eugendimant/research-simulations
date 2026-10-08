@@ -147,6 +147,18 @@ def analyse(df: pd.DataFrame, metadata: Dict[str, Any]) -> Dict[str, Any]:
     if mixed and groups is not None:
         res["group_n"] = [(g, int(np.sum(groups == g))) for g in group_labels]
 
+    # between-subjects factors as full factors when the group labels can be read as a crossing of them
+    bfactors = [f for f in (d.get("between_factors") or []) if isinstance(f, dict) and f.get("levels")]
+    between_matrix = None
+    between_names = None
+    if mixed and groups is not None and bfactors:
+        from .within_design import _match_levels
+        parsed = {g: _match_levels(g, bfactors) for g in group_labels}
+        if all(v is not None for v in parsed.values()):
+            between_names = [str(f["name"]) for f in bfactors]
+            between_matrix = np.array([[parsed[g][nm] for nm in between_names] for g in groups.tolist()], dtype=object)
+    res["between_names"] = between_names
+
     for dv in (d.get("wide_columns") or {}):
         Y = _composite_matrix(df, metadata, dv, labels)
         if Y is None:
@@ -184,7 +196,9 @@ def analyse(df: pd.DataFrame, metadata: Dict[str, Any]) -> Dict[str, Any]:
         item["r_mean"] = float(np.nanmean(off)) if np.isfinite(off).any() else float("nan")
         # omnibus
         if mixed and groups is not None and len(group_labels) >= 2:
-            item["mixed_anova"] = WS.mixed_anova(Y, groups, levels, names, between_name="Group")
+            item["mixed_anova"] = (WS.mixed_anova(Y, between_matrix, levels, names, between_names=between_names)
+                                   if between_matrix is not None else
+                                   WS.mixed_anova(Y, groups, levels, names, between_name="Group"))
         else:
             item["rm_anova"] = WS.rm_anova(Y, levels, names)
         # pairwise paired t (Holm), only as many pairs as are readable
@@ -419,9 +433,7 @@ def _dv_blocks(analysis: Dict[str, Any], item: Dict[str, Any]) -> List[Block]:
             b.append(("p", line))
         if item.get("mixed_anova"):
             b.append(("note", f"Group sizes: {', '.join(f'{g} = {n}' for g, n in zip(anova['groups'], anova['group_n']))}. "
-                              "The between-subjects factor is analysed as one grouping variable (the cells of the "
-                              "between design). p-values for within effects use the sphericity assumption unless "
-                              "the corrected columns are shown."))
+                              "Type III sums of squares (sum-to-zero coding)" + ("; the between-subjects factors enter as full factors with their interactions. " if analysis.get("between_names") else "; the between-subjects groups are analysed as one grouping variable. ") + "p-values for within effects assume sphericity unless the corrected columns are shown."))
     elif anova is not None:
         b.append(("warn", "Too few participants with complete data in every condition for the omnibus test."))
     pairs = item.get("pairs") or []
@@ -502,6 +514,8 @@ def markdown_blocks(analysis: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[
     rows.append(["Effect size convention", "d_av for within contrasts (mean difference / average SD of the two conditions); "
                                            "d_z (paired) is reported next to it"])
     s_design: List[Block] = [("h3", "Design"), ("table", ["Property", "Value"], rows)]
+    for note in d.get("notes") or []:
+        s_design.append(("warn", note))
     if analysis.get("orders"):
         top = analysis["orders"][:12]
         s_design.append(("h4", "Presentation orders (counterbalancing)"))
