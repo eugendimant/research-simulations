@@ -435,6 +435,17 @@ responses. These columns ship in `Simulation_Diagnostics.csv`:
 
 - **Straight-lining**: same response repeated across items
 - **Response time anomalies**: unrealistically fast completion
+- **Attention checks** (v1.3.0.6): `Attention_Pass_Rate` is the share of attention checks a
+  participant passed. The sample-wide failure rate equals `1 - attention_rate` (default 0.95, so
+  about 5%), and failures concentrate in the careless persona, whose population share equals
+  `random_responder_rate` (default 0.05) unless that persona's weight is set explicitly.
+  `Flag_Attention` = 1 when the pass rate is below `attention_check_threshold`; a threshold of 0
+  (the default) means "failed at least one check".
+- **`Exclude_Recommended`** = 1 when `Flag_Speed` (completion time below the minimum or above the
+  maximum of the exclusion window), `Flag_Attention` or `Flag_StraightLine` (longest identical run
+  at or above `straight_line_threshold`) is 1; always 0 when `exclude_careless_responders` is on
+  (flag only). All flags are recomputed from the final exported columns, so each can be
+  re-derived from `Completion_Time_Seconds`, `Attention_Pass_Rate` and `Max_Straight_Line`.
 
 Alternating patterns (1-7-1-7) **are** detected, in the live exclusion path
 (`enhanced_simulation_engine.py:12612-12617`), and folded into the shipped

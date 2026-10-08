@@ -3921,6 +3921,21 @@ class EnhancedSimulationEngine:
         for persona in self.available_personas.values():
             persona.weight = persona.weight / total_weight
 
+        # v1.3.0.6: random_responder_rate was stored but never used, and the careless persona's
+        # 0.05 base weight was diluted to ~1.3% by the renormalisation over ~50 personas. The
+        # careless/random-responder share is now exactly the configured rate (unless the caller
+        # set that persona's weight explicitly through custom_persona_weights).
+        _careless = self.available_personas.get("careless_responder")
+        if _careless is not None and "careless_responder" not in (custom_persona_weights or {}):
+            _rr = float(np.clip(self.random_responder_rate, 0.0, 0.5))
+            _others = sum(p.weight for k, p in self.available_personas.items()
+                          if k != "careless_responder")
+            if _others > 0:
+                for _k, _p in self.available_personas.items():
+                    if _k != "careless_responder":
+                        _p.weight = _p.weight / _others * (1.0 - _rr)
+                _careless.weight = _rr
+
         self.text_generator = TextResponseGenerator()
         self.stimulus_handler = StimulusEvaluationHandler()
 
@@ -10813,17 +10828,26 @@ class EnhancedSimulationEngine:
                 # a block of three or more items, which is exactly where that pass follows.
                 # Single-item DVs and two-item scales get no such pass, so identical rows
                 # across them stay as generated.
-                _min_points = (min(hi - lo + 1 for lo, hi in _col_bounds.values())
-                               if _col_bounds else 0)
-                _widest_block = max(
-                    (len(_le.get("columns_generated") or []) for _le in scale_generation_log
-                     if str(_le.get("type", "")).lower() not in _JOINT_DV_TYPES),
-                    default=0,
-                )
+                # v1.3.0.6: the five-option gate is evaluated PER BLOCK. It used to take the
+                # minimum over every column of the survey, so one binary item or a rank-order
+                # DV anywhere switched the audit off for all Likert blocks. Only columns whose
+                # own block has five or more options are audited (and counted), so a binary or
+                # 3-point block is still left untouched.
+                _eligible_blocks = [
+                    [c for c in (_le.get("columns_generated") or []) if c in existing_cols]
+                    for _le in scale_generation_log
+                    if str(_le.get("type", "")).lower() not in _JOINT_DV_TYPES
+                    and (_col_bounds.get(((_le.get("columns_generated") or [""])[0]), (1, 1))[1]
+                         - _col_bounds.get(((_le.get("columns_generated") or [""])[0]), (1, 1))[0] + 1)
+                    >= _MIN_OPTIONS_FOR_STRAIGHTLINE_LOGIC
+                ]
+                _eligible_cols = [c for blk in _eligible_blocks for c in blk]
+                _widest_block = max((len(blk) for blk in _eligible_blocks), default=0)
                 _check_straightlining = (
-                    _min_points >= _MIN_OPTIONS_FOR_STRAIGHTLINE_LOGIC
-                    and (len(existing_cols) >= 5 or _widest_block >= 3)
+                    len(_eligible_cols) >= 3
+                    and (len(_eligible_cols) >= 5 or _widest_block >= 3)
                 )
+                existing_cols = _eligible_cols
                 for i in range(n if _check_straightlining else 0):
                     vals = [float(df.iloc[i][c]) for c in existing_cols
                             if pd.notna(df.iloc[i][c])]
@@ -10873,6 +10897,103 @@ class EnhancedSimulationEngine:
 
         return audit_report
 
+    # Types that are not Likert-type items and so never count towards straight-lining.
+    _NON_LIKERT_TYPE_HINTS = ("numeric", "game", "constant", "rank", "best", "paired", "heat",
+                              "allocation", "text_entry")
+
+    def _recompute_straight_line_columns(self, df: "pd.DataFrame") -> None:
+        """Max_Straight_Line / Flag_StraightLine judged on the FINAL item columns.
+
+        v1.3.0.6: straight-lining is the longest run of identical answers WITHIN one block of
+        comparable Likert-type items, and only blocks of at least five items with five or more
+        response options count (chance agreement is high on binary/3-point items, and runs
+        across unrelated single-item DVs, game decisions, numeric boxes or constant-sum fields
+        mean nothing). The old rule pooled every numeric answer in the survey into one
+        sequence, which flagged 60% of a game-style survey. Max_Straight_Line is the longest
+        such run; the flag fires when a run reaches min(straight_line_threshold, block length),
+        i.e. the whole block is one answer or the run is long. Rows without an eligible block
+        get 1 (a run of one).
+        """
+        thr = int(self.exclusion_criteria.straight_line_threshold)
+        longest = np.ones(len(df), dtype=int)
+        flag = np.zeros(len(df), dtype=bool)
+        for le in getattr(self, "_scale_generation_log", None) or []:
+            typ = str(le.get("type", "")).lower()
+            if typ in _JOINT_DV_TYPES or any(h in typ for h in self._NON_LIKERT_TYPE_HINTS):
+                continue
+            cols = [c for c in (le.get("columns_generated") or []) if c in df.columns]
+            lo = int(le.get("scale_min", 1))
+            hi = int(le.get("scale_max", le.get("scale_points", 7)))
+            if len(cols) < 5 or (hi - lo + 1) < _MIN_OPTIONS_FOR_STRAIGHTLINE_LOGIC:
+                continue
+            mat = df[cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
+            run = np.ones(len(df), dtype=int)
+            best = np.ones(len(df), dtype=int)
+            for j in range(1, mat.shape[1]):
+                same = (mat[:, j] == mat[:, j - 1]) & ~np.isnan(mat[:, j])
+                run = np.where(same, run + 1, 1)
+                best = np.maximum(best, run)
+            longest = np.maximum(longest, best)
+            flag |= best >= min(thr, len(cols))
+        df["Max_Straight_Line"] = longest
+        df["Flag_StraightLine"] = flag.astype(int)
+
+    def _finalize_quality_flags(self, df: "pd.DataFrame", metadata: Dict[str, Any]) -> None:
+        """Recompute Flag_Speed / Flag_Attention / Exclude_Recommended from the FINAL columns.
+
+        v1.3.0.6: the validator rewrites Completion_Time_Seconds into a plausible human range
+        after the flags were drawn, so a flag could disagree with the recorded time. The flags
+        are now derived from the recorded time, Attention_Pass_Rate and Max_Straight_Line that
+        are returned, so each flag can be re-derived from the exported columns.
+        """
+        crit = self.exclusion_criteria
+        if "Completion_Time_Seconds" in df.columns and "Flag_Speed" in df.columns:
+            t = pd.to_numeric(df["Completion_Time_Seconds"], errors="coerce")
+            df["Flag_Speed"] = (
+                (t < int(crit.completion_time_min_seconds)) | (t > int(crit.completion_time_max_seconds))
+            ).astype(int)
+        if "Attention_Pass_Rate" in df.columns and "Flag_Attention" in df.columns:
+            thr = float(crit.attention_check_threshold)
+            pr = pd.to_numeric(df["Attention_Pass_Rate"], errors="coerce")
+            df["Flag_Attention"] = (pr < (thr if thr > 0 else 1.0)).astype(int)
+        if "Flag_StraightLine" in df.columns and "Max_Straight_Line" in df.columns:
+            self._recompute_straight_line_columns(df)
+        if "Exclude_Recommended" in df.columns:
+            if crit.exclude_careless_responders:
+                df["Exclude_Recommended"] = 0
+            else:
+                df["Exclude_Recommended"] = (
+                    (df.get("Flag_Speed", 0) > 0) | (df.get("Flag_Attention", 0) > 0)
+                    | (df.get("Flag_StraightLine", 0) > 0)
+                ).astype(int)
+        summ = metadata.get("exclusion_summary")
+        if isinstance(summ, dict):
+            for key, col in (("flagged_speed", "Flag_Speed"), ("flagged_attention", "Flag_Attention"),
+                             ("flagged_straightline", "Flag_StraightLine"),
+                             ("total_excluded", "Exclude_Recommended")):
+                if col in df.columns:
+                    summ[key] = int(pd.to_numeric(df[col], errors="coerce").fillna(0).sum())
+
+    def _calibrate_attention_fail_scale(self, all_traits: List[Dict[str, float]]) -> float:
+        """Scale so that mean per-participant failure probability == 1 - attention_rate.
+
+        Failure probability is ``min(1, scale * (1 - attention)^2)``; the scale is solved by
+        bisection because the cap at 1 makes the mean non-linear in it.
+        """
+        target = float(np.clip(1.0 - self.attention_rate, 0.0, 1.0))
+        base = np.array([(1.0 - _safe_trait_value(t.get("attention_level"), 0.85)) ** 2
+                         for t in all_traits], dtype=float)
+        if target <= 0.0 or base.size == 0 or float(base.sum()) <= 0.0:
+            return 0.0 if target <= 0.0 else target / 0.05
+        lo, hi = 0.0, 1e4
+        for _ in range(60):
+            mid = (lo + hi) / 2.0
+            if float(np.minimum(1.0, base * mid).mean()) < target:
+                lo = mid
+            else:
+                hi = mid
+        return (lo + hi) / 2.0
+
     def _generate_attention_check(
         self,
         condition: str,
@@ -10884,7 +11005,18 @@ class EnhancedSimulationEngine:
 
         # v1.2.1: Safe trait access
         attention = _safe_trait_value(traits.get("attention_level"), 0.85)
-        is_attentive = rng.random() < attention * self.attention_rate
+        # v1.3.0.6: the old rule (attention * attention_rate) multiplied the configured pass
+        # rate by the trait mean (~0.83), so 0.95 realised a ~21% failure rate. The failure
+        # probability is now (1 - attention)^2 scaled so that the sample-wide failure rate
+        # equals 1 - attention_rate (`_attention_fail_scale`, set in generate()); careless
+        # personas (attention ~0.35) still fail far more often than engaged ones.
+        _scale = getattr(self, "_attention_fail_scale", None)
+        if _scale is None:
+            _scale = (1.0 - self.attention_rate) / 0.05
+        p_fail = min(1.0, max(0.0, (1.0 - attention) ** 2 * _scale))
+        if self.attention_rate >= 1.0:
+            p_fail = 0.0
+        is_attentive = rng.random() >= p_fail
 
         if check_type == "ai_manipulation":
             correct = 1 if ("ai" in str(condition).lower() and "no ai" not in str(condition).lower()) else 2
@@ -12777,13 +12909,16 @@ class EnhancedSimulationEngine:
         attention = _safe_trait_value(traits.get("attention_level"), 0.8)
 
         if attention < 0.5:
-            completion_time = int(rng.uniform(45, 150))
+            # v1.3.0.6: genuine speeders (attention < 0.5, i.e. the careless persona): about
+            # 60% finish under the 60 s exclusion floor, the rest just above it. The validator
+            # no longer rewrites these times into a normal range.
+            completion_time = int(rng.normal(55, 18))
         elif attention > 0.9:
             completion_time = int(rng.normal(base_time * 1.2, 60))
         else:
             completion_time = int(rng.normal(base_time, 90))
 
-        completion_time = int(np.clip(completion_time, 30, 1800))
+        completion_time = int(np.clip(completion_time, 20, 1800))
 
         total_checks = len(attention_checks_passed)
         passed_checks = int(sum(bool(x) for x in attention_checks_passed))
@@ -12823,7 +12958,10 @@ class EnhancedSimulationEngine:
             completion_time < int(self.exclusion_criteria.completion_time_min_seconds)
             or completion_time > int(self.exclusion_criteria.completion_time_max_seconds)
         )
-        exclude_attention = pass_rate < float(self.exclusion_criteria.attention_check_threshold)
+        # v1.3.0.6: a threshold of 0 (the default) could never fire. It now means "failed at
+        # least one attention check"; a positive threshold keeps its meaning (pass rate below it).
+        _attn_thr = float(self.exclusion_criteria.attention_check_threshold)
+        exclude_attention = pass_rate < (_attn_thr if _attn_thr > 0 else 1.0)
         exclude_straightline = max_straight_line >= int(self.exclusion_criteria.straight_line_threshold)
 
         exclude_recommended = bool(exclude_time or exclude_attention or exclude_straightline)
@@ -13457,6 +13595,7 @@ class EnhancedSimulationEngine:
             for _ in range(n)
         ]
 
+        self._attention_fail_scale = self._calibrate_attention_fail_scale(all_traits)
         attention_results: List[List[bool]] = []
         attention_check_values: List[int] = []
         for i in range(n):
@@ -14806,7 +14945,7 @@ class EnhancedSimulationEngine:
                 ("Attention_Pass_Rate", "Proportion of attention checks passed (0-1)"),
                 ("Max_Straight_Line", "Maximum consecutive identical responses"),
                 ("Flag_Speed", "Flagged for completion time: 1=Yes, 0=No"),
-                ("Flag_Attention", "Flagged for attention checks: 1=Yes, 0=No"),
+                ("Flag_Attention", "Flagged for failing an attention check: 1=Yes, 0=No"),
                 ("Flag_StraightLine", "Flagged for straight-lining: 1=Yes, 0=No"),
                 ("Exclude_Recommended", "Recommended for exclusion: 1=Yes, 0=No"),
             ]
@@ -15326,6 +15465,11 @@ class EnhancedSimulationEngine:
             metadata["effect_sizes_applied"] = self._build_effects_applied(metadata["effect_sizes_observed"])
         except Exception as _eff_err:
             self._log(f"WARNING: final effect summary refresh skipped: {_eff_err}")
+
+        try:
+            self._finalize_quality_flags(df, metadata)
+        except Exception as _flag_err:
+            self._log(f"WARNING: final quality-flag refresh skipped: {_flag_err}")
 
         return df, metadata
 
