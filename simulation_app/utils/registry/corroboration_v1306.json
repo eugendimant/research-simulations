@@ -1,0 +1,783 @@
+{
+ "schema_version": 1,
+ "gathered_on": "2026-10-08",
+ "method": "Web search (standard mode) only. Each item cites the search-engine summary of the paper or its abstract, quoted in 25 words or fewer, with the result URLs. A summary is NOT the paper: nothing here is promoted to verified, no tier changes, and no item supplies the quote required for the verified tier. Where two results carry the same abstract they count as ONE source.",
+ "verdict_rule": "corroborated = a summary states a figure consistent with ours; contradicted = a summary states a figure that differs from ours; inconclusive = no comparable figure was returned.",
+ "change_rule": "A stored value is changed only when two INDEPENDENT summaries agree with each other and differ from us. No item met that bar, so no stored value was changed.",
+ "qsf_usage": {
+  "note": "Condition names (QSFPreviewParser.detected_conditions) plus survey names of the 303 example QSFs were run through _match_meta_entry; counts are QSFs in which the key matched. Block-name text was also tried, which is where endowment_effect matched.",
+  "files_parsed": 303,
+  "conditions_seen": 1080,
+  "by_condition_text": {
+   "nudge_general_meta": 7,
+   "placebo_effect_meta": 2,
+   "gamification_meta": 2,
+   "loyalty_program_meta": 2,
+   "scarcity_effect_meta": 2,
+   "social_norm_message_meta": 2,
+   "anchoring_effect": 2,
+   "green_defaults_meta": 1
+  },
+  "by_block_text": {
+   "endowment_effect": 32,
+   "placebo_effect_meta": 3,
+   "loyalty_program_meta": 2,
+   "ingroup_cooperation_meta": 2,
+   "self_affirmation_meta": 2,
+   "scarcity_effect_meta": 2,
+   "anchoring_effect": 2,
+   "zero_price_effect": 1,
+   "green_defaults_meta": 1,
+   "personalization_meta": 1,
+   "nudge_general_meta": 7,
+   "social_norm_message_meta": 4,
+   "gamification_meta": 2,
+   "anthropomorphism_meta": 1
+  },
+  "older_entries_ever_matched": 10,
+  "caveat": "Only 10 older entries were matched at all, so 'the 15 most frequently matched' could not be filled; all 10 were searched."
+ },
+ "counts": {
+  "corroborated": 27,
+  "contradicted": 5,
+  "inconclusive": 19
+ },
+ "counts_by_group": {
+  "replication_shrinkage": {
+   "corroborated": 5,
+   "contradicted": 1,
+   "inconclusive": 2
+  },
+  "game_baseline": {
+   "corroborated": 6,
+   "inconclusive": 5,
+   "contradicted": 1
+  },
+  "careless_responding": {
+   "inconclusive": 1,
+   "corroborated": 1
+  },
+  "paradigm_v1305": {
+   "corroborated": 10,
+   "inconclusive": 8,
+   "contradicted": 1
+  },
+  "older_meta_db": {
+   "inconclusive": 3,
+   "corroborated": 5,
+   "contradicted": 2
+  }
+ },
+ "items": [
+  {
+   "id": "osc2015",
+   "group": "replication_shrinkage",
+   "claim": "Replication effects about half the original (ratio ~0.5)",
+   "our_value": "ratio ~0.5",
+   "search_summary_states": "Replication effects were half the magnitude of original effects, representing a substantial decline.",
+   "urls": [
+    "https://dare.uva.nl/id/2ef85c77-615c-4684-a434-34feb81db3dc",
+    "https://discovery.dundee.ac.uk/en/publications/estimating-the-reproducibility-of-psychological-science/"
+   ],
+   "verdict": "corroborated",
+   "note": "Abstract-level summary; 36% of replications significant, 47% of original effects inside the replication CI.",
+   "changed_value": false
+  },
+  {
+   "id": "camerer2018",
+   "group": "replication_shrinkage",
+   "claim": "Replication effects about 0.5 of original (0.45-0.75 by summary)",
+   "our_value": "ratio ~0.5",
+   "search_summary_states": "the replications' effect sizes averaged about half of the originals. ... the relative effect size of true positives is 71%",
+   "urls": [
+    "https://pure.eur.nl/en/publications/evaluating-the-replicability-of-social-science-experiments-in-nat/",
+    "https://authors.library.caltech.edu/91063/"
+   ],
+   "verdict": "corroborated",
+   "note": "The 71% figure is the authors' estimate for true positives only, which is the upper end of our 0.45-0.75 band.",
+   "changed_value": false
+  },
+  {
+   "id": "camerer2016",
+   "group": "replication_shrinkage",
+   "claim": "Economics lab experiments: replication effect about 0.66 of original",
+   "our_value": "ratio ~0.66",
+   "search_summary_states": "on average the replicated effect size is 66% of the original.",
+   "urls": [
+    "https://authors.library.caltech.edu/records/gr9cr-qjb08",
+    "https://retractionwatch.com/2016/03/03/more-than-half-of-top-tier-economics-papers-are-replicable-study-finds/"
+   ],
+   "verdict": "corroborated",
+   "note": "11 of 18 replicated in the original direction (61%).",
+   "changed_value": false
+  },
+  {
+   "id": "manylabs2_ratio",
+   "group": "replication_shrinkage",
+   "claim": "Many Labs 1 and 2: replication effects about half of the original",
+   "our_value": "ratio ~0.5 (docs)",
+   "search_summary_states": "The median Cohen's d was 0.60 for the originals and 0.15 for the replications.",
+   "urls": [
+    "https://research.monash.edu/en/publications/many-labs-2-investigating-variation-in-replicability-across-sampl/",
+    "https://scholars.hkbu.edu.hk/en/publications/many-labs-2-investigating-variation-in-replicability-across-sampl/"
+   ],
+   "verdict": "contradicted",
+   "note": "Median ratio is ~0.25, not ~0.5 (28 findings, 15,305 participants; 54% significant in the original direction, 32% reversed). The 'about half' in our notes is true of the share that replicated, not of effect size. Documentation corrected; shrinkage value unchanged.",
+   "changed_value": false
+  },
+  {
+   "id": "manylabs1",
+   "group": "replication_shrinkage",
+   "claim": "Many Labs 1: most effects replicate",
+   "our_value": "10 of 13 replicate (recall)",
+   "search_summary_states": "10 effects replicated consistently. One ... showed weak support. And two effects ... did not replicate",
+   "urls": [
+    "https://research.tilburguniversity.edu/en/publications/investigating-variation-in-replicability-a-many-labs-replication-/",
+    "https://forrt.org/curated_resources/investigating-variation-in-replicability/"
+   ],
+   "verdict": "inconclusive",
+   "note": "Summary gives counts (13 effects, 36 samples, 6,344 participants) but no effect-size ratio, so it cannot corroborate a shrinkage number.",
+   "changed_value": false
+  },
+  {
+   "id": "kvarven2020",
+   "group": "replication_shrinkage",
+   "claim": "Meta-analytic effects exceed multi-lab replications; ratio about 0.3-0.6",
+   "our_value": "ratio ~0.3-0.6",
+   "search_summary_states": "on average, meta-analytic effects were almost three times as large as replication effects.",
+   "urls": [
+    "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8864345/",
+    "https://Www.Gwern.net/doc/statistics/bias/2019-kvarven.pdf"
+   ],
+   "verdict": "corroborated",
+   "note": "Corroborates the LOW end (ratio ~0.33). The same summary says a reanalysis (Lewis et al. 2022) finds the discrepancy 'less dramatic'. Relevant because the inferred-effect path draws on meta-analytic entries.",
+   "changed_value": false
+  },
+  {
+   "id": "mertens_maier2022",
+   "group": "replication_shrinkage",
+   "claim": "Nudge meta-analysis d ~0.43 raw, near zero after bias correction",
+   "our_value": "raw 0.43; stored entry 0.15",
+   "search_summary_states": "Their estimated average effect was d = .04, which was not exactly zero, but close enough to invite the interpretation that nudging effects are negligible",
+   "urls": [
+    "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9351501/",
+    "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9351519/"
+   ],
+   "verdict": "corroborated",
+   "note": "Abstract states d = 0.45 [0.39, 0.52]; a letter quotes 0.43 from the main text (unresolved). A separate letter (Szaszi et al.) gives bias-corrected 0.08-0.31, so the stored compromise 0.15 lies inside the corrected range.",
+   "changed_value": false
+  },
+  {
+   "id": "shrinkage_overall",
+   "group": "replication_shrinkage",
+   "claim": "Global shrinkage factor 0.60 applied to inferred (meta-analytic) effects",
+   "our_value": "0.60",
+   "search_summary_states": "replicated effect size is 66% of the original ... meta-analytic effects were almost three times as large as replication effects",
+   "urls": [
+    "https://authors.library.caltech.edu/records/gr9cr-qjb08",
+    "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8864345/"
+   ],
+   "verdict": "inconclusive",
+   "note": "Figures gathered span 0.25 (ML2 median) / 0.33 (Kvarven) / 0.5 (OSC, Camerer 2018) / 0.66 (Camerer 2016) / 0.71 (true positives). They bracket 0.60 at its upper end, exactly where the notes put it. Heterogeneous definitions and populations: not clear enough to change the factor.",
+   "changed_value": false
+  },
+  {
+   "id": "engel_mean",
+   "group": "game_baseline",
+   "claim": "Dictator game mean giving ~28% (dictator_standard.mean_proportion 0.28)",
+   "our_value": 0.28,
+   "search_summary_states": "the mean donation came to 28.3% of the endowment",
+   "urls": [
+    "https://arxiv.org/pdf/1906.09948",
+    "https://crese.univ-fcomte.fr/wp-content/uploads/2025/03/WP-2023-09.pdf"
+   ],
+   "verdict": "corroborated",
+   "note": "Two independent citing papers state 28.3%.",
+   "changed_value": false
+  },
+  {
+   "id": "engel_zero",
+   "group": "game_baseline",
+   "claim": "36% of dictators give nothing (subpopulations.pure_selfish_zero 0.36)",
+   "our_value": 0.36,
+   "search_summary_states": "Engel's findings are often cited as 64% of dictators giving something, which implies roughly 36% giving nothing",
+   "urls": [
+    "https://crese.univ-fcomte.fr/wp-content/uploads/2025/03/WP-2023-09.pdf",
+    "https://eprints.kingston.ac.uk/id/eprint/48397/1/Rotella-A-48397-AAM.pdf"
+   ],
+   "verdict": "corroborated",
+   "note": "A second source gives the zero-offer rate as 36% on average.",
+   "changed_value": false
+  },
+  {
+   "id": "engel_shape",
+   "group": "game_baseline",
+   "claim": "Dictator giving bimodal with modes at 0 and 0.5",
+   "our_value": "modes [0.0, 0.5]",
+   "search_summary_states": "the distribution is typically bimodal, with peaks at giving nothing and giving half",
+   "urls": [
+    "https://arxiv.org/pdf/1906.09948"
+   ],
+   "verdict": "corroborated",
+   "note": "One source; the SD (0.18) in the same entry remains inconsistent with this shape (see EMPIRICAL_PROVENANCE).",
+   "changed_value": false
+  },
+  {
+   "id": "engel_k",
+   "group": "game_baseline",
+   "claim": "Engel (2011): n_studies 616",
+   "our_value": 616,
+   "search_summary_states": "a meta-analysis of 616 dictator game experiments ... Secondary sources describe it as covering more than a hundred experiments over 25 years",
+   "urls": [
+    "https://link.springer.com/article/10.1007/s10683-011-9283-7",
+    "https://www.econbiz.de/Record/dictator-games-a-meta-study-engel-christoph/10010270444"
+   ],
+   "verdict": "inconclusive",
+   "note": "The summaries disagree with each other about the count; neither is the paper.",
+   "changed_value": false
+  },
+  {
+   "id": "jm_trust_mean",
+   "group": "game_baseline",
+   "claim": "Trust game: mean amount sent ~50% (trust_standard.mean_proportion 0.5)",
+   "our_value": 0.5,
+   "search_summary_states": "human players typically sent about 50% of their endowment, citing Johnson and Mislin (2011)",
+   "urls": [
+    "https://arxiv.org/pdf/2502.12825",
+    "https://www.mercatus.org/media/45726/download"
+   ],
+   "verdict": "corroborated",
+   "note": "Secondhand figure from a 2025 preprint, not from the meta-analysis summary.",
+   "changed_value": false
+  },
+  {
+   "id": "jm_trust_k",
+   "group": "game_baseline",
+   "claim": "Johnson & Mislin: n_studies 162",
+   "our_value": 162,
+   "search_summary_states": "eighty-four iterations of the Berg, Dickhaut, and McCabe Investment game",
+   "urls": [
+    "https://papers.sioe.org/paper/298.html",
+    "https://www.mercatus.org/media/45726/download"
+   ],
+   "verdict": "contradicted",
+   "note": "Both pages are the same abstract, so this is ONE source. Not applied: the entry's k may count something broader (papers vs iterations).",
+   "changed_value": false
+  },
+  {
+   "id": "oosterbeek_offer",
+   "group": "game_baseline",
+   "claim": "Ultimatum mean offer ~40% (mean_proportion 0.40), k=37",
+   "our_value": 0.4,
+   "search_summary_states": "proposers give about 40% of the pie to responders on average",
+   "urls": [
+    "https://dare.uva.nl/id/99f724c7-1528-4319-9ec7-d6803067a799",
+    "https://research.vu.nl/en/publications/cultural-differences-in-ultimatum-game-experiments-evidence-from-/"
+   ],
+   "verdict": "corroborated",
+   "note": "Also 'pools 37 papers containing 75 results' (matches n_studies 37) and 'About 16% of offers are rejected'.",
+   "changed_value": false
+  },
+  {
+   "id": "ug_low_offer_rejection",
+   "group": "game_baseline",
+   "claim": "Low ultimatum offers (<~20%) are rejected about half the time",
+   "our_value": "rule of thumb",
+   "search_summary_states": "offers of under approximately 20% are rejected about 50% of the time. This is a narrative claim, not a pooled estimate",
+   "urls": [
+    "https://account.jeps.efpsa.org/index.php/up-j-jeps/article/download/jeps.an/67",
+    "https://dare.uva.nl/id/99f724c7-1528-4319-9ec7-d6803067a799"
+   ],
+   "verdict": "inconclusive",
+   "note": "No meta-analytic rejection-by-offer curve found. Our MEASURED student sample (n=111) rejects 67-82% at a 20% or smaller share, so the rate is sample-dependent.",
+   "changed_value": false
+  },
+  {
+   "id": "zelmer_pgg",
+   "group": "game_baseline",
+   "claim": "Public goods standard mean contribution 0.40 (Zelmer 2003), k=27",
+   "our_value": 0.4,
+   "search_summary_states": "early in these games, participants give somewhere between 30 and 70 percent of their endowments, citing Ledyard (1995, p. 170)",
+   "urls": [
+    "https://econwpa.ub.uni-muenchen.de/econ-wp/exp/papers/0503/0503009.pdf",
+    "https://ideas.repec.org/a/kap/expeco/v6y2003i3p299-310.html"
+   ],
+   "verdict": "inconclusive",
+   "note": "Zelmer's summary reports group efficiency, not a contribution share; 28 studies/711 groups in the working paper, 27 in the journal version. 0.40 lies inside the cited 30-70% range, which is too wide to corroborate it.",
+   "changed_value": false
+  },
+  {
+   "id": "pgg_decay",
+   "group": "game_baseline",
+   "claim": "Public-goods contributions decay across rounds (repeated_decay entry)",
+   "our_value": "round 1-3 0.50 to round 10 0.18",
+   "search_summary_states": "Another paper calls the falling contribution pattern a well-documented stylized fact, attributed to Ledyard (1995).",
+   "urls": [
+    "https://econwpa.ub.uni-muenchen.de/econ-wp/exp/papers/0503/0503009.pdf"
+   ],
+   "verdict": "corroborated",
+   "note": "Direction only; magnitudes not found. The MEASURED Guyer data are a repeated n-person PD, not a PGG.",
+   "changed_value": false
+  },
+  {
+   "id": "sally_pd",
+   "group": "game_baseline",
+   "claim": "Prisoner's dilemma standard cooperation 0.47 (Sally 1995, k=130)",
+   "our_value": 0.47,
+   "search_summary_states": "the abstract describes an analysis of 35 years of published prisoners' dilemma experiments",
+   "urls": [
+    "https://ideas.repec.org/a/sae/ratsoc/v7y1995i1p58-92.html",
+    "https://journals.sagepub.com/doi/10.1177/1043463195007001004"
+   ],
+   "verdict": "inconclusive",
+   "note": "The summary does not show the cooperation rate or experiment count.",
+   "changed_value": false
+  },
+  {
+   "id": "dalbo_pd",
+   "group": "game_baseline",
+   "claim": "Infinitely repeated PD cooperation depends on equilibrium support (Dal Bo & Frechette 2018)",
+   "our_value": "qualitative",
+   "search_summary_states": "cooperation is shaped by infinite repetition and is more likely when an equilibrium supports it",
+   "urls": [
+    "https://ideas.repec.org/a/aea/jeclit/v56y2018i1p60-114.html",
+    "https://www.brown.edu/Departments/Economics/Faculty/Pedro_Dal_Bo/coopsurvey.pdf"
+   ],
+   "verdict": "inconclusive",
+   "note": "Qualitative agreement only; no cooperation rates in the summaries.",
+   "changed_value": false
+  },
+  {
+   "id": "meade_craig",
+   "group": "careless_responding",
+   "claim": "Careless responder share (engine default random_responder_rate 0.05)",
+   "our_value": 0.05,
+   "search_summary_states": "Research with undergraduate samples has found roughly 12% of participants engaging in egregious careless responding (Meade & Craig, 2012).",
+   "urls": [
+    "https://talks.cam.ac.uk/talk/index/36550/",
+    "https://scholar.utc.edu/rcio/2016/sessions/4"
+   ],
+   "verdict": "inconclusive",
+   "note": "Secondary sources put the usual share at 10-15% (range 3.5%-46%), above our 5%, but the share depends on sample and definition. Our MEASURED volunteer data show 0.2% with a median item time under 2 s and 0.1% straight-lining across 20 mixed-keyed items. Not changed: the default lives in the engine and is user-adjustable.",
+   "changed_value": false
+  },
+  {
+   "id": "prolific_mturk",
+   "group": "careless_responding",
+   "claim": "Prolific respondents pass attention checks more often than MTurk",
+   "our_value": "direction",
+   "search_summary_states": "Prolific and CloudResearch participants were more likely to pass various attention checks ... than MTurk, Qualtrics, or the undergraduate sample.",
+   "urls": [
+    "https://paperity.org/p/305672321/data-quality-in-online-human-subjects-research-comparisons-between-mturk-prolific",
+    "https://researcher-help.prolific.com/en/articles/445260-failed-attention-checks"
+   ],
+   "verdict": "corroborated",
+   "note": "Direction only. Vendor-written pass rates (69% vs 48-51% passing both checks) are not independent and are not used.",
+   "changed_value": false
+  },
+  {
+   "id": "nudge_general_meta",
+   "group": "paradigm_v1305",
+   "claim": "Nudge pooled d: raw ~0.43, bias-corrected near zero; stored 0.15 compromise",
+   "our_value": 0.15,
+   "search_summary_states": "choice architecture interventions overall promote behavior change with a small to medium effect size of Cohen's d = 0.45 (95% CI [0.39, 0.52])",
+   "urls": [
+    "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9351519/",
+    "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9351501/"
+   ],
+   "verdict": "corroborated",
+   "note": "Matches the entry's own note; 0.15 is explicitly a compromise, not a published number.",
+   "changed_value": false
+  },
+  {
+   "id": "social_norm_message_meta",
+   "group": "paradigm_v1305",
+   "claim": "Social-norm appeals d ~0.20",
+   "our_value": 0.2,
+   "search_summary_states": "consistent support for the effectiveness of social norm manipulations across various outcomes, although effect sizes overall tended to be small",
+   "urls": [
+    "https://katalog.adlr.link/Record/ai-49-aHR0cDovL2R4LmRvaS5vcmcvMTAuMTA5My9oY3IvaHF6MDIz",
+    "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12727529/"
+   ],
+   "verdict": "inconclusive",
+   "note": "110 articles; no pooled value in the summary. A separate 2025 health-norms meta-analysis (not this entry) gives d = 0.1 that vanishes after bias control.",
+   "changed_value": false
+  },
+  {
+   "id": "identifiable_victim_effect",
+   "group": "paradigm_v1305",
+   "claim": "Identifiable victim r ~.05 (d ~0.10), k=41",
+   "our_value": 0.1,
+   "search_summary_states": "Results indicated an overall significant yet modest IVE (r = .05). Overall, 41 studies were included.",
+   "urls": [
+    "https://pure.skku.edu/en/publications/the-identifiable-victim-effect-a-meta-analytic-review/",
+    "https://en.wikipedia.org/wiki/Identifiable_victim_effect"
+   ],
+   "verdict": "corroborated",
+   "note": "Value and k corroborated. Caveat from the same summary: the three highest-powered studies are near zero (r = 0.004) and Bayesian reanalyses suggest publication bias; a preregistered replication found no effect.",
+   "changed_value": false
+  },
+  {
+   "id": "anthropomorphism_meta",
+   "group": "paradigm_v1305",
+   "claim": "Service-robot anthropomorphism d ~0.20",
+   "our_value": 0.2,
+   "search_summary_states": "The study pools evidence from 11,053 individuals interacting with service robots reported in 108 independent samples.",
+   "urls": [
+    "https://researchers.mq.edu.au/en/publications/understanding-anthropomorphism-in-service-provision-a-meta-analys/",
+    "https://ideas.repec.org/a/spr/joamsc/v49y2021i4d10.1007_s11747-020-00762-y.html"
+   ],
+   "verdict": "inconclusive",
+   "note": "No effect size in either summary; the citation is confirmed as a real meta-analysis.",
+   "changed_value": false
+  },
+  {
+   "id": "mortality_salience_meta",
+   "group": "paradigm_v1305",
+   "claim": "Mortality salience d 0.15 (compromise between original meta-analysis and failed replications)",
+   "our_value": 0.15,
+   "search_summary_states": "found that the average effect size across studies was moderate (r = .35)",
+   "urls": [
+    "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10115940/",
+    "https://www.cos.io/blog/many-labs-4-failure-replicate-mortality-salience-effect-and-without-original-author-involvement"
+   ],
+   "verdict": "inconclusive",
+   "note": "Original meta-analysis r = .35 (~d 0.75); Many Labs 4 (21 labs, N = 2,220) could not replicate under any condition, Bayesian reanalysis d 0.03-0.18. The stored 0.15 sits at the replication end by design, so neither end settles it.",
+   "changed_value": false
+  },
+  {
+   "id": "source_credibility_meta",
+   "group": "paradigm_v1305",
+   "claim": "Source credibility d ~0.25",
+   "our_value": 0.25,
+   "search_summary_states": "Expertise had the largest effect on persuasion, with an average of 16 percent of explained variance attributed to the expert versus non-expert manipulation.",
+   "urls": [
+    "https://www.doi.org/10.1007/BF02894421",
+    "https://rozenbergquarterly.com/issa-proceedings-1998-argumentation-explicitness-and-persuasive-effect-a-meta-analytic-review-of-the-effects-of-citing-information-sources-in-persuasive-messages/"
+   ],
+   "verdict": "inconclusive",
+   "note": "Summary reports explained variance (9% overall, 16% expertise), not d; only 6% of studies measured behaviour.",
+   "changed_value": false
+  },
+  {
+   "id": "sponsorship_disclosure_meta",
+   "group": "paradigm_v1305",
+   "claim": "Sponsorship disclosure lowers brand attitude, d ~ -0.10",
+   "our_value": -0.1,
+   "search_summary_states": "Disclosing sponsored content was associated with lower brand attitudes, credibility, and source evaluation, and with higher recognition, persuasion knowledge, and resistance.",
+   "urls": [
+    "https://research.wur.nl/en/publications/a-meta-analysis-of-the-effects-of-disclosing-sponsored-content/",
+    "https://dare.uva.nl/id/cdef7e4f-3540-431b-98bf-5a11cd05c158"
+   ],
+   "verdict": "inconclusive",
+   "note": "Sign corroborated (61 papers, 57 data sets); magnitude not in the summaries.",
+   "changed_value": false
+  },
+  {
+   "id": "social_exclusion_ostracism_meta",
+   "group": "paradigm_v1305",
+   "claim": "Social exclusion / ostracism d -0.45",
+   "our_value": -0.45,
+   "search_summary_states": "The abstract reports that the average ostracism effect is large (d > |1.4|).",
+   "urls": [
+    "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4449005/",
+    "https://doaj.org/article/34af0f0f36244d62a618a14e1cd005ac"
+   ],
+   "verdict": "contradicted",
+   "note": "Cyberball meta-analysis (120 studies, N = 11,869) reports d > |1.4|, versus our -0.45. NOT applied: both pages are the same abstract (one source), the Gerber & Wheeler (2009) figure was not retrievable, and the 1.4 is for need/affect outcomes where a behavioural DV would be far smaller. Flagged for a source check.",
+   "changed_value": false
+  },
+  {
+   "id": "expressive_writing_meta",
+   "group": "paradigm_v1305",
+   "claim": "Expressive writing r .075 (d ~0.15), k=146",
+   "our_value": 0.15,
+   "search_summary_states": "positive and significant average r-effect size of .075 ... 146 randomized studies",
+   "urls": [
+    "https://pubmed.ncbi.nlm.nih.gov/17073523/",
+    "https://stafforini.com/works/frattaroli-2006-experimental-disclosure-its/"
+   ],
+   "verdict": "corroborated",
+   "note": "r = .075 converts to d ~0.15; k matches.",
+   "changed_value": false
+  },
+  {
+   "id": "gratitude_intervention_meta",
+   "group": "paradigm_v1305",
+   "claim": "Gratitude interventions d ~0.25, k=27",
+   "our_value": 0.25,
+   "search_summary_states": "The authors included 26 studies in their meta-analysis, five of which involved an expressed gratitude intervention.",
+   "urls": [
+    "https://link.springer.com/10.1007/s41042-023-00086-6",
+    "https://proofpositive.org/?p=6911"
+   ],
+   "verdict": "inconclusive",
+   "note": "Direction and 'small' agree; k differs by one (27 appears to belong to a different, later gratitude meta-analysis, g = -0.29 on depression/anxiety).",
+   "changed_value": false
+  },
+  {
+   "id": "positive_psychology_intervention_meta",
+   "group": "paradigm_v1305",
+   "claim": "Positive psychology interventions d ~0.25, k=39",
+   "our_value": 0.25,
+   "search_summary_states": "The standardized mean difference was 0.34 for subjective well-being, 0.20 for psychological well-being, and 0.23 for depression",
+   "urls": [
+    "https://pubmed.ncbi.nlm.nih.gov/23390882/",
+    "https://bmcpublichealth.biomedcentral.com/track/pdf/10.1186/1471-2458-13-119"
+   ],
+   "verdict": "corroborated",
+   "note": "39 studies, 6,139 participants; 0.25 is inside the three outcome-specific values.",
+   "changed_value": false
+  },
+  {
+   "id": "cognitive_reappraisal_meta",
+   "group": "paradigm_v1305",
+   "claim": "Cognitive reappraisal d ~0.30",
+   "our_value": 0.3,
+   "search_summary_states": "for cognitive change, the effect was d = .45 medium for self-reported subjective feelings",
+   "urls": [
+    "https://psu.pb.unizin.org/psych425/chapter/which-emotion-strategies-work-best/",
+    "https://sussex.figshare.com/articles/journal_contribution/Dealing_with_feeling_a_meta-analysis_of_the_effectiveness_of_strategies_derived_from_the_process_model_of_emotion_regulation/23396432"
+   ],
+   "verdict": "inconclusive",
+   "note": "Secondary teaching source; 'cognitive change' is broader than reappraisal; 306 comparisons. The paper's own figure was not seen.",
+   "changed_value": false
+  },
+  {
+   "id": "active_learning_stem_meta",
+   "group": "paradigm_v1305",
+   "claim": "Active learning in STEM d ~0.47, k=225",
+   "our_value": 0.47,
+   "search_summary_states": "The 0.47 SD effect applies to exam scores and concept inventories combined, across 158 studies.",
+   "urls": [
+    "https://experts.umn.edu/en/publications/active-learning-increases-student-performance-in-science-engineer/",
+    "https://pmc.ncbi.nlm.nih.gov/articles/PMC4060654/"
+   ],
+   "verdict": "corroborated",
+   "note": "225 studies in all; 0.47 SD on 158 of them.",
+   "changed_value": false
+  },
+  {
+   "id": "feedback_intervention_meta",
+   "group": "paradigm_v1305",
+   "claim": "Feedback interventions d ~0.41",
+   "our_value": 0.41,
+   "search_summary_states": "it found an average effect of d = .41 for feedback interventions. Over a third of the interventions decreased performance.",
+   "urls": [
+    "https://pluto.huji.ac.il/%7Emskluger/files/Download/Kluger &  DeNisi abstract.doc",
+    "https://scholars.huji.ac.il/node/1802"
+   ],
+   "verdict": "corroborated",
+   "note": "607 effect sizes, 23,663 observations; about 38% of effects negative (relevant to heterogeneity, not modelled).",
+   "changed_value": false
+  },
+  {
+   "id": "tailored_health_messages_meta",
+   "group": "paradigm_v1305",
+   "claim": "Tailored print health messages r .074 (d ~0.15), k=57",
+   "our_value": 0.15,
+   "search_summary_states": "The authors pooled 57 studies with a combined N of 58,454. Their sample-size-weighted average effect ... came out to r = .074",
+   "urls": [
+    "https://pubmed.ncbi.nlm.nih.gov/17592961/"
+   ],
+   "verdict": "corroborated",
+   "note": "r = .074 converts to d ~0.15; k matches.",
+   "changed_value": false
+  },
+  {
+   "id": "graphic_warning_labels_meta",
+   "group": "paradigm_v1305",
+   "claim": "Pictorial warning labels d ~0.20",
+   "our_value": 0.2,
+   "search_summary_states": "pictorial warnings were more effective than text-only warnings for 12 of 17 effectiveness outcomes",
+   "urls": [
+    "https://www.cpc.unc.edu/resources/publications/bib/12835/",
+    "https://www.rti.org/publication/pictorial-cigarette-pack-warnings"
+   ],
+   "verdict": "inconclusive",
+   "note": "37 studies / 48 samples (N = 33,613); direction corroborated, no pooled value in the summary.",
+   "changed_value": false
+  },
+  {
+   "id": "illusory_truth_meta",
+   "group": "paradigm_v1305",
+   "claim": "Illusory truth d ~0.39, k=51",
+   "our_value": 0.39,
+   "search_summary_states": "d = .39; 95% CI: [0.30, 0.49] within-items, d = .50; 95% CI: [0.43, 0.57] between-items",
+   "urls": [
+    "https://pmc.ncbi.nlm.nih.gov/articles/PMC9166874",
+    "https://edoc.unibas.ch/10139"
+   ],
+   "verdict": "corroborated",
+   "note": "0.39 is the within-items estimate; between-items is larger (0.50). A later paper warns the old estimate pre-dates modern bias correction.",
+   "changed_value": false
+  },
+  {
+   "id": "gamification_meta",
+   "group": "paradigm_v1305",
+   "claim": "Gamification d ~0.30",
+   "our_value": 0.3,
+   "search_summary_states": "cognitive (g = .49, 95% CI [0.30, 0.69], k = 19), motivational (g = .36), and behavioral learning outcomes (g = .25)",
+   "urls": [
+    "https://link.springer.com/article/10.1007/s10648-019-09498-w",
+    "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10591086/"
+   ],
+   "verdict": "corroborated",
+   "note": "0.30 lies inside the three outcome-specific values. A 2023 meta-analysis reports g = 0.82 under different inclusion criteria.",
+   "changed_value": false
+  },
+  {
+   "id": "imagined_contact_meta",
+   "group": "paradigm_v1305",
+   "claim": "Imagined contact d ~0.25, k=71",
+   "our_value": 0.25,
+   "search_summary_states": "The authors report a pooled effect of d+ = 0.35 across the four outcome types they examined",
+   "urls": [
+    "https://sussex.figshare.com/articles/journal_contribution/A_meta-analytic_test_of_the_imagined_contact_hypothesis/23402477",
+    "https://www.frontiersin.org/journals/psychology/articles/10.3389/fpsyg.2023.1226503/full"
+   ],
+   "verdict": "corroborated",
+   "note": "Published point estimate 0.35 is above our 0.25 but inside our CI (0.10-0.40); abstract says 'over 70 studies'. Many Labs 1 found only weak support for imagined contact.",
+   "changed_value": false
+  },
+  {
+   "id": "endowment_effect",
+   "group": "older_meta_db",
+   "claim": "Endowment effect d 0.55, k=80 (matched in 32 of 303 example QSFs by block text)",
+   "our_value": 0.55,
+   "search_summary_states": "I did not find a general meta-analysis that reports a single pooled WTA/WTP ratio for the endowment effect across all studies.",
+   "urls": [
+    "https://scinapse.io/papers/2088923405",
+    "https://utrecht-main-test.atmire.com/items/1b6108d1-bda2-4d61-87f1-51dff720ccf7"
+   ],
+   "verdict": "inconclusive",
+   "note": "Healthcare-goods WTA/WTP ratios 1.73 mean (13 papers) and a survey correlation of 0.15-0.2 exist, but no pooled d.",
+   "changed_value": false
+  },
+  {
+   "id": "anchoring_effect",
+   "group": "older_meta_db",
+   "claim": "Anchoring d 0.80 (0.6-1.0)",
+   "our_value": 0.8,
+   "search_summary_states": "A large 2023 meta-analysis (Management Science) covered 2,601 total effect sizes and reported Hedges' g = 0.825",
+   "urls": [
+    "https://pubsonline.informs.org/doi/fpi/10.1287/mnsc.2023.03238",
+    "https://ideas.repec.org/a/eee/soceco/v40y2011i1p35-42.html"
+   ],
+   "verdict": "corroborated",
+   "note": "Value corroborated; the same summary says incidental anchors are near zero (Many Labs 2: d = 0.04). The stored k=95 and the 'narrative review' source do not match this meta-analysis.",
+   "changed_value": false
+  },
+  {
+   "id": "placebo_effect_meta",
+   "group": "older_meta_db",
+   "claim": "Placebo effect d 0.25, k=202",
+   "our_value": 0.25,
+   "search_summary_states": "the pooled standardised mean difference was -0.23 (95% CI -0.28 to -0.17) ... 158 trials with continuous outcomes",
+   "urls": [
+    "https://www.cochrane.org/de/evidence/CD003974_placebo-interventions-all-clinical-conditions",
+    "https://cochranelibrary.com/cdsr/doi/10.1002/14651858.CD003974.pub3/information"
+   ],
+   "verdict": "corroborated",
+   "note": "Magnitude corroborated; k differs (158 continuous-outcome trials vs stored 202) and the stored CI upper bound 0.40 is outside the published interval. Authors call pooling 'questionable'.",
+   "changed_value": false
+  },
+  {
+   "id": "loyalty_program_meta",
+   "group": "older_meta_db",
+   "claim": "Loyalty programs d 0.20, k=35, from 'Dorotic 2012; Breugelmans 2015'",
+   "our_value": 0.2,
+   "search_summary_states": "Breugelmans et al. (2015) is not a meta-analysis. It's a future research agenda paper",
+   "urls": [
+    "https://ideas.repec.org/a/now/fntmkt/1700000026.html",
+    "https://international.vlex.com/vid/loyalty-programmes-current-knowledge-855645393"
+   ],
+   "verdict": "contradicted",
+   "note": "Neither cited source is a meta-analysis (an agenda paper and a literature review), so the pooled d, CI and k=35 have no source. Real meta-analyses exist (Belli et al. 2022, 429 effect sizes; r < .30 in a thesis). Magnitude not changed: no pooled figure retrieved.",
+   "changed_value": false
+  },
+  {
+   "id": "scarcity_effect_meta",
+   "group": "older_meta_db",
+   "claim": "Scarcity d 0.56, k=131 (Barton et al. 2022)",
+   "our_value": 0.56,
+   "search_summary_states": "The authors pooled 416 effect sizes from 131 studies",
+   "urls": [
+    "https://research.monash.edu/en/publications/scarcity-tactics-in-marketing-a-meta-analysis-of-product-scarcity/",
+    "https://ideas.repec.org/a/eee/jouret/v98y2022i4p741-758.html"
+   ],
+   "verdict": "inconclusive",
+   "note": "k corroborated; pooled effect not in the summaries.",
+   "changed_value": false
+  },
+  {
+   "id": "green_defaults_meta",
+   "group": "older_meta_db",
+   "claim": "Defaults d 0.68 (0.5-0.86), k=25",
+   "our_value": 0.68,
+   "search_summary_states": "The pooled effect is d = 0.68, with a 95% confidence interval of 0.53 to 0.83",
+   "urls": [
+    "https://ideas.repec.org/a/cup/bpubpo/v3y2019i02p159-186_00.html",
+    "https://business.columbia.edu/faculty/research/when-and-why-defaults-influence-decisions-meta-analysis-default-effects"
+   ],
+   "verdict": "corroborated",
+   "note": "d corroborated for ALL defaults (58 studies). The same paper finds environmental-domain defaults are LESS effective than average, and I-squared is above 90%.",
+   "changed_value": false
+  },
+  {
+   "id": "ingroup_cooperation_meta",
+   "group": "older_meta_db",
+   "claim": "Ingroup favoritism in cooperation d 0.32",
+   "our_value": 0.32,
+   "search_summary_states": "a small to medium effect indicating people cooperate more with ingroup members than with outgroup members (d = 0.32)",
+   "urls": [
+    "https://dare.uva.nl/id/6a43594a-d6ad-40d8-87f3-4f3c413629f2"
+   ],
+   "verdict": "corroborated",
+   "note": "Same summary: d = 0.19 for dictator-type tasks and 0.42 for social dilemmas, which matters for the political-matching rules.",
+   "changed_value": false
+  },
+  {
+   "id": "self_affirmation_meta",
+   "group": "older_meta_db",
+   "claim": "Self-affirmation d 0.17, k=144",
+   "our_value": 0.17,
+   "search_summary_states": "A conference abstract from the same team reported the effect sizes as acceptance d = .17, intentions d = .14, and behavior d = .32",
+   "urls": [
+    "https://research.vu.nl/en/publications/the-impact-of-self-affirmation-on-health-behavior-change-a-meta-a/",
+    "https://www.ehps.net/ehp/index.php/contents/article/view/271"
+   ],
+   "verdict": "corroborated",
+   "note": "144 tests confirmed. The 0.17 value matches message acceptance; the summary itself warns the published article's values were not confirmed.",
+   "changed_value": false
+  },
+  {
+   "id": "zero_price_effect",
+   "group": "older_meta_db",
+   "claim": "Zero-price effect d 0.62, k=18",
+   "our_value": 0.62,
+   "search_summary_states": "I didn't find a meta-analysis or multi-lab replication of the zero-price effect that reports a pooled effect size.",
+   "urls": [
+    "https://scholars.duke.edu/publication/859276",
+    "https://people.duke.edu/~dandan/webfiles/PapersPI/Zero as a Special Price.pdf"
+   ],
+   "verdict": "inconclusive",
+   "note": "The original paper is a single-experiment series reporting choice shares; k=18 and a pooled d have no source found.",
+   "changed_value": false
+  },
+  {
+   "id": "personalization_meta",
+   "group": "older_meta_db",
+   "claim": "Personalization d 0.32, k=40 (Aguirre 2015; Tam & Ho 2006)",
+   "our_value": 0.32,
+   "search_summary_states": "It is not a meta-analysis, so the search results contain no pooled effect size for it.",
+   "urls": [
+    "https://openaccess.city.ac.uk/id/eprint/15747/",
+    "https://misq.org/understanding-the-impact-of-web-personalization-on-user-information-processing-and-decision-outcomes.html"
+   ],
+   "verdict": "contradicted",
+   "note": "Both cited sources are primary experiments (three experiments plus a field study; a lab experiment plus a field study), so a pooled d and k=40 have no source. A real personalization meta-analysis (53 studies) is described as 'relatively small'. Value not changed.",
+   "changed_value": false
+  }
+ ]
+}
