@@ -38,8 +38,19 @@ GENERIC_PATTERNS = (
 )
 
 
+def _finite_json_value(obj: Any) -> Any:
+    """Copy of ``obj`` with every NaN/Infinity float replaced by None (bare NaN is not valid JSON)."""
+    if isinstance(obj, float):
+        return obj if obj == obj and obj not in (float("inf"), float("-inf")) else None
+    if isinstance(obj, dict):
+        return {k: _finite_json_value(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_finite_json_value(v) for v in obj]
+    return obj
+
+
 def _safe_json(obj: Any) -> str:
-    return json.dumps(obj, ensure_ascii=False, indent=2, default=str)
+    return json.dumps(_finite_json_value(obj), ensure_ascii=False, indent=2, default=str)
 
 
 def _extract_open_ended_columns(df: pd.DataFrame) -> List[str]:
@@ -99,8 +110,13 @@ def persist_simulation_run(
     instructor_report_md: str,
     engine_log: Optional[List[str]] = None,
     validation_results: Optional[Dict[str, Any]] = None,
+    extra_files: Optional[Dict[str, bytes]] = None,
 ) -> Path:
-    """Persist a run's instructor copy, data output, and logs to its own folder."""
+    """Persist a run's instructor copy, data output, and logs to its own folder.
+
+    ``extra_files`` maps file names to bytes (for example the instructor-only analysis report)
+    so they stay retrievable from the archive even when the notification email fails.
+    """
     output_root.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -123,6 +139,11 @@ def persist_simulation_run(
     if engine_log:
         log_body = "\n".join(str(x) for x in engine_log)
         (run_dir / "Engine_Log.txt").write_text(log_body, encoding="utf-8")
+
+    for extra_name, extra_bytes in (extra_files or {}).items():
+        safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", Path(str(extra_name)).name)[:120]
+        if safe_name and isinstance(extra_bytes, (bytes, bytearray)):
+            (run_dir / safe_name).write_bytes(bytes(extra_bytes))
 
     summary = {
         "created_at": datetime.now().isoformat(timespec="seconds"),

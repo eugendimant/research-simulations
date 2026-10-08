@@ -1,0 +1,738 @@
+"""Tests for utils/email_delivery.py: recipients, message building, size fitting, retries, logging.
+
+Everything is offline: SMTP is replaced by small fake classes.
+"""
+import email
+import json
+import smtplib
+import socket
+import ssl
+import sys
+import threading
+from email import policy
+from pathlib import Path
+
+import pytest
+
+_APP_DIR = Path(__file__).resolve().parent.parent / "simulation_app"
+if str(_APP_DIR) not in sys.path:
+    sys.path.insert(0, str(_APP_DIR))
+
+from utils import email_delivery as ed  # noqa: E402
+
+FAKE_LOGIN_VALUE = "s3cret" + "-pass"  # a stand-in credential; the tests check it never reaches logs or messages
+CONFIG = ed.SMTPConfig(server="smtp.example.org", port=587, username="sender@example.org",
+                       password=FAKE_LOGIN_VALUE, from_email="sender@example.org", from_name="Tool")
+
+
+# ---------------------------------------------------------------------------------------
+# Fakes
+# ---------------------------------------------------------------------------------------
+class FakeServer:
+    """Records what the sender does; ``plan`` is a list of exceptions/None consumed per send."""
+
+    instances = []
+
+    def __init__(self, host, port, timeout=None, context=None, plan=None):
+        self.host, self.port, self.context = host, port, context
+        self.calls = []
+        self.sent = []
+        self.closed = False
+        FakeServer.instances.append(self)
+
+    def ehlo(self):
+        self.calls.append("ehlo")
+
+    def starttls(self, context=None):
+        self.calls.append("starttls")
+
+    def login(self, user, password):
+        self.calls.append("login")
+        if FakeServer.login_error is not None:
+            raise FakeServer.login_error
+
+    def send_message(self, msg, from_addr=None, to_addrs=None, **_kw):
+        outcome = FakeServer.plan.pop(0) if FakeServer.plan else None
+        if isinstance(outcome, BaseException):
+            raise outcome
+        FakeServer.delivered.append((msg, from_addr, list(to_addrs or [])))
+        return outcome or {}
+
+    def quit(self):
+        self.calls.append("quit")
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.fixture(autouse=True)
+def _reset_fake():
+    FakeServer.instances = []
+    FakeServer.plan = []
+    FakeServer.delivered = []
+    FakeServer.login_error = None
+    yield
+
+
+def _no_sleep(_seconds):
+    pass
+
+
+# ---------------------------------------------------------------------------------------
+# Addresses, config, helpers
+# ---------------------------------------------------------------------------------------
+def test_parse_recipients_accepts_lists_names_and_separators():
+    valid, invalid = ed.parse_recipients("a@x.edu, Name <b@y.com>; c@z.org\n d@w.net,a@X.edu, not-an-address, @bad.com")
+    assert valid == ["a@x.edu", "b@y.com", "c@z.org", "d@w.net"]
+    assert "not-an-address" in invalid or invalid  # junk is reported, not sent to
+    assert ed.parse_recipients(None) == ([], [])
+    assert ed.parse_recipients("") == ([], [])
+    assert ed.parse_recipients(["x@y.com", "z@y.com"])[0] == ["x@y.com", "z@y.com"]
+    many = ", ".join(f"u{i}@x.org" for i in range(40))
+    assert len(ed.parse_recipients(many)[0]) == 10  # capped
+
+
+def test_parse_recipients_rejects_header_injection_attempts():
+    valid, _ = ed.parse_recipients("a@x.edu\r\nBcc: evil@x.org")
+    assert all("\r" not in v and "\n" not in v and " " not in v for v in valid)
+
+
+def test_mask_address_hides_the_local_part():
+    assert ed.mask_address("edimant@sas.upenn.edu") == "e***t@sas.upenn.edu"
+    assert ed.mask_address("ab@x.org") == "a***@x.org"
+    assert ed.mask_address("garbage") == "***"
+
+
+def test_load_smtp_config_parses_loosely_typed_secrets():
+    secrets = {"SMTP_SERVER": " smtp.gmail.com ", "SMTP_PORT": "465", "SMTP_USERNAME": "me@x.org",
+               "SMTP_PASSWORD": "pw", "SMTP_USE_TLS": "false", "EMAIL_MAX_MESSAGE_MB": "30"}
+    cfg = ed.load_smtp_config(lambda name, default="": secrets.get(name, default))
+    assert cfg.server == "smtp.gmail.com" and cfg.port == 465 and cfg.use_tls is False
+    assert cfg.from_email == "me@x.org" and cfg.configured
+    assert cfg.max_message_bytes == 30 * 1024 * 1024
+    broken = ed.load_smtp_config(lambda name, default="": {"SMTP_PORT": "abc"}.get(name, default))
+    assert broken.port == 587 and not broken.configured
+    assert "pw" not in json.dumps(cfg.public_summary())  # the display form never carries the password
+
+
+def test_guess_mime_type_uses_real_types_not_octet_stream():
+    assert ed.guess_mime_type("report.html") == ("text", "html")
+    assert ed.guess_mime_type("pack.ZIP") == ("application", "zip")
+    assert ed.guess_mime_type("notes.md") == ("text", "markdown")
+    assert ed.guess_mime_type("run.sps") == ("text", "plain")
+    assert ed.guess_mime_type("weird.xyz") == ("application", "octet-stream")
+
+
+# ---------------------------------------------------------------------------------------
+# Message building
+# ---------------------------------------------------------------------------------------
+def _msg(**kw):
+    base = dict(from_email="sender@example.org", from_name="Tool", recipients=["owner@example.edu"], subject="Subject",
+                body_text="Body text")
+    base.update(kw)
+    return ed.build_message(**base)
+
+
+def test_build_message_has_the_headers_mail_filters_expect():
+    msg = _msg(body_html="<p>Hi</p>")
+    parsed = email.message_from_bytes(msg.as_bytes(), policy=policy.default)
+    assert parsed["Message-ID"].startswith("<") and parsed["Message-ID"].endswith("@example.org>")
+    assert parsed["Date"] and parsed["MIME-Version"] == "1.0"
+    assert parsed["Auto-Submitted"] == "auto-generated"
+    assert parsed["To"] == "owner@example.edu" and "sender@example.org" in parsed["From"]
+    kinds = [p.get_content_type() for p in parsed.walk()]
+    assert "text/plain" in kinds and "text/html" in kinds
+
+
+def test_build_message_attachment_types_and_round_trip():
+    zip_bytes, html_bytes, md_bytes = b"PK\x03\x04" + b"\x00" * 50, "<html>ü</html>".encode(), b"# title\n"
+    msg = _msg(attachments=[ed.Attachment("simulation_output.zip", zip_bytes),
+                            ed.Attachment("INSTRUCTOR_Statistical_Report.html", html_bytes),
+                            ed.Attachment("INSTRUCTOR_Detailed_Analysis.md", md_bytes)])
+    parsed = email.message_from_bytes(msg.as_bytes(), policy=policy.default)
+    got = {p.get_filename(): (p.get_content_type(), p.get_payload(decode=True)) for p in parsed.walk() if p.get_filename()}
+    assert got["simulation_output.zip"] == ("application/zip", zip_bytes)
+    assert got["INSTRUCTOR_Statistical_Report.html"] == ("text/html", html_bytes)
+    assert got["INSTRUCTOR_Detailed_Analysis.md"] == ("text/markdown", md_bytes)
+
+
+def test_build_message_neutralises_header_injection_and_odd_filenames():
+    evil = "Study\r\nBcc: attacker@example.com\r\nX-Evil: 1"
+    msg = _msg(subject=evil, attachments=[ed.Attachment("../../etc/passwd\r\n.html", b"x")])
+    raw = msg.as_bytes().decode("utf-8", "replace")
+    head = raw.split("\r\n\r\n", 1)[0]
+    assert "\nBcc:" not in head and "\nX-Evil:" not in head
+    parsed = email.message_from_bytes(msg.as_bytes(), policy=policy.default)
+    assert parsed["Bcc"] is None
+    names = [p.get_filename() for p in parsed.walk() if p.get_filename()]
+    assert names and all("/" not in n and "\n" not in n and ".." not in n.split(".")[0:1] for n in names)
+
+
+def test_build_message_handles_unicode_subject_and_sender_name():
+    msg = _msg(subject="Étude – α/β ✓", from_name="Outil d'étude")
+    parsed = email.message_from_bytes(msg.as_bytes(), policy=policy.default)
+    assert parsed["Subject"] == "Étude – α/β ✓"
+
+
+# ---------------------------------------------------------------------------------------
+# Size fitting
+# ---------------------------------------------------------------------------------------
+MB = 1024 * 1024
+
+
+def _att(name, mb, **kw):
+    return ed.Attachment(name, b"x" * int(mb * MB), **kw)
+
+
+def test_fit_attachments_leaves_everything_when_it_fits():
+    slots = [_att("a.html", 1), _att("b.md", 0.1), _att("c.zip", 2)]
+    kept, notes = ed.fit_attachments(slots, 15 * MB)
+    assert [a.name for a in kept] == ["a.html", "b.md", "c.zip"] and notes == []
+
+
+def test_fit_attachments_swaps_the_big_zip_for_its_lean_version_and_keeps_small_files():
+    lean = _att("simulation_output.zip", 1)
+    slots = [_att("report.html", 1, protected=True), _att("analysis.md", 0.2),
+             _att("simulation_output.zip", 30, alternatives=(lean,)), _att("summary.md", 0.05)]
+    kept, notes = ed.fit_attachments(slots, 15 * MB)
+    names = {a.name: len(a.data) for a in kept}
+    assert names["simulation_output.zip"] == len(lean.data)
+    assert "analysis.md" in names and "summary.md" in names and "report.html" in names
+    assert [n["action"] for n in notes] == ["replaced"]
+
+
+def test_fit_attachments_drops_when_no_alternative_and_never_drops_protected():
+    slots = [_att("report.html", 20, protected=True), _att("zip.zip", 20)]
+    kept, notes = ed.fit_attachments(slots, 15 * MB)
+    assert [a.name for a in kept] == ["report.html"]  # protected stays even though it alone is too big
+    assert notes == [{"name": "zip.zip", "action": "omitted", "bytes": 20 * MB}]
+
+
+def test_fit_attachments_prefers_dropping_big_low_priority_over_small_ones():
+    slots = [_att("report.html", 1, protected=True), _att("small.md", 0.01), _att("huge.bin", 40), _att("tiny.md", 0.01)]
+    kept, notes = ed.fit_attachments(slots, 10 * MB)
+    assert {a.name for a in kept} == {"report.html", "small.md", "tiny.md"}
+    assert notes[0]["name"] == "huge.bin"
+
+
+# ---------------------------------------------------------------------------------------
+# Error classification
+# ---------------------------------------------------------------------------------------
+@pytest.mark.parametrize("exc, kind", [
+    (smtplib.SMTPAuthenticationError(535, b"5.7.8 Username and Password not accepted"), "auth"),
+    (smtplib.SMTPAuthenticationError(454, b"4.7.0 Temporary authentication failure"), "transient"),
+    (smtplib.SMTPDataError(552, b"5.3.4 Message size exceeds fixed limit"), "size"),
+    (smtplib.SMTPDataError(552, b"5.2.3 Your message exceeded Google's message size limits"), "size"),
+    (smtplib.SMTPDataError(554, b"5.3.4 message too large"), "size"),
+    (smtplib.SMTPDataError(451, b"4.3.0 Temporary local problem"), "transient"),
+    (smtplib.SMTPDataError(550, b"5.4.5 Daily user sending quota exceeded."), "quota"),
+    (smtplib.SMTPAuthenticationError(454, b"4.7.0 Too many login attempts, please try again later."), "quota"),
+    (smtplib.SMTPSenderRefused(421, b"4.7.0 Try again later, closing connection. rate limit", "a@x.org"), "quota"),
+    (smtplib.SMTPDataError(552, b"5.2.2 The email account that you tried to reach is over quota."), "recipient"),
+    (smtplib.SMTPDataError(552, b""), "size"),
+    (smtplib.SMTPSenderRefused(550, b"5.7.1 not allowed", "a@x.org"), "permanent"),
+    (smtplib.SMTPRecipientsRefused({"a@x.org": (550, b"5.1.1 no such user")}), "recipient"),
+    (smtplib.SMTPServerDisconnected("Connection unexpectedly closed"), "transient"),
+    (smtplib.SMTPConnectError(421, b"4.3.2 service not available"), "transient"),
+    (smtplib.SMTPNotSupportedError("STARTTLS extension not supported by server."), "config"),
+    (smtplib.SMTPException("SMTP AUTH extension not supported by server."), "config"),
+    (socket.timeout("timed out"), "transient"),
+    (ConnectionRefusedError("refused"), "transient"),
+    (ssl.SSLCertVerificationError("bad cert"), "config"),
+    (ValueError("boom"), "permanent"),
+])
+def test_classify_error(exc, kind):
+    assert ed.classify_error(exc)[0] == kind
+
+
+# ---------------------------------------------------------------------------------------
+# Sending with retries
+# ---------------------------------------------------------------------------------------
+def _send(config=CONFIG, recipients=("owner@example.edu",), **kw):
+    msg = _msg(recipients=list(recipients))
+    return ed.send_with_retries(config, msg, list(recipients), smtp_factory=FakeServer, sleep=_no_sleep, **kw)
+
+
+def test_send_succeeds_and_uses_starttls_on_587_ssl_on_465():
+    result = _send()
+    assert result.ok and result.attempts == 1 and result.accepted == ["owner@example.edu"]
+    server = FakeServer.instances[0]
+    assert server.calls == ["ehlo", "starttls", "ehlo", "login", "quit"]
+    FakeServer.instances.clear()
+    ssl_cfg = ed.SMTPConfig(server="s", port=465, username="u", password=FAKE_LOGIN_VALUE, from_email="u@x.org")
+    result = ed.send_with_retries(ssl_cfg, _msg(), ["owner@example.edu"], smtp_factory=FakeServer, sleep=_no_sleep)
+    assert result.ok and "starttls" not in FakeServer.instances[0].calls
+    no_tls = ed.SMTPConfig(server="s", port=25, username="u", password=FAKE_LOGIN_VALUE, from_email="u@x.org", use_tls=False)
+    FakeServer.instances.clear()
+    ed.send_with_retries(no_tls, _msg(), ["owner@example.edu"], smtp_factory=FakeServer, sleep=_no_sleep)
+    assert "starttls" not in FakeServer.instances[0].calls
+
+
+def test_transient_failures_are_retried_with_backoff_then_succeed():
+    FakeServer.plan = [smtplib.SMTPServerDisconnected("gone"), smtplib.SMTPDataError(451, b"try later"), None]
+    waits = []
+    msg = _msg()
+    result = ed.send_with_retries(CONFIG, msg, ["owner@example.edu"], smtp_factory=FakeServer, sleep=waits.append)
+    assert result.ok and result.attempts == 3
+    assert waits == [2.0, 6.0]
+    assert len(FakeServer.delivered) == 1
+
+
+def test_permanent_failures_are_not_retried():
+    FakeServer.plan = [smtplib.SMTPDataError(552, b"5.3.4 Message size exceeds fixed limit")]
+    result = _send()
+    assert not result.ok and result.attempts == 1 and result.error_kind == "size" and result.smtp_code == 552
+    FakeServer.plan = []
+    FakeServer.login_error = smtplib.SMTPAuthenticationError(535, b"5.7.8 Username and Password not accepted")
+    result = _send()
+    assert not result.ok and result.error_kind == "auth" and "App Password" in result.message
+    assert all(inst.closed for inst in FakeServer.instances)  # half-open connections are closed
+
+
+def test_gives_up_after_max_attempts_on_persistent_transient_errors():
+    FakeServer.plan = [smtplib.SMTPServerDisconnected("gone")] * 5
+    result = _send()
+    assert not result.ok and result.attempts == 3 and result.error_kind == "transient"
+
+
+def test_partial_recipient_refusal_still_counts_as_delivered():
+    FakeServer.plan = [{"bad@x.org": (550, b"5.1.1 no such user")}]
+    result = _send(recipients=("good@x.org", "bad@x.org"))
+    assert result.ok and result.accepted == ["good@x.org"] and "bad@x.org" in result.refused
+
+
+def test_all_recipients_refused_is_a_permanent_recipient_error():
+    FakeServer.plan = [smtplib.SMTPRecipientsRefused({"a@x.org": (550, b"5.1.1 no such user")})]
+    result = _send()
+    assert not result.ok and result.error_kind == "recipient" and result.attempts == 1
+
+
+def test_error_detail_never_contains_the_password():
+    FakeServer.login_error = smtplib.SMTPAuthenticationError(535, ("bad login for " + FAKE_LOGIN_VALUE).encode())
+    result = _send()
+    assert FAKE_LOGIN_VALUE not in result.error_detail
+
+
+# ---------------------------------------------------------------------------------------
+# deliver(): the single entry point
+# ---------------------------------------------------------------------------------------
+def test_deliver_reports_missing_configuration_and_recipients_without_raising(tmp_path):
+    log = tmp_path / "log.jsonl"
+    res = ed.deliver(ed.SMTPConfig(), ["a@x.org"], "s", "b", log_path=log)
+    assert not res.ok and res.error_kind == "config" and "not configured" in res.message
+    res = ed.deliver(CONFIG, [], "s", "b", log_path=log, smtp_factory=FakeServer)
+    assert not res.ok and res.error_kind == "recipient"
+    entries = ed.read_delivery_log(log)
+    assert len(entries) == 2 and entries[0]["error_kind"] == "recipient"
+
+
+def test_deliver_logs_a_masked_entry_without_secrets(tmp_path):
+    log = tmp_path / "log.jsonl"
+    res = ed.deliver(CONFIG, ["owner@example.edu"], "Subject", "Body", kind="instructor", log_path=log,
+                     attachments=[ed.Attachment("a.zip", b"1234")], smtp_factory=FakeServer, sleep=_no_sleep)
+    assert res.ok
+    raw = log.read_text(encoding="utf-8")
+    assert "owner@example.edu" not in raw and "o***r@example.edu" in raw and FAKE_LOGIN_VALUE not in raw
+    entry = ed.read_delivery_log(log)[0]
+    assert entry["ok"] and entry["kind"] == "instructor" and entry["attachments"] == [{"name": "a.zip", "bytes": 4}]
+    assert entry["message_id"].startswith("<") and entry["message_bytes"] > 0
+
+
+def test_deliver_swaps_oversized_zip_for_the_lean_one_and_says_so(tmp_path):
+    lean = _att("simulation_output.zip", 0.5)
+    big = _att("simulation_output.zip", 40, alternatives=(lean,))
+    res = ed.deliver(CONFIG, ["owner@example.edu"], "S", "Body", body_html="<p>Body</p>", log_path=tmp_path / "l.jsonl",
+                     attachments=[_att("report.html", 1, protected=True), big], smtp_factory=FakeServer, sleep=_no_sleep)
+    assert res.ok and res.omitted and res.omitted[0]["action"] == "replaced"
+    sent = FakeServer.delivered[0][0]
+    text = sent.get_body(preferencelist=("plain",)).get_content()
+    html = sent.get_body(preferencelist=("html",)).get_content()
+    assert text.startswith("NOTE: some attachments were reduced") and "NOTE: some attachments" in html
+    sizes = {p.get_filename(): len(p.get_payload(decode=True)) for p in sent.walk() if p.get_filename()}
+    assert sizes["simulation_output.zip"] == len(lean.data)
+
+
+def test_deliver_halves_the_budget_once_when_the_server_reports_size_too_large(tmp_path):
+    FakeServer.plan = [smtplib.SMTPDataError(552, b"5.3.4 Message size exceeds fixed limit"), None]
+    small_alt = _att("data.zip", 0.2)
+    res = ed.deliver(CONFIG, ["owner@example.edu"], "S", "Body", log_path=tmp_path / "l.jsonl",
+                     attachments=[_att("report.html", 0.5, protected=True), _att("data.zip", 6, alternatives=(small_alt,))],
+                     smtp_factory=FakeServer, sleep=_no_sleep)
+    assert res.ok and len(FakeServer.delivered) == 1
+    assert any(n["name"] == "data.zip" for n in res.omitted)  # the retry used a reduced attachment set
+
+
+def test_deliver_never_raises_even_on_unexpected_errors(tmp_path):
+    class Exploding:
+        def __init__(self, *a, **k):
+            raise RuntimeError("kaboom with " + FAKE_LOGIN_VALUE + " inside")
+
+    res = ed.deliver(CONFIG, ["owner@example.edu"], "S", "B", log_path=tmp_path / "l.jsonl", smtp_factory=Exploding,
+                     sleep=_no_sleep, max_attempts=1)
+    assert not res.ok
+    assert FAKE_LOGIN_VALUE not in json.dumps(ed.read_delivery_log(tmp_path / "l.jsonl"))
+
+
+# ---------------------------------------------------------------------------------------
+# Log handling and background execution
+# ---------------------------------------------------------------------------------------
+def test_log_is_trimmed_and_read_newest_first(tmp_path):
+    log = tmp_path / "log.jsonl"
+    res = ed.DeliveryResult(ok=True, accepted=["a@x.org"], attempts=1)
+    long_subject = "x" * 150
+    for i in range(1200):
+        ed.record_delivery(log, res, kind=f"k{i}", subject=long_subject, recipients=["a@x.org"])
+    assert log.stat().st_size < 500_000
+    newest = ed.read_delivery_log(log, limit=3)
+    assert [e["kind"] for e in newest] == ["k1199", "k1198", "k1197"]
+    assert ed.read_delivery_log(tmp_path / "missing.jsonl") == []
+
+
+def test_record_delivery_survives_an_unwritable_path():
+    entry = ed.record_delivery(Path("/proc/definitely/not/writable.jsonl"), ed.DeliveryResult(ok=False),
+                               kind="x", subject="s", recipients=[])
+    assert entry["ok"] is False
+
+
+def test_run_in_background_runs_independently_and_swallows_errors():
+    done = threading.Event()
+    thread = ed.run_in_background(lambda: done.set(), name="t1")
+    assert done.wait(5) and thread.daemon
+    ed.run_in_background(lambda: 1 / 0, name="t2").join(5)  # must not raise into the caller
+
+
+# ---------------------------------------------------------------------------------------
+# Instructor notification content
+# ---------------------------------------------------------------------------------------
+def _compose(**kw):
+    base = dict(title="Coffee study", team_name="Team 4", team_members="Ann\nBen", generation_label="ABE 3.0", mode="pilot",
+                metadata={"sample_size": 120, "conditions": ["A", "B"], "open_ended_questions": [1, 2, 3],
+                          "generation_timestamp": "2026-10-06T10:00:00", "run_id": "RUN123",
+                          "effect_sizes_observed": [
+                              {"variable": "Trust_1", "condition_1": "A", "condition_2": "B", "cohens_d": 0.1},
+                              {"variable": "Trust_mean", "condition_1": "A", "condition_2": "B", "cohens_d": -0.62},
+                              {"variable": "Liking_mean", "condition_1": "A", "condition_2": "B", "cohens_d": 0.31}],
+                          "exclusion_summary": {"flagged_speed": 3, "total_excluded": 5}},
+                usage_summary="USAGE: 12 simulations", analysis_markdown="# Analysis\nt(118) = 2.1, p = .04",
+                attachment_names=["INSTRUCTOR_Statistical_Report.html", "simulation_output.zip"], zip_listing=["Simulated_Data.csv"])
+    base.update(kw)
+    return ed.compose_instructor_notification(**base)
+
+
+def test_instructor_notification_has_headline_numbers_and_the_full_analysis():
+    subject, text, html = _compose()
+    assert subject == "[Behavioral Simulation] Output (pilot) [ABE 3.0] - Coffee study"
+    assert "N=120" in text and "RUN123" in text and "total_excluded=5" in text
+    assert text.index("Trust_mean") < text.index("Liking_mean")  # scale means, largest |d| first
+    assert "Trust_1" not in text  # single items are left out when scale means exist
+    assert "t(118) = 2.1, p = .04" in text and "t(118) = 2.1, p = .04" in html
+    assert "INSTRUCTOR_Statistical_Report.html" in text and "USAGE: 12 simulations" in text
+
+
+def test_instructor_notification_escapes_user_text_and_cleans_the_subject():
+    subject, text, html = _compose(title="<script>alert(1)</script>\r\nBcc: x@y.z", analysis_markdown="a < b & c > d")
+    assert "\n" not in subject and "\r" not in subject
+    assert "<script>" not in html and "&lt;script&gt;" in html
+    assert "a &lt; b &amp; c &gt; d" in html and "a < b & c > d" in text
+
+
+def test_instructor_notification_truncates_very_long_analyses_and_survives_empty_metadata():
+    _, text, _ = _compose(analysis_markdown="x" * 5000, **{"max_inline_chars": 1000})
+    assert "truncated in the email body" in text and text.count("x") < 1200
+    subject, text, html = ed.compose_instructor_notification(
+        title="t", team_name="", team_members="", generation_label="m", mode="", metadata={}, usage_summary="",
+        analysis_markdown="", attachment_names=[])
+    assert subject.startswith("[Behavioral Simulation] Output (pilot)") and "<html>" in html
+
+
+# ---------------------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------------------
+def test_rate_limiter_is_a_sliding_window_per_key():
+    now = [0.0]
+    limiter = ed.RateLimiter(max_events=2, window_s=60, clock=lambda: now[0])
+    assert limiter.allow("a") and limiter.allow("a") and not limiter.allow("a")
+    assert limiter.allow("b")  # other keys are independent
+    now[0] = 61.0
+    assert limiter.allow("a")  # the window slid
+
+
+def test_quota_errors_are_not_retried(tmp_path):
+    FakeServer.plan = [smtplib.SMTPDataError(550, b"5.4.5 Daily user sending quota exceeded.")]
+    result = _send()
+    assert not result.ok and result.attempts == 1 and result.error_kind == "quota" and "sending limit" in result.message
+
+
+def test_shared_limiter_is_one_instance_per_name_and_follows_config_changes():
+    ed._APP_LIMITERS.clear()
+    a = ed.shared_limiter("x", 3)
+    assert ed.shared_limiter("x", 3) is a
+    b = ed.shared_limiter("x", 5)
+    assert b is not a and b.max_events == 5
+    ed._APP_LIMITERS.clear()
+
+
+# ---------------------------------------------------------------------------------------
+# Split instructor delivery, test attachments, stderr mirror
+# ---------------------------------------------------------------------------------------
+def _package(mode="split", **kw):
+    slots = [ed.Attachment("report.html", b"<html/>", protected=True), ed.Attachment("a.zip", b"PK")]
+    return ed.deliver_instructor_package(CONFIG, ["owner@example.edu"], subject="Subj", text="Analysis text", html_body="<p>x</p>",
+                                         slots=slots, mode=mode, smtp_factory=FakeServer, sleep=_no_sleep, **kw)
+
+
+def test_split_delivery_sends_a_summary_without_attachments_then_a_threaded_package(tmp_path):
+    results = _package(log_path=tmp_path / "l.jsonl")
+    assert [r.ok for r in results] == [True, True]
+    (first, _f, _t1), (second, _f2, _t2) = FakeServer.delivered
+    assert not [p for p in first.walk() if p.get_filename()]
+    assert sorted(p.get_filename() for p in second.walk() if p.get_filename()) == ["a.zip", "report.html"]
+    assert second["In-Reply-To"] == first["Message-ID"] == second["References"]
+    assert second["Subject"] == "Subj [attachments]"
+    assert [e["kind"] for e in reversed(ed.read_delivery_log(tmp_path / "l.jsonl"))] == ["instructor_summary", "instructor_package"]
+
+
+def test_split_delivery_skips_the_package_when_the_first_failure_would_stop_it_too(tmp_path):
+    FakeServer.login_error = smtplib.SMTPAuthenticationError(535, b"5.7.8 Username and Password not accepted")
+    results = _package(log_path=tmp_path / "l.jsonl")
+    assert [r.ok for r in results] == [False, False] and results[1].error_kind == "skipped"
+    assert len(FakeServer.instances) == 1  # the second message was never attempted
+    assert ed.read_delivery_log(tmp_path / "l.jsonl")[0]["error_kind"] == "skipped"
+
+
+def test_split_delivery_still_sends_the_package_after_a_transient_summary_failure(tmp_path):
+    FakeServer.plan = [smtplib.SMTPServerDisconnected("gone")] * 5 + [None]  # the summary exhausts its 5 attempts
+    results = _package(log_path=tmp_path / "l.jsonl")
+    assert results[0].ok is False and results[1].ok is True
+    assert not results[0].message_id or results[1].message_id  # the package goes out without threading headers
+
+
+def test_single_mode_is_one_message_with_everything():
+    results = _package(mode="single")
+    assert len(results) == 1 and len(FakeServer.delivered) == 1
+    assert len([p for p in FakeServer.delivered[0][0].walk() if p.get_filename()]) == 2
+
+
+def test_test_attachments_are_harmless_and_sized_as_advertised():
+    assert ed.build_test_attachments("Body only") == []
+    html = ed.build_test_attachments("With a .html report")[0].data
+    assert b"<script" not in html.lower() and b"http" not in html.lower()
+    sizes = {c: sum(len(a.data) for a in ed.build_test_attachments(c)) for c in ed.TEST_CONTENT_CHOICES}
+    assert sizes["With a 3 MB attachment"] > 3 * 1024 * 1024 and sizes["With a 10 MB attachment"] > 10 * 1024 * 1024
+    assert sizes["With a 10 MB attachment"] * 1.37 < CONFIG.max_message_bytes  # fits the default budget
+
+
+def test_every_delivery_is_mirrored_to_stderr_without_secrets(capsys):
+    ed.deliver(CONFIG, ["owner@example.edu"], "S", "B", smtp_factory=FakeServer, sleep=_no_sleep)
+    err = capsys.readouterr().err
+    assert "EMAIL-DELIVERY" in err and "OK" in err and "o***r@example.edu" in err
+    assert FAKE_LOGIN_VALUE not in err and "owner@example.edu" not in err
+
+
+# ---- deliverability findings ------------------------------------------------------------------
+def _cfg(**kw):
+    base = dict(server="smtp.gmail.com", username="sender@gmail.com", password=FAKE_LOGIN_VALUE, from_email="")
+    base.update(kw)
+    return ed.SMTPConfig(**base)
+
+
+def test_deliverability_warns_when_the_from_address_is_on_the_recipients_own_domain():
+    findings = ed.deliverability_warnings(_cfg(from_email="owner@sas.upenn.edu"), ["owner@sas.upenn.edu"])
+    assert len(findings) == 1 and "spoofing" in findings[0] and "upenn.edu" in findings[0]
+    assert "owner@sas.upenn.edu" not in findings[0]  # addresses are masked
+
+
+def test_deliverability_is_quiet_for_a_login_on_the_same_domain_as_the_from_address():
+    cfg = _cfg(server="smtp.office365.com", username="owner@sas.upenn.edu")
+    assert ed.deliverability_warnings(cfg, ["other@sas.upenn.edu"]) == []
+
+
+def test_deliverability_flags_free_mail_senders_and_a_login_that_differs_from_the_from_address():
+    free = ed.deliverability_warnings(_cfg(), ["owner@sas.upenn.edu"])
+    assert len(free) == 1 and "Safe Senders" in free[0]
+    differs = ed.deliverability_warnings(_cfg(server="smtp.work.org", username="a@work.org", from_email="b@other.org"),
+                                         ["x@sas.upenn.edu"])
+    assert len(differs) == 1 and "differs from the SMTP login" in differs[0]
+
+
+def test_deliverability_ignores_api_style_logins_and_flags_disabled_tls():
+    api = _cfg(server="smtp.sendgrid.net", username="apikey", from_email="alerts@myapp.org")
+    assert ed.deliverability_warnings(api, ["x@sas.upenn.edu"]) == []
+    plain = _cfg(server="smtp.work.org", username="a@work.org", use_tls=False)
+    assert any("TLS is switched off" in f for f in ed.deliverability_warnings(plain, ["x@sas.upenn.edu"]))
+
+
+# ---- hardening found by the security review of the email subsystem -----------------------------
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\x85", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x00", "\ud800"])
+def test_exotic_line_separators_in_a_title_do_not_drop_the_mail_or_hide_its_log_line(separator, tmp_path):
+    log = tmp_path / "l.jsonl"
+    subject, text, html = _compose(title=f"Study{separator}title")
+    result = ed.deliver(CONFIG, ["owner@example.edu"], subject, text, body_html=html, smtp_factory=FakeServer,
+                        sleep=_no_sleep, log_path=log, kind="instructor")
+    assert result.ok, (result.error_kind, result.error_detail)
+    (msg, _from, _to), = FakeServer.delivered
+    assert len(str(msg["Subject"]).splitlines()) == 1
+    entry, = ed.read_delivery_log(log)
+    assert entry["ok"] is True
+    raw = log.read_text(encoding="utf-8")
+    assert len(raw.splitlines()) == raw.count("\n")  # no character in the record splits it into two lines
+
+
+def test_a_failure_line_containing_unicode_separators_is_still_listed(tmp_path):
+    log = tmp_path / "l.jsonl"
+    result = ed.DeliveryResult(ok=False, error_kind="permanent", error_detail="bad\u2028detail\u2029x\x85y")
+    ed.record_delivery(log, result, kind="k", subject="s\u2028t", recipients=["a@x.org"])
+    ed.record_delivery(log, ed.DeliveryResult(ok=True), kind="k", subject="later", recipients=["a@x.org"])
+    entries = ed.read_delivery_log(log)
+    assert [e["ok"] for e in entries] == [True, False]  # newest first, the failure is not swallowed
+
+
+def test_parse_recipients_survives_hostile_input_and_accepts_apostrophes():
+    assert ed.parse_recipients("(" * 600 + "a@x.org")[0] == []  # used to raise RecursionError
+    assert ed.parse_recipients("a@x.org, " * 400)[0] == []  # 3,600 characters: refused, not cut in half
+    assert ed.parse_recipients("o'brien@x.edu")[0] == ["o'brien@x.edu"]
+
+
+def test_the_password_is_not_part_of_the_config_repr():
+    assert FAKE_LOGIN_VALUE not in repr(CONFIG) and FAKE_LOGIN_VALUE not in str(CONFIG)
+
+
+def test_refused_recipient_errors_put_no_full_address_into_the_log(tmp_path):
+    log = tmp_path / "l.jsonl"
+    FakeServer.plan = [smtplib.SMTPRecipientsRefused({"owner@example.edu": (550, b"5.1.1 owner@example.edu unknown")})]
+    result = ed.deliver(CONFIG, ["owner@example.edu"], "S", "B", smtp_factory=FakeServer, sleep=_no_sleep, log_path=log)
+    assert not result.ok and "owner@example.edu" not in result.error_detail
+    assert "owner@example.edu" not in log.read_text(encoding="utf-8")
+
+
+def test_every_4xx_reply_is_retried_and_other_failures_are_not():
+    for code in (421, 450, 451, 452, 454, 441, 499):
+        assert ed.classify_error(smtplib.SMTPDataError(code, b"try later"))[0] == "transient", code
+    assert ed.classify_error(smtplib.SMTPDataError(554, b"rejected"))[0] == "permanent"
+
+
+def test_when_every_size_attempt_fails_the_text_still_goes_out_without_attachments(tmp_path):
+    big = ed.Attachment("report.html", b"x" * 1_200_000, protected=True)  # a protected file is never dropped by fitting
+    too_big = smtplib.SMTPDataError(552, b"5.3.4 Message size exceeds fixed limit")
+    FakeServer.plan = [too_big, None]  # a protected file cannot shrink, so the halved-budget and protected-only stages would resend the same message
+    result = ed.deliver(CONFIG, ["owner@example.edu"], "S", "The analysis text", attachments=[big], smtp_factory=FakeServer,
+                        sleep=_no_sleep, log_path=tmp_path / "l.jsonl")
+    assert result.ok and result.omitted and result.omitted[0]["action"] == "omitted"
+    (msg, _f, _t), = FakeServer.delivered
+    assert not [p for p in msg.walk() if p.get_filename()]
+    body = msg.get_body(preferencelist=("plain",)).get_content()
+    assert "The analysis text" in body and "report.html" in body  # the note names what was left out
+
+
+def test_a_retry_after_a_dropped_connection_is_flagged_as_a_possible_duplicate():
+    FakeServer.plan = [smtplib.SMTPServerDisconnected("gone")]
+    flagged = _send()
+    assert flagged.ok and flagged.attempts == 2 and flagged.possible_duplicate
+    FakeServer.plan = [smtplib.SMTPDataError(451, b"try later")]  # a clean refusal cannot have produced a copy
+    clean = _send()
+    assert clean.ok and clean.attempts == 2 and not clean.possible_duplicate
+
+
+def test_background_sends_run_at_most_two_at_a_time():
+    import time
+
+    lock, release = threading.Lock(), threading.Event()
+    state = {"running": 0, "peak": 0}
+
+    def job():
+        with lock:
+            state["running"] += 1
+            state["peak"] = max(state["peak"], state["running"])
+        release.wait(10)
+        with lock:
+            state["running"] -= 1
+
+    threads = [ed.run_in_background(job) for _ in range(6)]
+    time.sleep(0.5)
+    assert state["peak"] == 2  # the other four wait for a slot instead of opening six SMTP connections
+    release.set()
+    for thread in threads:
+        thread.join(10)
+    assert state["running"] == 0
+
+
+def test_huge_student_text_is_clipped_in_the_instructor_message():
+    subject, text, html = _compose(title="T" * 1_000_000, team_name="N" * 1_000_000, team_members="M" * 5_000_000,
+                                   usage_summary="U" * 1_000_000)
+    assert len(subject) <= 200 and len(text) < 100_000 and len(html) < 100_000
+
+
+def test_harden_html_attachment_neutralises_a_legacy_report_and_adds_the_policy_once():
+    legacy = (b"<html><head><title>x</title></head><body><script>alert(1)</script><p onclick='x()'>hi</p>"
+              b"<img src='http://evil/p.png'></body></html>")
+    once = ed.harden_html_attachment(legacy)
+    assert b"Content-Security-Policy" in once and b"<script" not in once and b"onclick" not in once and b"<img" not in once
+    assert ed.harden_html_attachment(once) == once  # idempotent: a stored, already hardened report is unchanged
+
+
+def test_rate_limiter_remaining_counts_without_recording():
+    limiter = ed.RateLimiter(max_events=2, window_s=60, clock=lambda: 0.0)
+    assert limiter.remaining("a") == 2 and limiter.remaining("a") == 2
+    limiter.allow("a")
+    assert limiter.remaining("a") == 1 and limiter.remaining("b") == 2
+
+
+def test_the_instructor_package_retries_for_minutes_not_seconds(tmp_path):
+    waits = []
+    FakeServer.plan = [smtplib.SMTPDataError(421, b"try later")] * 4 + [None]
+    slots = [ed.Attachment("a.zip", b"PK")]
+    results = ed.deliver_instructor_package(CONFIG, ["owner@example.edu"], subject="S", text="T", html_body=None, slots=slots,
+                                            smtp_factory=FakeServer, sleep=waits.append, log_path=tmp_path / "l.jsonl")
+    assert results[0].ok and results[0].attempts == 5 and results[1].ok
+    assert waits == [3.0, 10.0, 30.0, 90.0]
+
+
+def test_the_size_fallback_walks_through_halved_budget_protected_only_and_text_only():
+    too_big = smtplib.SMTPDataError(552, b"5.3.4 Message size exceeds fixed limit")
+    html = ed.Attachment("report.html", b"h" * 200_000, protected=True)
+    notes = ed.Attachment("notes.md", b"m" * 50_000)
+    FakeServer.plan = [too_big, too_big, None]  # full message, then protected-only (the halved budget changes nothing), then text only
+    result = ed.deliver(CONFIG, ["owner@example.edu"], "S", "Body", attachments=[html, notes], smtp_factory=FakeServer, sleep=_no_sleep)
+    assert result.ok and len(FakeServer.delivered) == 1
+    assert not [p for p in FakeServer.delivered[0][0].walk() if p.get_filename()]
+    assert {o["name"] for o in result.omitted} == {"report.html", "notes.md"}
+
+
+def test_a_halved_budget_that_drops_the_big_file_is_enough():
+    too_big = smtplib.SMTPDataError(552, b"5.3.4 Message size exceeds fixed limit")
+    html = ed.Attachment("report.html", b"h" * 100_000, protected=True)
+    big = ed.Attachment("pack.zip", __import__("os").urandom(5_000_000))
+    FakeServer.plan = [too_big, None]
+    result = ed.deliver(CONFIG, ["owner@example.edu"], "S", "Body", attachments=[html, big], smtp_factory=FakeServer, sleep=_no_sleep)
+    assert result.ok
+    (msg, _f, _t), = FakeServer.delivered
+    assert [p.get_filename() for p in msg.walk() if p.get_filename()] == ["report.html"]
+
+
+def test_a_connection_that_drops_before_the_message_is_handed_over_cannot_have_produced_a_copy():
+    class FlakyLogin(FakeServer):
+        logins = 0
+
+        def login(self, user, password):
+            type(self).logins += 1
+            if type(self).logins == 1:
+                raise smtplib.SMTPServerDisconnected("dropped during AUTH")
+            super().login(user, password)
+
+    result = ed.deliver(CONFIG, ["owner@example.edu"], "S", "B", smtp_factory=FlakyLogin, sleep=_no_sleep)
+    assert result.ok and result.attempts == 2 and result.possible_duplicate is False
+
+
+def test_bidirectional_overrides_are_removed_from_headers():
+    cleaned = ed._clean_header("Invoice \u202egnp.exe\u202c \u2066x\u2069")
+    assert not any(ch in cleaned for ch in "\u202e\u202c\u2066\u2069")
+
+
+def test_the_attachments_message_repeats_the_headline_facts():
+    subject, text, html = _compose(title="Coffee study")
+    slots = [ed.Attachment("report.html", b"<html/>", protected=True)]
+    ed.deliver_instructor_package(CONFIG, ["owner@example.edu"], subject=subject, text=text, html_body=html, slots=slots,
+                                  smtp_factory=FakeServer, sleep=_no_sleep)
+    package = FakeServer.delivered[1][0].get_body(preferencelist=("plain",)).get_content()
+    assert "N=120" in package and "RUN123" in package and "FULL ANALYSIS" not in package  # facts yes, the long analysis no
+

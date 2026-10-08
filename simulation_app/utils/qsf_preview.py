@@ -26,6 +26,7 @@ Supported QSF Formats:
 """
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -33,7 +34,18 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.3.0.3"
+__version__ = "1.3.0.4"  # v1.3.0.4: pass Qualtrics numeric validation through to the engine
+
+
+def _finite_float(value: Any, default: Optional[float] = None) -> Optional[float]:
+    """Return ``value`` as a finite float, or ``default`` when it is blank, non-numeric, NaN or infinite."""
+    if isinstance(value, bool):
+        return default
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return number if math.isfinite(number) else default
 
 
 # ============================================================================
@@ -1169,6 +1181,15 @@ class QSFPreviewParser:
                             number_max = float(settings['Max'])
                         except (ValueError, TypeError):
                             pass
+                    # v1.2.9.1: Qualtrics nests the declared range for "Number" validation:
+                    #   Settings["ValidNumber"] = {"Min": "18", "Max": "99", "NumDecimals": ""}
+                    # (the flat Settings["Min"]/["Max"] above never occurs in real exports, so no
+                    # declared range ever reached the engine). Blank or non-numeric entries keep
+                    # the previous value; a one-sided range keeps its one bound.
+                    _valid_number = settings.get('ValidNumber')
+                    if isinstance(_valid_number, dict) and content_type == 'ValidNumber':
+                        number_min = _finite_float(_valid_number.get('Min'), number_min)
+                        number_max = _finite_float(_valid_number.get('Max'), number_max)
                     # Regex validation pattern
                     custom_val = settings.get('CustomValidation', {})
                     if isinstance(custom_val, dict):
@@ -2761,6 +2782,8 @@ class QSFPreviewParser:
         invalid_patterns = [
             r'\$\{',  # ${e://Field/...} or ${rand://...}
             r'\$e://',  # $e://Field/...
+            r'^\s*\{[^{}]*\}\s*$',  # {e://Field/participantId}: placeholder with the "$" already stripped
+            r'\b(?:e|q|rand)://',  # any Qualtrics piped-text source
             r'rand://int',  # Random number placeholders
             r'^\d+$',  # Just a number
             r'^[A-Za-z]_\d+$',  # Single letter with number like Q_1
@@ -3591,7 +3614,8 @@ class QSFPreviewParser:
                     seen_variables.add(var_name)
 
                     # Determine if it's an ID field (still include but mark differently)
-                    is_id_field = any(pat in text_lower for pat in id_patterns)
+                    # v1.2.9.1: whole-word match so 'age' no longer fires on 'average'/'manage'/'message'.
+                    is_id_field = any(re.search(r'\b' + re.escape(pat) + r'\b', text_lower) for pat in id_patterns)
 
                     # Determine context type based on question text
                     if is_id_field:
@@ -3611,7 +3635,12 @@ class QSFPreviewParser:
                         'context_type': context_type,
                         'preceding_questions': preceding_questions,
                         'force_response': q_info.force_response,
-                        'source_type': 'text_entry'
+                        'source_type': 'text_entry',
+                        # v1.2.9.1: Qualtrics validation settings (ValidNumber, ValidZip, ...)
+                        # let the engine answer numeric text boxes with numbers.
+                        'content_type': q_info.content_type,
+                        'number_min': q_info.number_min,
+                        'number_max': q_info.number_max,
                     }
 
                     open_ended_details.append(detail)

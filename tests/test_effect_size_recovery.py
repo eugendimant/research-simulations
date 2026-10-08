@@ -49,12 +49,12 @@ RECOVERY_SEEDS = (7, 13, 21)
 def _recovered_d(target_d, lo, hi, items, seeds=RECOVERY_SEEDS, n=N_PER_RUN):
     """Mean recovered d over `seeds`.
 
-    KNOWN LIMIT, pre-existing and also present on main: the engine over-recovers
-    a configured d on long composites. Averaged over seeds, an 8-item 7-point
-    scale returns about 1.14x the configured value. That is inside the +/-30%
-    band this file asserts, but it is a real bias and not noise: a longer
-    composite averages away more item-level noise than the effect scaling
-    anticipates. Worth narrowing; not narrowed here.
+    History: before v1.3.0.4 the engine over-recovered a configured d on long
+    composites (an 8-item 7-point scale returned about 1.12x, a 20-item one
+    1.29x, 12 seeds at N = 1,200). `_explicit_effect_scale()` now divides by
+    1 + 0.14 ln(min(k, 30) / 3) for k > 3 items; the same cells return 0.99x and
+    1.05x. The +/-30% band below stays wide on purpose: it has to hold for a
+    single design at N = 1,000, where one seed moves d by about 0.1.
     """
     return float(np.mean([
         _recovered_d_once(target_d, lo, hi, items, seed=s, n=n) for s in seeds

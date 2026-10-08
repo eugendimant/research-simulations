@@ -56,6 +56,15 @@ _JOINT_DV_TYPES = frozenset({
     "rank_order", "ranking", "rank order",
     "constant_sum", "constant sum", "constantsum",
 })
+
+# v1.3.0.4: fewest response options at which a run of identical answers says anything
+# about the respondent. Below it, chance agreement is of a different order: about 77% of
+# the rows of a 3-item binary block are identical before anything touches them, against
+# the 19% that the registry measured on 5- to 9-point instruments. Both straight-line
+# passes (the consistency audit and the registry-calibrated identical-answer pass) are
+# gated on it, because pulling such a block toward a Likert-measured share rewrites
+# honest answers and takes the requested effect with it.
+_MIN_OPTIONS_FOR_STRAIGHTLINE_LOGIC = 5
 # Numeric-DV money/count classification cues are compiled once, just after the
 # `import re` below (see _MONEY_CUE_RE / _COUNT_CUE_RE / _RATING_CTX_RE).
 
@@ -229,6 +238,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Set, Union
 
 import hashlib
+import html
 import os
 import random
 import re
@@ -454,19 +464,52 @@ _WORD_PATTERN_CACHE: Dict[str, "re.Pattern"] = {}
 _STEM_PATTERN_CACHE: Dict[str, "re.Pattern"] = {}
 
 
+def _kw_hit(keyword: str, text: str) -> bool:
+    """Keyword match for condition labels that respects word boundaries: short keywords
+    ("ai", "low") must be whole words; longer ones may be word prefixes ("sustainab" ->
+    "sustainable"). Plain substring tests matched "ai" in "wait" and "low" in "follow-up",
+    which silently changed response styles for unrelated conditions.
+
+    v1.2.9.1: an underscore separates words here ("High_Threat" == "High Threat"). The regex word
+    character class includes "_", so snake_case labels ("No_AI", "Loss_Frame") matched nothing and
+    lost every name-based modifier."""
+    keyword = keyword.replace("_", " ")
+    text = text.replace("_", " ")
+    return _word_in(keyword, text) if len(keyword) <= 4 else _stem_in(keyword, text)
+
+
+def _condition_label(c: Any) -> str:
+    """Display name of one condition, whether it arrives as a string or as a dict such as
+    {"name": "A"} (which used to be stringified into the CONDITION column)."""
+    if isinstance(c, dict):
+        for key in ("name", "label", "condition", "title", "value"):
+            v = c.get(key)
+            if v not in (None, ""):
+                return str(v)
+        return ""
+    return str(c)
+
+
 def _word_in(keyword: str, text: str) -> bool:
     """Check if keyword appears in text as a whole word (word-boundary matching).
 
     Prevents false positives like 'ai' matching 'wait', 'gain' matching 'bargain',
     'own' matching 'brown', 'get' matching 'budget', etc.
 
+    The boundary is "no word character directly before or after the match" rather
+    than the regex ``\\b``. For a keyword that starts and ends with a word character
+    the two are identical; they differ for keywords that begin or end with
+    punctuation, where ``\\b`` demands a word character on the OUTER side and so never
+    matched a label such as "Norm message (Control)", "80%" or "$10".
+
     v1.0.1.3: Added to fix substring false-positive keyword matching throughout
     the semantic effect engine.
     v1.2.6.4: Compiled-pattern cache for performance.
+    v1.2.9.1: Lookaround boundaries, so labels that start or end with punctuation match.
     """
     _pat = _WORD_PATTERN_CACHE.get(keyword)
     if _pat is None:
-        _pat = re.compile(r'\b' + re.escape(keyword) + r'\b')
+        _pat = re.compile(r'(?<!\w)' + re.escape(keyword) + r'(?!\w)')
         _WORD_PATTERN_CACHE[keyword] = _pat
     return bool(_pat.search(text))
 
@@ -477,10 +520,12 @@ def _stem_in(stem: str, text: str) -> bool:
     For intentional prefix matches like 'automat' -> 'automated'/'automation',
     'reciproc' -> 'reciprocity'/'reciprocal', 'promot' -> 'promote'/'promotion'.
     v1.2.6.4: Compiled-pattern cache for performance.
+    v1.2.9.1: "No word character before" instead of ``\\b``, so a stem that starts with
+    punctuation ("$10", "(high") can match (identical for stems that start with a letter).
     """
     _pat = _STEM_PATTERN_CACHE.get(stem)
     if _pat is None:
-        _pat = re.compile(r'\b' + re.escape(stem))
+        _pat = re.compile(r'(?<!\w)' + re.escape(stem))
         _STEM_PATTERN_CACHE[stem] = _pat
     return bool(_pat.search(text))
 
@@ -488,6 +533,54 @@ def _stem_in(stem: str, text: str) -> bool:
 def _any_word_in(keywords: list, text: str) -> bool:
     """Check if any keyword from the list appears as a whole word in text."""
     return any(_word_in(kw, text) for kw in keywords)
+
+
+# v1.2.9.1: matching of user-specified effects (EffectSizeSpec) against the generated variables
+# and conditions. Compiled once, like the word/stem pattern caches above.
+_VAR_TOKEN_SPLIT = re.compile(r"[\W_]+")
+_WHITESPACE_RUN = re.compile(r"\s+")
+
+
+def _var_tokens(name: Any) -> Tuple[str, ...]:
+    """Lower-cased alphanumeric tokens of a variable name, so "Perceived_Quality",
+    "Perceived Quality" and "perceived-quality (scale)" compare on the same words."""
+    return tuple(t for t in _VAR_TOKEN_SPLIT.split(str(name if name is not None else "").lower()) if t)
+
+
+def _tokens_contain(tokens: Tuple[str, ...], run: Tuple[str, ...]) -> bool:
+    """True when ``run`` occurs as a contiguous run of WHOLE tokens inside ``tokens``
+    ("trust" in "trust score", but not in "distrust")."""
+    n = len(run)
+    return n > 0 and any(tokens[i:i + n] == run for i in range(len(tokens) - n + 1))
+
+
+def _label_norm(label: Any) -> str:
+    """A condition or level label in comparison form: non-breaking spaces and runs of
+    whitespace become one space, outer whitespace is dropped, lower case."""
+    return _WHITESPACE_RUN.sub(" ", str(label if label is not None else "").replace("\xa0", " ")).strip().lower()
+
+
+def _spec_get(effect: Any, key: str, default: Any = "") -> Any:
+    """Read a field of an EffectSizeSpec object or of a plain dict (API callers, tests)."""
+    if isinstance(effect, dict):
+        return effect.get(key, default)
+    return getattr(effect, key, default)
+
+
+def _spec_side(effect: Any, condition_norm: str) -> int:
+    """Which side of an effect spec a condition is on: +1 (the higher-scoring level), -1 (the
+    lower-scoring level) or 0 (neither). ``condition_norm`` is a `_label_norm` string. When both
+    levels occur in the label (a "no AI" condition contains "ai"), the longer, more specific level wins."""
+    level_high = _label_norm(_spec_get(effect, "level_high", ""))
+    level_low = _label_norm(_spec_get(effect, "level_low", ""))
+    is_high = bool(level_high and _word_in(level_high, condition_norm))
+    is_low = bool(level_low and _word_in(level_low, condition_norm))
+    if is_high and is_low:
+        if len(level_high) >= len(level_low):
+            is_low = False
+        else:
+            is_high = False
+    return 1 if is_high else (-1 if is_low else 0)
 
 
 def _stable_int_hash(s: str) -> int:
@@ -534,6 +627,23 @@ def _safe_numeric(value: Any, default: float = 0.0, as_int: bool = False) -> Uni
         return int(v) if as_int else v
     except (ValueError, TypeError):
         return int(default) if as_int else default
+
+
+_SCRIPT_CTRL_RE = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029]+")
+_SCRIPT_NAME_RE = re.compile(r"[A-Za-z0-9_.]+")
+
+
+def _script_text(value: Any) -> str:
+    """Text for a comment or a quoted literal in an exported analysis script, as one physical line.
+
+    Study titles, scale names and condition labels are typed by users, and the scripts are run by the
+    people who receive the ZIP: a line break in such text would start a new statement."""
+    return _SCRIPT_CTRL_RE.sub(" ", str(value if value is not None else "")).strip()
+
+
+def _script_name_ok(name: Any) -> bool:
+    """True for names that are safe to write unquoted or inside quotes in any exported script language."""
+    return bool(_SCRIPT_NAME_RE.fullmatch(str(name)))
 
 
 def _clean_column_name(name: str) -> str:
@@ -728,6 +838,37 @@ def _normalize_factors(factors: Optional[List[Any]], fallback_conditions: List[s
     return normalized or [{"name": "Condition", "levels": fallback_conditions}]
 
 
+_NUMERIC_DV_TYPES = frozenset({"numeric", "numeric_input", "slider", "single_item"})
+
+
+def _drop_oe_duplicating_dvs(
+    open_ended: List[Dict[str, Any]], scales: List[Dict[str, Any]]
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Remove text boxes that are also detected numeric DVs.
+
+    A text-entry question that is a numeric outcome (a score, an amount) is parsed twice: as a
+    scale and as an open-ended question with the same name. The DV columns already hold its
+    numbers, so the second "open-ended" column only duplicated it, often with prose such as
+    "i really loved how the survey was designed" in a column called Pre-return total score.
+    Returns the kept questions and the names that were dropped.
+    """
+    def _key(x: Any) -> str:
+        return re.sub(r"[^a-z0-9]+", "_", str(x or "").lower()).strip("_")
+
+    dv_keys = set()
+    for sc in scales or []:
+        if str(sc.get("type", "")).lower() in _NUMERIC_DV_TYPES:
+            dv_keys.update(k for k in (_key(sc.get("variable_name")), _key(sc.get("name"))) if k)
+    kept: List[Dict[str, Any]] = []
+    dropped: List[str] = []
+    for q in open_ended:
+        if _key(q.get("variable_name") or q.get("name")) in dv_keys:
+            dropped.append(str(q.get("variable_name") or q.get("name")))
+        else:
+            kept.append(q)
+    return kept, dropped
+
+
 def _normalize_open_ended(open_ended: Optional[List[Any]]) -> List[Dict[str, Any]]:
     normalized: List[Dict[str, Any]] = []
     for item in open_ended or []:
@@ -759,6 +900,281 @@ def _normalize_open_ended(open_ended: Optional[List[Any]]) -> List[Dict[str, Any
                     normalized_item["question_text"] = name
                 normalized.append(normalized_item)
     return normalized
+
+
+# =============================================================================
+# v1.2.9.1: Question-text cleaning and numeric text-box answers
+# =============================================================================
+# QSF question text arrives with HTML ("&nbsp;", "&quot;", "<br>"), Qualtrics
+# placeholder text ("Click to write the question text") and bare variable ids
+# ("Q104"). Left alone these leaked into generated answers ("...another study&#39;s
+# participant...", "my take on Click to write the question text is..."). Numeric text
+# boxes ("How many tickets...? (enter a number)", "What is your year of birth?") were
+# answered with essays. These helpers are pure functions so they can be unit-tested.
+
+_PLACEHOLDER_QUESTION_RE = re.compile(
+    r"click to write (?:the )?question text|^\s*(?:enter|type) (?:your )?question (?:text )?here\s*\.?\s*$",
+    re.IGNORECASE,
+)
+_BARE_VARIABLE_RE = re.compile(r"^(?:q|qid)?\s*\d+(?:[._]\d+)*(?:_text)?$", re.IGNORECASE)
+_HTML_TAG_RE = re.compile(r"</?[A-Za-z][^<>]*>")
+# CSS pasted into a question's text ("#QID154-7-label {display: inline-block; width: 5%;}"). The
+# selector must start a token (so the "." of "U.S." does not) and the block must hold a declaration
+# ("prop: value") and no piped-text "$": the old pattern swallowed everything from the first "." or "#"
+# to the next "{...}", so "The U.S. government gave ${e://Field/amount} to you" became "The U to you".
+_CSS_BLOCK_RE = re.compile(
+    r"(?<![\w$])[#.][\w\-]+(?:[ \t]*[,>+~][ \t]*[#.]?[\w\-]+)*[ \t]*\{[^{}$]*:[^{}$]*\}")
+# <script>/<style> elements: their content is code, not question wording (dropped before tag stripping)
+_SCRIPT_STYLE_RE = re.compile(r"<(script|style)\b.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+# Qualtrics piped text: ${e://Field/Name} (the "$" is sometimes already stripped)
+_PIPED_TEXT_RE = re.compile(r"\$?\{[^{}]*\}")
+_HTML_BREAK_TAG_RE = re.compile(r"</?(?:br|p|div|li|ul|ol|tr|td|th|table|h[1-6])\b[^<>]*>", re.IGNORECASE)
+_SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([.,;:!?])")
+
+# Newest survey year used when a question asks for a birth year. Fixed (not "today") so the
+# same seed gives the same dataset no matter when it is run.
+_REFERENCE_SURVEY_YEAR = 2025
+
+
+def _clean_question_text(text: Any) -> str:
+    """Return question text that is safe to use in prompts and templates.
+
+    Decodes HTML entities, removes HTML tags, collapses whitespace, and returns an empty
+    string for Qualtrics placeholder text or a bare variable id such as "Q104". Qualtrics
+    piped-text markers (``${e://Field/X}``) are left untouched; they are substituted later.
+    """
+    if text is None:
+        return ""
+    t = html.unescape(html.unescape(str(text)))
+    t = _SCRIPT_STYLE_RE.sub(" ", t)    # code inside <script>/<style> is not wording
+    t = _HTML_BREAK_TAG_RE.sub(" ", t)  # line/paragraph breaks separate words
+    t = _HTML_TAG_RE.sub("", t)         # inline tags (<b>, <span>) vanish without adding a gap
+    t = _CSS_BLOCK_RE.sub(" ", t)       # stylesheet rules pasted into the question text
+    t = t.replace("\xa0", " ").replace("\u200b", "")
+    t = re.sub(r"\s+", " ", t).strip()
+    t = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", t)
+    if not t or _PLACEHOLDER_QUESTION_RE.search(t) or _BARE_VARIABLE_RE.match(t):
+        return ""
+    return t
+
+
+_NUMERIC_EXCLUDE_RE = re.compile(
+    r"\b(why|explain|describe|reasons?|in your own words|comments?|feedback|opinions?|thoughts?|"
+    r"elaborate|tell us|suggestions?|what do you think|how do you feel|justify|briefly)\b",
+    re.IGNORECASE,
+)
+_YEAR_OF_BIRTH_RE = re.compile(
+    r"year of birth|birth ?year|year (?:were|are) you born|born in what year|what year .{0,20}born",
+    re.IGNORECASE,
+)
+_AGE_RE = re.compile(r"\bhow old\b|\byour age\b|\bage in years\b|^\s*age\s*[:?]?\s*$", re.IGNORECASE)
+_PERCENT_RE = re.compile(r"percent|percentage|%", re.IGNORECASE)
+_MONEY_RE = re.compile(
+    r"\$|€|£|\bdollars?\b|\busd\b|\beuros?\b|\bcents?\b|\bsalary\b|\bincome\b|\bwage\b|\bwtp\b|"
+    r"willing(?:ness)? to pay|\bprice\b|\bdonat\w*\b|\bearn\w*\b",
+    re.IGNORECASE,
+)
+_COUNT_ASK_RE = re.compile(
+    r"how many|how much|number of|enter a number|enter number|enter a numeric|numerical|numeric answer|"
+    r"in numbers|\(number\)|\(numeric\)|enter an? (?:integer|amount|value)",
+    re.IGNORECASE,
+)
+_NUM = r"(-?\d+(?:\.\d+)?)"
+_RANGE_PATTERNS = [
+    re.compile(r"between\s+[$€£]?" + _NUM + r"\s*(?:and|to|-|–)\s*[$€£]?" + _NUM, re.IGNORECASE),
+    re.compile(r"from\s+[$€£]?" + _NUM + r"\s+to\s+[$€£]?" + _NUM, re.IGNORECASE),
+    re.compile(r"\(\s*[$€£]?" + _NUM + r"\s*(?:-|–|to)\s*[$€£]?" + _NUM + r"\s*\)", re.IGNORECASE),
+    re.compile(r"\b" + _NUM + r"\s*(?:-|–|to)\s*" + _NUM + r"\b", re.IGNORECASE),
+]
+_UPPER_ONLY_RE = re.compile(r"(?:up to|at most|maximum of|max of|out of)\s+[$€£]?(\d+(?:\.\d+)?)", re.IGNORECASE)
+
+
+_MTURK_ID_RE = re.compile(
+    r"\bworker\s*id\b|\bworkerid\b|\bmturk\b[^.?!]{0,40}\b(?:id|code)\b|\b(?:id|code)\b[^.?!]{0,30}\bmturk\b|"
+    r"mechanical turk[^.?!]{0,40}\bid\b",
+    re.IGNORECASE,
+)
+_PROLIFIC_ID_RE = re.compile(r"\bprolific\b", re.IGNORECASE)
+_PARTICIPANT_ID_RE = re.compile(
+    r"\b(?:participant|respondent|subject|student|sona|survey)\s*(?:id|number|code)\b|\byour id\b|"
+    r"\b(?:code|id number)\b[^.?!]{0,50}\b(?:given|provided|received|assigned|sent)\b",
+    re.IGNORECASE,
+)
+
+
+def _parse_numeric_range(text: str) -> Optional[Tuple[float, float]]:
+    """Find an explicit numeric range such as "(0-10)", "between 0 and 100" or "out of 20"."""
+    for pat in _RANGE_PATTERNS:
+        m = pat.search(text)
+        if m:
+            lo, hi = float(m.group(1)), float(m.group(2))
+            if lo < hi <= 1e7:
+                return lo, hi
+    m = _UPPER_ONLY_RE.search(text)
+    if m:
+        hi = float(m.group(1))
+        if 0 < hi <= 1e7:
+            return 0.0, hi
+    return None
+
+
+def _infer_numeric_answer_spec(
+    question_text: Any, variable_name: Any = "", question: Optional[Dict[str, Any]] = None
+) -> Optional[Dict[str, Any]]:
+    """Decide whether a text box expects a number, and describe it. ``None`` means "free text".
+
+    Uses Qualtrics' own validation (ContentType ValidNumber/ValidZip and its Min/Max) when
+    the parser supplied it, otherwise conservative wording cues. Questions that also ask the
+    participant to explain ("...and why?") stay free text.
+    """
+    q = question if isinstance(question, dict) else {}
+    text = _clean_question_text(question_text)
+    ctype = str(q.get("content_type") or "").lower()
+    lo_hi: Optional[Tuple[float, float]] = None
+    hard_lo = hard_hi = None   # declared bounds, enforced on every draw (also when only one side is declared)
+    try:
+        nmin, nmax = q.get("number_min"), q.get("number_max")
+        hard_lo = float(nmin) if nmin not in (None, "") else None
+        hard_hi = float(nmax) if nmax not in (None, "") else None
+        if hard_lo is not None and hard_hi is not None and hard_lo < hard_hi:
+            lo_hi = (hard_lo, hard_hi)
+        elif hard_lo is None and hard_hi is not None and 0 < hard_hi < float("inf"):
+            # Max only (Min left blank): what these boxes ask for (counts, amounts, percentages, ages, years)
+            # is never negative, so the window is 0..Max. Without this a declared "at most 2" was ignored
+            # and the draw came from the generic count distribution (0-13), or from a "(0-100)" in the text.
+            lo_hi = (0.0, hard_hi)
+    except (TypeError, ValueError):
+        lo_hi = None
+        hard_lo = hard_hi = None
+    num_decimals = q.get("number_decimals")
+
+    if ctype == "validzip":
+        return {"kind": "zip"}
+    declared_number = ctype in ("validnumber", "validdecimal", "validinteger")
+    t = _PIPED_TEXT_RE.sub(" ", text).lower()  # "${e://Field/Random%20ID}" must not read as "%"
+    # Crowd-worker / participant ID boxes hold an ID, not prose. Only short prompts that do not
+    # ask for an explanation count ("Did you do this on MTurk? Please explain" stays free text).
+    if t and len(t) <= 240 and not _NUMERIC_EXCLUDE_RE.search(t):
+        if _MTURK_ID_RE.search(t):
+            return {"kind": "mturk_id"}
+        if _PROLIFIC_ID_RE.search(t) and re.search(r"\bid\b", t):
+            return {"kind": "prolific_id"}
+        if _PARTICIPANT_ID_RE.search(t):
+            return {"kind": "participant_id"}
+    if not declared_number:
+        if not t or _NUMERIC_EXCLUDE_RE.search(t):
+            return None
+    if _YEAR_OF_BIRTH_RE.search(t):
+        return {"kind": "year_of_birth", "lo": lo_hi[0] if lo_hi else None, "hi": lo_hi[1] if lo_hi else None}
+    if _AGE_RE.search(t) or str(variable_name or "").strip().lower() == "age":
+        return {"kind": "age", "lo": lo_hi[0] if lo_hi else None, "hi": lo_hi[1] if lo_hi else None}
+    if not declared_number and not (_COUNT_ASK_RE.search(t) or _PERCENT_RE.search(t)
+                                    or (_MONEY_RE.search(t) and re.search(r"how much|amount|enter|offer|bid|pay|give|spend", t))):
+        return None
+    if lo_hi is None:
+        lo_hi = _parse_numeric_range(text)
+    kind = "percent" if _PERCENT_RE.search(t) else ("money" if _MONEY_RE.search(t) else "count")
+    if num_decimals not in (None, ""):
+        decimals = int(num_decimals) > 0           # the survey's own NumDecimals setting wins over wording
+    else:
+        decimals = bool(re.search(r"decimal|cents|\d\.\d", t))
+    return {"kind": kind, "lo": lo_hi[0] if lo_hi else None, "hi": lo_hi[1] if lo_hi else None,
+            "decimals": decimals, "hard_lo": hard_lo, "hard_hi": hard_hi,
+            "ndec": int(num_decimals) if num_decimals not in (None, "") and int(num_decimals) > 0 else 2}
+
+
+def _format_numeric(value: float, spec: Dict[str, Any], lo: Optional[float] = None, hi: Optional[float] = None) -> str:
+    """Format a drawn number so it stays inside every declared bound (integers round INTO the range)."""
+    import math
+    lo = spec.get("hard_lo") if spec.get("hard_lo") is not None else lo
+    hi = spec.get("hard_hi") if spec.get("hard_hi") is not None else hi
+    decimals = bool(spec.get("decimals"))
+    if not decimals and lo is not None and hi is not None and math.ceil(lo) > math.floor(hi):
+        decimals = True                                  # no integer fits (e.g. 0.2-0.8): use decimals
+    if lo is not None:
+        value = max(value, lo)
+    if hi is not None:
+        value = min(value, hi)
+    if decimals:
+        nd = int(spec.get("ndec", 2))
+        return f"{value:.{nd}f}"
+    iv = int(round(value))
+    if lo is not None and iv < lo:
+        iv = int(math.ceil(lo))
+    if hi is not None and iv > hi:
+        iv = int(math.floor(hi))
+    return str(iv)
+
+
+def _draw_numeric_answer(spec: Dict[str, Any], rng: "np.random.RandomState") -> str:
+    """Draw one plausible numeric answer. People favour focal values (endpoints, the midpoint,
+    round numbers), so a share of answers snap to those instead of being uniform."""
+    kind = spec.get("kind")
+    if kind == "zip":
+        return f"{int(rng.randint(10000, 99999)):05d}"
+    if kind == "mturk_id":  # Amazon worker IDs: "A" plus 12-13 upper-case letters and digits
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        return "A" + "".join(alphabet[int(i)] for i in rng.randint(0, len(alphabet), size=int(rng.choice([12, 13]))))
+    if kind == "prolific_id":  # Prolific IDs: 24 hexadecimal characters
+        return "".join("0123456789abcdef"[int(i)] for i in rng.randint(0, 16, size=24))
+    if kind == "participant_id":
+        return str(int(rng.randint(100000, 999999)))
+    if kind in ("age", "year_of_birth"):
+        lo, hi = spec.get("lo"), spec.get("hi")
+
+        def _one() -> int:
+            for _try in range(20):                      # truncated (re-drawn) normal: no spike at the floor
+                _a = int(round(rng.normal(37, 13)))
+                if 18 <= _a <= 80:
+                    break
+            else:
+                _a = 35
+            return _a if kind == "age" else _REFERENCE_SURVEY_YEAR - _a
+
+        if lo is None or hi is None:
+            return str(_one())
+        # The survey declares a validation range (e.g. ages 65-90): stay inside it. Draw from the
+        # usual distribution and keep the draw if it fits; otherwise fall back to the window itself.
+        lo, hi = (float(lo), float(hi)) if float(lo) <= float(hi) else (float(hi), float(lo))
+        for _ in range(12):
+            value = _one()
+            if lo <= value <= hi:
+                return str(value)
+        return str(int(round(rng.uniform(lo, hi))))
+    lo, hi = spec.get("lo"), spec.get("hi")
+    decimals = bool(spec.get("decimals"))
+    if lo is None or hi is None:
+        if kind == "percent":
+            lo, hi = 0.0, 100.0
+        elif kind == "money":
+            value = float(np.clip(np.exp(rng.normal(np.log(20.0), 1.0)), 0, 1000))
+            if rng.random() < 0.5:  # round-number preference for money
+                value = float(min([5, 10, 20, 25, 50, 100, 200, 500], key=lambda v: abs(v - value)))
+            return _format_numeric(value, spec)
+        else:
+            return _format_numeric(float(np.clip(rng.negative_binomial(2, 0.4), 0, 30)), spec)
+    span = hi - lo
+    r = rng.random()
+    if r < 0.10:
+        value = lo
+    elif r < 0.20:
+        value = hi
+    elif r < 0.32:
+        value = lo + span / 2.0
+    elif r < 0.45:
+        step = 10.0 if span >= 50 else (5.0 if span >= 15 else 1.0)
+        value = lo + round(rng.random() * span / step) * step
+    else:
+        value = lo + float(rng.beta(2.0, 2.0)) * span
+    value = float(np.clip(value, lo, hi))
+    return _format_numeric(value, spec, lo, hi)
+
+
+# Public names for callers outside this module (the app's data preview uses them). Other
+# modules must not import the underscore versions.
+clean_question_text = _clean_question_text
+infer_numeric_answer_spec = _infer_numeric_answer_spec
+draw_numeric_answer = _draw_numeric_answer
 
 
 def _safe_parse_reverse_items(reverse_items_raw: Any) -> set:
@@ -3112,7 +3528,10 @@ def _calibrate_latent_correlation(corr: Any) -> Any:
 # see tests/test_effect_size_recovery.py::test_cross_scale_correlation_*).
 _SHARED_TENDENCY_WEIGHT = 0.10   # weight of the persona-wide response tendency in each scale's base
 _INDEP_TENDENCY_SD = 0.06        # SD of the per-scale independent tendency draw
-_LATENT_WEIGHT_MULT = 1.6        # multiplier on the correlated-latent weight
+_LATENT_WEIGHT_MULT = 1.6        # multiplier on the correlated-latent weight. It triples the SD of a scale composite, so
+#                                  a user effect on a scale that carries it is built into the finished item responses
+#                                  (_apply_user_effect_to_scale), not into the tendency: the shift calibrated for a lone
+#                                  scale (_explicit_effect_scale) reaches only ~0.4 of the requested d next to it.
 _G_FACTOR_MULT = 0.5             # multiplier on the common-method g-factor strength
 _COHERENCE_MULT = 0.3            # multiplier on the running-mean cross-DV coherence pull
 _INERTIA_MULT = 0.2              # multiplier on the recent-item anchoring pull (Schwarz & Strack)
@@ -3268,8 +3687,13 @@ class EnhancedSimulationEngine:
         # per question; remaining participants get template fallback automatically.
         # This keeps the full sample size N for numeric scales.
         free_llm_oe_cap: int = 0,
+        # v1.2.9.1: True (default) keeps the long-standing behaviour of inferring condition
+        # effects from condition names. False builds in ONLY the effects you specify, so every
+        # other contrast is a true null.
+        auto_effects: bool = True,
     ):
         self.progress_callback = progress_callback
+        self.auto_effects = bool(auto_effects)
         self.use_socsim_experimental = bool(use_socsim_experimental)
         self.use_abe_v2 = bool(use_abe_v2)
         self.study_title = str(study_title or "").strip()
@@ -3277,9 +3701,9 @@ class EnhancedSimulationEngine:
         self.sample_size = int(sample_size)
         # Normalize condition names: strip whitespace AND non-breaking spaces (\xa0)
         self.conditions = [
-            str(c).replace('\xa0', ' ').strip()
+            _condition_label(c).replace('\xa0', ' ').strip()
             for c in (conditions or [])
-            if str(c).replace('\xa0', ' ').strip()
+            if _condition_label(c).replace('\xa0', ' ').strip()
         ]
         if not self.conditions:
             # v1.1.1.5: Use logger instead of self._log() here — validation_log
@@ -3310,8 +3734,21 @@ class EnhancedSimulationEngine:
         self.attention_rate = float(attention_rate)
         self.random_responder_rate = float(random_responder_rate)
         self.effect_sizes = effect_sizes or []
+        # v1.2.9.1: user effects built into finished scales (see _apply_user_effect_to_scale)
+        self._latent_dv_names: Set[str] = set()
+        self._deferred_effect_vars: Set[str] = set()
+        self._deferred_effect_log: List[Dict[str, Any]] = []
+        self._effect_build_errors: List[str] = []
+        self._reversal_ok_arr: Optional[Tuple[str, np.ndarray]] = None
         self.exclusion_criteria = exclusion_criteria or ExclusionCriteria()
         self.open_ended_questions = _normalize_open_ended(open_ended_questions)
+        # v1.2.9.1: a text box that is also a detected numeric DV already has its numbers in the
+        # DV columns; do not add a second, prose-filled column with the same name.
+        self.open_ended_questions, self._oe_dropped_as_dv_duplicates = _drop_oe_duplicating_dvs(
+            self.open_ended_questions, self.scales)
+        # Columns whose answers are structured (ages, IDs, ZIP codes, counts, demographics), not prose:
+        # the stylometric, validation and tidy passes must leave them exactly as generated.
+        self._structured_oe_columns: Set[str] = set()
         self.study_context = study_context or {}
         # v1.0.5.1: Extract condition descriptions for domain detection and effect sizing
         self.condition_descriptions: Dict[str, str] = {}
@@ -4150,6 +4587,89 @@ class EnhancedSimulationEngine:
             persona, participant_id, self.seed
         )
 
+    def _is_explicit_condition(self, condition: str) -> bool:
+        """True when a user-specified effect names this condition, so name-based extras
+        (trait shifts) must not pile on top of the effect the user asked for."""
+        cache = getattr(self, "_explicit_cond_cache", None)
+        if cache is None:
+            cache = {}
+            self._explicit_cond_cache = cache
+        key = str(condition)
+        if key in cache:
+            return cache[key]
+        cond_l = _label_norm(key)
+        hit = False
+        for effect in getattr(self, "effect_sizes", None) or []:
+            for attr in ("level_high", "level_low"):
+                lvl = _label_norm(_spec_get(effect, attr, ""))
+                if lvl and _word_in(lvl, cond_l):
+                    hit = True
+        cache[key] = hit
+        return hit
+
+    # ------------------------------------------------------------------
+    # v1.2.9.1: which generated variable does an effect spec belong to?
+    # ------------------------------------------------------------------
+    def _variable_alias_map(self) -> Dict[str, Set[Tuple[str, ...]]]:
+        """Per generated variable (its cleaned column prefix), the token tuples of every name it
+        answers to: display name, variable name and column prefix. Built once."""
+        amap = getattr(self, "_var_alias_cache", None)
+        if amap is None:
+            amap = {}
+            for sc in getattr(self, "scales", None) or []:
+                name = str(sc.get("name", "")).strip()
+                var_name = str(sc.get("variable_name", "")).strip()
+                col = _clean_column_name(var_name or name)
+                aliases = {_var_tokens(x) for x in (name, var_name, col) if x}
+                aliases.discard(())
+                amap.setdefault(col, set()).update(aliases)
+            self._var_alias_cache = amap
+        return amap
+
+    def _spec_applies_to_variable(self, spec_variable: Any, variable: str) -> bool:
+        """True when an effect spec's variable names the generated variable ``variable``.
+
+        Names are compared as lists of whole words, so "Perceived Quality" matches the column
+        "Perceived_Quality" and "Trust" matches "Trust_Score", but "Trust" no longer matches
+        "Distrust" and "DV1" no longer matches "DV10" (the old test was a substring test). A scale
+        that carries exactly the spec's name owns the spec; the word-run fallback is used only
+        when no scale has that name. A blank variable names nothing.
+        """
+        spec_tokens = _var_tokens(spec_variable)
+        if not spec_tokens:
+            return False
+        amap = self._variable_alias_map()
+        mine = amap.get(str(variable)) or ({_var_tokens(variable)} - {()})
+        if spec_tokens in mine:
+            return True
+        for col, aliases in amap.items():
+            if col != str(variable) and spec_tokens in aliases:
+                return False
+        return any(_tokens_contain(alias, spec_tokens) for alias in mine)
+
+    def _variable_has_user_spec(self, variable: str) -> bool:
+        """True when any user-specified effect targets this variable (memoised)."""
+        cache = getattr(self, "_var_spec_cache", None)
+        if cache is None:
+            cache = {}
+            self._var_spec_cache = cache
+        key = str(variable)
+        if key not in cache:
+            cache[key] = any(
+                self._spec_applies_to_variable(_spec_get(e, "variable", ""), key)
+                for e in (getattr(self, "effect_sizes", None) or [])
+            )
+        return cache[key]
+
+    def _condition_name_may_shape(self, variable: str) -> bool:
+        """Whether the condition NAME may shift this variable's baseline or response style.
+
+        Names do so only through the inferred effects: never with ``auto_effects=False`` (the true
+        null) and never for a variable the user gave an effect, where every condition, named in the
+        spec or not, must start from the same baseline so the requested d is the only difference.
+        """
+        return bool(getattr(self, "auto_effects", True)) and not self._variable_has_user_spec(variable)
+
     def _get_effect_for_condition(self, condition: str, variable: str) -> float:
         """
         Convert Cohen's d effect size to a normalized effect shift that produces
@@ -4209,6 +4729,10 @@ class EnhancedSimulationEngine:
         recovered composite d on target. Very wide numeric scales (>= 50 points,
         e.g. 0-100 sliders) recover ~10% low, so they get a 1.10 boost.
         Returns 1.0 when the scale geometry is unknown (e.g. direct callers).
+
+        This calibration describes a LONE scale. With several scales in the design the cross-scale
+        latent term enlarges the composite's SD about threefold, and the effect is then applied to the
+        finished responses instead (_apply_user_effect_to_scale), so it does not use this factor.
         """
         meta = getattr(self, "_scale_effect_meta", {}).get(str(variable))
         if not meta:
@@ -4219,107 +4743,52 @@ class EnhancedSimulationEngine:
         factor = 1.0 / float(np.sqrt(k / (1.0 + (k - 1) * rho)))
         if (smax - smin) >= 50:
             factor *= 1.10
+        # v1.2.9.1 empirical corrections, measured over 12 independent seeds per cell
+        # (N=1,200, d=0.5 and 0.8 behave the same). The rho-based factor over-corrects as
+        # items are added, because the pipeline's inter-item correlation falls with k:
+        # realised/requested was 1.00 (k=1-3), 1.07 (5), 1.16 (8), 1.19 (12), 1.24 (15),
+        # 1.25 (20). It under-recovers on 2- and 3-point scales (0.75 and 0.93 of the request).
+        if k > 3:
+            factor /= 1.0 + 0.14 * float(np.log(min(k, 30) / 3.0))
+        points = int(smax - smin) + 1
+        if points <= 2:
+            factor *= 1.30
+        elif points == 3:
+            factor *= 1.07
         return factor
 
-    def _compute_effect_for_condition(self, condition: str, variable: str) -> float:
-        """v1.2.6.4: Uncached implementation of effect computation (see
-        _get_effect_for_condition for memoization wrapper and docs)."""
-        # Cohen's d is defined on the GAP between the two levels, in units of the
-        # within-condition SD. The gap is applied symmetrically (+d/2 / -d/2), and
-        # the empirical end-to-end gain of the response pipeline is calibrated so
-        # that the recovered d on a SINGLE ITEM equals the configured d:
-        #   0.125 = (per-side shift in scale-range units) / d, fitted on 7pt/5pt/11pt
-        #   single-item scales (recovered/target = 1.00 +/- 0.05, tests/
-        #   test_effect_size_recovery.py). Multi-item scales are then corrected by
-        #   _explicit_effect_scale() so d refers to the scale MEAN.
-        # Earlier values (0.30-0.40 per side) ignored the two-sided application and
-        # the real SD, inflating observed d ~4x (d=0.5 -> ~2.1).
-        COHENS_D_TO_NORMALIZED = 0.109
+    @staticmethod
+    def _combine_matched_effects(matched: List[Tuple[str, "frozenset", float]]) -> float:
+        """Combine the shifts of every effect spec that names one condition.
 
-        # Check explicit effect size specifications -- accumulate ALL matching effects
-        # for factorial designs where multiple effect specs may apply to one condition
-        matched_effects: list = []
-        _variable_has_spec = False  # any explicit effect spec targets this variable
-        condition_lower = str(condition).lower().strip()
-        variable_lower = str(variable).lower().strip()
-
-        for effect in self.effect_sizes:
-            # v1.1.1.5: Support both EffectSizeSpec objects AND plain dicts.
-            # The app always passes EffectSizeSpec, but the engine should be
-            # robust against dicts from tests, API callers, or legacy code.
-            def _eget(obj: Any, key: str, default: Any = "") -> Any:
-                """Get attribute from object or key from dict."""
-                if isinstance(obj, dict):
-                    return obj.get(key, default)
-                return getattr(obj, key, default)
-
-            # v1.4.0: Safe conversion of cohens_d (could be string, dict, or NaN)
-            try:
-                _raw_d = _eget(effect, 'cohens_d', 0.5)
-                cohens_d = float(_raw_d) if not isinstance(_raw_d, dict) else 0.5
-            except (ValueError, TypeError, AttributeError):
-                cohens_d = 0.5  # Default to medium effect on conversion failure
-            if isinstance(cohens_d, float) and (np.isnan(cohens_d) or np.isinf(cohens_d)):
-                cohens_d = 0.5
-            # Clamp to reasonable range (0-3.0 covers virtually all real effects)
-            cohens_d = float(np.clip(abs(cohens_d), 0.0, 3.0))
-
-            # Check if this effect spec matches the current variable
-            # Variable names reach the generator in their column form ("Perceived_Quality")
-            # while users type display names ("Perceived Quality"); compare on a
-            # separator-insensitive form so an explicit effect is never silently
-            # dropped (it would be replaced by keyword-derived automatic effects).
-            effect_var = re.sub(r"[\s_\-]+", " ", str(_eget(effect, 'variable', '')).lower()).strip()
-            _var_norm = re.sub(r"[\s_\-]+", " ", variable_lower).strip()
-            variable_matches = (
-                effect_var == _var_norm
-                or _var_norm.startswith(effect_var)
-                or effect_var in _var_norm
+        Specs that describe the SAME factor are alternatives for one dimension (two contrasts against
+        a shared control, a duplicated spec) and are averaged, so they do not stack. Specs on
+        DIFFERENT factors are the main effects of a factorial design and are added: a cell that is
+        high on A (d=0.5) and high on B (d=0.5) sits 0.5 + 0.5 above the cell that is low on both,
+        so each marginal contrast keeps its requested d (averaging halved both, d=0.5 -> 0.25-0.28).
+        Two specs are "the same factor" when their factor labels match or they share a level label.
+        """
+        groups: List[Tuple[Set[str], Set[str], List[float]]] = []
+        for factor, levels, value in matched:
+            joined = [g for g in groups if factor in g[0] or (set(levels) & g[1])]
+            merged: Tuple[Set[str], Set[str], List[float]] = (
+                {factor}.union(*[g[0] for g in joined]),
+                set(levels).union(*[g[1] for g in joined]),
+                [value] + [v for g in joined for v in g[2]],
             )
+            groups = [g for g in groups if all(g is not j for j in joined)] + [merged]
+        return float(sum(sum(g[2]) / len(g[2]) for g in groups))
 
-            if variable_matches:
-                _variable_has_spec = True
-                # v1.4.0: Improved level matching with false-positive prevention
-                level_high = str(_eget(effect, 'level_high', '')).lower().strip()
-                level_low = str(_eget(effect, 'level_low', '')).lower().strip()
-                direction = str(_eget(effect, 'direction', 'positive')).lower().strip()
+    # Normalised per-side shift for one Cohen's d (see _compute_effect_for_condition); shared with the inferred-effect helper
+    _EFFECT_D_TO_NORMALIZED = 0.109
 
-                # v1.0.1.3: Use word-boundary matching to prevent false positives
-                # (e.g., level "ai" matching condition "wait")
-                is_high = bool(level_high and _word_in(level_high, condition_lower))
-                is_low = bool(level_low and _word_in(level_low, condition_lower))
+    def _inferred_effect_value(self, condition: str, variable: str) -> float:
+        """Normalised mean shift inferred from the condition names: the keyword rules first, then, when they find
+        nothing, a strict content match against the literature table (never for the reference arm).
 
-                # Avoid double-matching (e.g., "no ai" matching both "ai" and "no ai")
-                # If both match, prefer the longer/more specific match
-                if is_high and is_low:
-                    if len(level_high) >= len(level_low):
-                        is_low = False
-                    else:
-                        is_high = False
-
-                if is_high:
-                    d = cohens_d if direction == "positive" else -cohens_d
-                    matched_effects.append(d * COHENS_D_TO_NORMALIZED)
-                elif is_low:
-                    d = -cohens_d if direction == "positive" else cohens_d
-                    matched_effects.append(d * COHENS_D_TO_NORMALIZED)
-
-        if matched_effects:
-            # Average matched effects so they don't stack unreasonably
-            return (sum(matched_effects) / len(matched_effects)) * self._explicit_effect_scale(variable)
-
-        # The user configured effects for this variable but none involves this
-        # condition (e.g. a Control group): it is the reference level. Do not add
-        # keyword-derived automatic effects on top of an explicit design.
-        if _variable_has_spec:
-            return 0.0
-
-        # AUTO-GENERATE effect if no explicit specification
-        # This ensures conditions ALWAYS produce different means.
-        # Automatic effects are expressed in the same normalised-shift currency as
-        # explicit ones (nominal d = gap / 0.25 of range), so they get the same
-        # item-count correction: otherwise a 4+ item composite shows d ~1.3-2x the
-        # literature value the keyword rule encodes (valence 1.3 vs ~0.6).
+        Used when the user specified no effect for this variable and inference is on; the caller records
+        where the value came from."""
+        COHENS_D_TO_NORMALIZED = self._EFFECT_D_TO_NORMALIZED
         _effect_scale = self._explicit_effect_scale(variable)
         _auto = self._get_automatic_condition_effect(condition, variable)
         # "Nothing matched" does not come back as exactly zero: measured on
@@ -4377,6 +4846,114 @@ class EnhancedSimulationEngine:
             dict(condition=str(condition), variable=str(variable), **_lit.as_dict())
         )
         return _normalized
+
+    def _compute_effect_for_condition(self, condition: str, variable: str) -> float:
+        """v1.2.6.4: Uncached implementation of effect computation (see
+        _get_effect_for_condition for memoization wrapper and docs)."""
+        # Cohen's d is defined on the GAP between the two levels, in units of the
+        # within-condition SD. The gap is applied symmetrically (+d/2 / -d/2), and
+        # the empirical end-to-end gain of the response pipeline is calibrated so
+        # that the recovered d on a SINGLE ITEM equals the configured d:
+        #   0.125 = (per-side shift in scale-range units) / d, fitted on 7pt/5pt/11pt
+        #   single-item scales (recovered/target = 1.00 +/- 0.05, tests/
+        #   test_effect_size_recovery.py). Multi-item scales are then corrected by
+        #   _explicit_effect_scale() so d refers to the scale MEAN.
+        # Earlier values (0.30-0.40 per side) ignored the two-sided application and
+        # the real SD, inflating observed d ~4x (d=0.5 -> ~2.1).
+        COHENS_D_TO_NORMALIZED = self._EFFECT_D_TO_NORMALIZED
+
+        # Check explicit effect size specifications -- accumulate ALL matching effects
+        # for factorial designs where multiple effect specs may apply to one condition.
+        # Each entry is (factor label, the spec's two levels, shift) so effects on different
+        # factors can be added (see _combine_matched_effects).
+        matched_effects: list = []
+        _variable_has_spec = False  # any explicit effect spec targets this variable
+        condition_lower = _label_norm(condition)
+
+        for effect in self.effect_sizes:
+            # v1.1.1.5: Support both EffectSizeSpec objects AND plain dicts.
+            # The app always passes EffectSizeSpec, but the engine should be
+            # robust against dicts from tests, API callers, or legacy code.
+            _eget = _spec_get
+
+            # v1.4.0: Safe conversion of cohens_d (could be string, dict, or NaN)
+            try:
+                _raw_d = _eget(effect, 'cohens_d', 0.5)
+                cohens_d = float(_raw_d) if not isinstance(_raw_d, dict) else 0.5
+            except (ValueError, TypeError, AttributeError):
+                cohens_d = 0.5  # Default to medium effect on conversion failure
+            if isinstance(cohens_d, float) and (np.isnan(cohens_d) or np.isinf(cohens_d)):
+                cohens_d = 0.5
+            # Clamp to reasonable range (0-3.0 covers virtually all real effects)
+            cohens_d = float(np.clip(abs(cohens_d), 0.0, 3.0))
+
+            # Check if this effect spec matches the current variable. Variable names reach the
+            # generator in their column form ("Perceived_Quality") while users type display names
+            # ("Perceived Quality"); they are compared as lists of whole words, so an explicit
+            # effect is never silently dropped (it would be replaced by keyword-derived automatic
+            # effects) and never leaks onto a variable that merely contains the name ("Distrust").
+            variable_matches = self._spec_applies_to_variable(_eget(effect, 'variable', ''), variable)
+
+            if variable_matches:
+                _variable_has_spec = True
+                direction = str(_eget(effect, 'direction', 'positive')).lower().strip()
+
+                # v1.0.1.3: word-boundary matching prevents false positives (level "ai" vs
+                # condition "wait"); v1.2.9.1: labels may start or end with punctuation
+                # ("Norm message (Control)", "80%"). When both levels occur in the label the
+                # longer, more specific one wins ("no ai" contains "ai").
+                side = _spec_side(effect, condition_lower)
+                _spec_key = (
+                    _label_norm(_eget(effect, 'factor', '')),
+                    frozenset({_label_norm(_eget(effect, 'level_high', '')), _label_norm(_eget(effect, 'level_low', ''))} - {""}),
+                )
+                if side > 0:
+                    d = cohens_d if direction == "positive" else -cohens_d
+                    matched_effects.append((_spec_key[0], _spec_key[1], d * COHENS_D_TO_NORMALIZED))
+                elif side < 0:
+                    d = -cohens_d if direction == "positive" else cohens_d
+                    matched_effects.append((_spec_key[0], _spec_key[1], d * COHENS_D_TO_NORMALIZED))
+
+        # v1.2.9.1: remember where each (condition, variable) effect came from so the
+        # metadata can say whether a contrast was requested ("user"), inferred from the
+        # condition names ("inferred") or absent ("none"). `unit` is the normalised
+        # shift that corresponds to one Cohen's d for this variable.
+        _applied = getattr(self, "_applied_effects", None)
+        if _applied is None:
+            _applied = {}
+            self._applied_effects = _applied
+        _unit = COHENS_D_TO_NORMALIZED * self._explicit_effect_scale(variable)
+
+        if matched_effects:
+            # Effects that describe the same factor (same factor label, or a shared level such as a
+            # common control) are averaged so they do not stack; effects on different factors are
+            # main effects of a factorial design and add up.
+            _value = self._combine_matched_effects(matched_effects) * self._explicit_effect_scale(variable)
+            _applied[(str(condition), str(variable))] = {"source": "user", "offset": float(_value), "unit": _unit}
+            return _value
+
+        # The user configured effects for this variable but none involves this
+        # condition (e.g. a Control group): it is the reference level. Do not add
+        # keyword-derived automatic effects on top of an explicit design.
+        if _variable_has_spec:
+            _applied[(str(condition), str(variable))] = {"source": "user", "offset": 0.0, "unit": _unit}
+            return 0.0
+
+        # True null: with inferred effects switched off only user-specified effects
+        # are built into the data.
+        if not getattr(self, "auto_effects", True):
+            _applied[(str(condition), str(variable))] = {"source": "none", "offset": 0.0, "unit": _unit}
+            return 0.0
+
+        # AUTO-GENERATE effect if no explicit specification
+        # This ensures conditions ALWAYS produce different means.
+        # Automatic effects are expressed in the same normalised-shift currency as
+        # explicit ones (nominal d = gap / 0.25 of range), so they get the same
+        # item-count correction: otherwise a 4+ item composite shows d ~1.3-2x the
+        # literature value the keyword rule encodes (valence 1.3 vs ~0.6).
+        _value = self._inferred_effect_value(condition, variable)
+        _applied[(str(condition), str(variable))] = {"source": "inferred", "offset": float(_value), "unit": _unit}
+        return _value
 
     def _get_automatic_condition_effect(self, condition: str, variable: str, _raw: bool = False) -> float:
         """
@@ -4473,7 +5050,9 @@ class EnhancedSimulationEngine:
         CRITICAL: This method NEVER uses condition index/position for effects.
         Effects are determined ONLY by semantic content matching these literature findings.
         """
-        condition_lower = str(condition).lower().strip()
+        # v1.2.9.1: "_" separates words in a label ("Loss_Frame" reads as "loss frame"); as a regex
+        # word character it hid every keyword in snake_case labels from the inferred effects.
+        condition_lower = str(condition).lower().strip().replace("_", " ")
         variable_lower = str(variable).lower().strip()
 
         # Build study context string from all conditions + title for relational parsing
@@ -6923,10 +7502,21 @@ class EnhancedSimulationEngine:
         r"discrimination|stigma|hostil|rumination|worry|guilt|shame)"
     )
 
+    # A glued label ("ControlGroup", "NoTreatment", "Control1") is read as separate words: a change from
+    # lower to upper case, or between a letter and a digit, starts a new word.
+    _LABEL_WORD_BREAK_RE = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])")
+
     def _is_control_arm(self, condition: str) -> bool:
-        """Whether ``condition`` names the reference arm of the design."""
-        _c = str(condition or "").lower()
-        return any(w in _c for w in self._CONTROL_ARM_WORDS)
+        """Whether ``condition`` names the reference arm of the design.
+
+        A reference-arm word has to be a whole word of the label (``_word_in``): a substring test took
+        "Unusual outcome", "Standardized message" and "Uncontrolled spending" for control arms, which
+        skipped their literature effect. As in ``_kw_hit`` an underscore separates words
+        ("cognitive_dissonance_control"); a plural counts ("Healthy controls"), and so does a glued
+        label ("ControlGroup", "NoTreatment", "Control1").
+        """
+        _c = _label_norm(self._LABEL_WORD_BREAK_RE.sub(" ", str(condition or "")).replace("_", " "))
+        return any(_word_in(w, _c) or _word_in(w + "s", _c) for w in self._CONTROL_ARM_WORDS)
 
     def _stable_rng(self, *parts: str) -> random.Random:
         """A Random seeded only by this run's seed and ``parts``.
@@ -6961,7 +7551,7 @@ class EnhancedSimulationEngine:
             unit = 2.0 * 0.109 * float(meta_d)  # same currency as explicit specs: gap = 2*0.109*d
             conds = [str(c) for c in (self.conditions or [])]
             raw = {c: self._get_automatic_condition_effect(c, variable, _raw=True) for c in conds}
-            is_ctrl = {c: (any(w in c.lower() for w in self._CONTROL_ARM_WORDS)
+            is_ctrl = {c: (self._is_control_arm(c)
                            or bool(re.search(r"\b(no|without|absent|not)\b", c.lower()))) for c in conds}
             gap = (max(raw.values()) - min(raw.values())) if raw else 0.0
             table = {c: 0.0 for c in conds}
@@ -6990,6 +7580,18 @@ class EnhancedSimulationEngine:
         return float(table.get(str(condition), 0.0))
 
     def _get_condition_trait_modifier(self, condition: str) -> Dict[str, float]:
+        """Memoised per condition: the result depends only on the study and the condition
+        label, and this is called once per participant per item (N x items times)."""
+        cache = getattr(self, "_cond_modifier_cache", None)
+        if cache is None:
+            cache = {}
+            self._cond_modifier_cache = cache
+        key = str(condition)
+        if key not in cache:
+            cache[key] = self._compute_condition_trait_modifier(condition)
+        return dict(cache[key])
+
+    def _compute_condition_trait_modifier(self, condition: str) -> Dict[str, float]:
         """
         Get condition-specific trait modifiers that affect persona responses.
 
@@ -7100,32 +7702,39 @@ class EnhancedSimulationEngine:
             if any(kw in _study_ctx for kw in ['dictator game', 'trust game', 'economic game']):
                 modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
 
+        # v1.2.9.1: everything below depends on the condition NAME, so it creates differences
+        # between conditions. With inferred effects off, or when the user specified an effect for
+        # this condition, only the study-level priming above (identical for every condition)
+        # is applied.
+        if not getattr(self, "auto_effects", True) or self._is_explicit_condition(condition):
+            return modifiers
+
         # AI-related conditions affect engagement and trust
-        if 'ai' in condition_lower and 'no ai' not in condition_lower:
+        if _kw_hit('ai', condition_lower) and not _kw_hit('no ai', condition_lower):
             modifiers['engagement'] = -0.05  # Slightly less engaged with AI
             modifiers['response_consistency'] = 0.03  # Slightly more consistent
-        elif 'no ai' in condition_lower or 'human' in condition_lower:
+        elif _kw_hit('no ai', condition_lower) or _kw_hit('human', condition_lower):
             modifiers['engagement'] = 0.05  # More engaged with human
             modifiers['response_consistency'] = -0.02
 
         # Hedonic vs utilitarian products affect response style
-        if 'hedonic' in condition_lower or 'experiential' in condition_lower:
+        if _kw_hit('hedonic', condition_lower) or _kw_hit('experiential', condition_lower):
             modifiers['extremity'] = 0.08  # More extreme responses to hedonic
             modifiers['scale_use_breadth'] = 0.05
-        elif 'utilitarian' in condition_lower or 'functional' in condition_lower:
+        elif _kw_hit('utilitarian', condition_lower) or _kw_hit('functional', condition_lower):
             modifiers['extremity'] = -0.05  # More moderate for utilitarian
             modifiers['scale_use_breadth'] = -0.03
 
         # High/low manipulations
-        if 'high' in condition_lower:
+        if _kw_hit('high', condition_lower):
             modifiers['acquiescence'] = 0.05  # Slight positive bias
-        elif 'low' in condition_lower:
+        elif _kw_hit('low', condition_lower):
             modifiers['acquiescence'] = -0.05  # Slight negative bias
 
         # Treatment vs control
-        if 'treatment' in condition_lower:
+        if _kw_hit('treatment', condition_lower):
             modifiers['attention_level'] = 0.03  # Slightly more attentive
-        elif 'control' in condition_lower:
+        elif _kw_hit('control', condition_lower):
             modifiers['attention_level'] = -0.02
 
         # v1.0.4.2: Political identity / intergroup conditions
@@ -7133,21 +7742,21 @@ class EnhancedSimulationEngine:
         # and variance increases (Iyengar & Westwood, 2015)
         _political_terms = ['trump', 'biden', 'political', 'partisan', 'republican',
                             'democrat', 'liberal', 'conservative']
-        _is_political = any(kw in condition_lower for kw in _political_terms)
+        _is_political = any(_kw_hit(kw, condition_lower) for kw in _political_terms)
         if _is_political:
             modifiers['extremity'] = 0.12  # More polarized responses
             modifiers['response_consistency'] = 0.08  # More consistent within-person
             # Outgroup conditions: more negative emotional valence
             _outgroup_markers = ['hater', 'opponent', 'outgroup', 'other party',
                                  'opposing', 'different', 'anti']
-            if any(kw in condition_lower for kw in _outgroup_markers):
+            if any(_kw_hit(kw, condition_lower) for kw in _outgroup_markers):
                 modifiers['acquiescence'] = -0.10  # Negative bias in outgroup evaluations
                 modifiers['extremity'] = 0.15  # Even more extreme for outgroup
 
         # v1.0.4.2: Economic game conditions — intergroup matching
         # When participants play economic games with identified partners,
         # the partner's group membership strongly affects behavior
-        _econ_game = any(kw in condition_lower for kw in
+        _econ_game = any(_kw_hit(kw, condition_lower) for kw in
                          ['dictator', 'trust game', 'ultimatum', 'public good'])
         if _econ_game:
             modifiers['engagement'] = 0.05  # Economic games increase engagement
@@ -7163,23 +7772,23 @@ class EnhancedSimulationEngine:
         # Witte (1992): Fear appeals increase attention and engagement when
         # efficacy is high, but trigger defensive avoidance when efficacy is low
         # Rogers (1975): Protection Motivation Theory — threat + coping appraisal
-        if any(kw in condition_lower for kw in ['fear appeal', 'health threat',
+        if any(_kw_hit(kw, condition_lower) for kw in ['fear appeal', 'health threat',
                'disease risk', 'high threat', 'severe illness']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.08
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.10
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.06
-        elif any(kw in condition_lower for kw in ['low threat', 'safe', 'healthy',
+        elif any(_kw_hit(kw, condition_lower) for kw in ['low threat', 'safe', 'healthy',
                  'prevention', 'wellness']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.03
             modifiers['extremity'] = modifiers.get('extremity', 0) - 0.05
 
         # --- Self-efficacy conditions ---
         # Bandura (1997): High self-efficacy → more confident, consistent responding
-        if any(kw in condition_lower for kw in ['high efficacy', 'empowered',
+        if any(_kw_hit(kw, condition_lower) for kw in ['high efficacy', 'empowered',
                'capable', 'confident']):
             modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.06
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.05
-        elif any(kw in condition_lower for kw in ['low efficacy', 'helpless',
+        elif any(_kw_hit(kw, condition_lower) for kw in ['low efficacy', 'helpless',
                  'incapable', 'doubtful']):
             modifiers['response_consistency'] = modifiers.get('response_consistency', 0) - 0.08
             modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.06
@@ -7187,11 +7796,11 @@ class EnhancedSimulationEngine:
         # --- Environmental/Sustainability conditions ---
         # Campbell & Kay (2014): Environmental messages trigger identity-protective
         # cognition — high engagement, polarized extremity
-        if any(kw in condition_lower for kw in ['environment', 'climate', 'sustainab',
+        if any(_kw_hit(kw, condition_lower) for kw in ['environment', 'climate', 'sustainab',
                'green', 'carbon', 'eco-friendly']):
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.08
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
-        elif any(kw in condition_lower for kw in ['pollut', 'wasteful', 'unsustainable',
+        elif any(_kw_hit(kw, condition_lower) for kw in ['pollut', 'wasteful', 'unsustainable',
                  'carbon intensive']):
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.10
             modifiers['acquiescence'] = modifiers.get('acquiescence', 0) - 0.06
@@ -7199,7 +7808,7 @@ class EnhancedSimulationEngine:
         # --- Moral/Ethical conditions ---
         # Haidt (2001): Moral judgments are emotion-driven, produce extreme responses
         # Greene et al. (2001): Personal moral dilemmas increase emotional engagement
-        if any(kw in condition_lower for kw in ['moral', 'ethical', 'immoral',
+        if any(_kw_hit(kw, condition_lower) for kw in ['moral', 'ethical', 'immoral',
                'unethical', 'trolley', 'dilemma']):
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.12
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.06
@@ -7208,11 +7817,11 @@ class EnhancedSimulationEngine:
         # --- Authority/Credibility conditions ---
         # Milgram (1963): Authority increases compliance and acquiescence
         # Hovland & Weiss (1951): Source credibility amplifies persuasion
-        if any(kw in condition_lower for kw in ['expert', 'authority', 'doctor',
+        if any(_kw_hit(kw, condition_lower) for kw in ['expert', 'authority', 'doctor',
                'professor', 'credible source', 'scientist']):
             modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.08
             modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.04
-        elif any(kw in condition_lower for kw in ['non-expert', 'layperson', 'peer',
+        elif any(_kw_hit(kw, condition_lower) for kw in ['non-expert', 'layperson', 'peer',
                  'low credibility', 'unknown source']):
             modifiers['acquiescence'] = modifiers.get('acquiescence', 0) - 0.06
             modifiers['extremity'] = modifiers.get('extremity', 0) - 0.04
@@ -7220,7 +7829,7 @@ class EnhancedSimulationEngine:
         # --- Scarcity/Urgency conditions ---
         # Cialdini (2001): Scarcity increases arousal and extremity of evaluations
         # Worchel et al. (1975): Scarce items rated higher, more emotionally
-        if any(kw in condition_lower for kw in ['scarce', 'limited', 'exclusive',
+        if any(_kw_hit(kw, condition_lower) for kw in ['scarce', 'limited', 'exclusive',
                'last chance', 'urgent', 'deadline']):
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.10
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.05
@@ -7229,12 +7838,12 @@ class EnhancedSimulationEngine:
         # --- Social presence/Observation conditions ---
         # Zajonc (1965): Social facilitation — presence amplifies dominant responses
         # Bond & Titus (1983 meta): Audience effects on performance
-        if any(kw in condition_lower for kw in ['observed', 'watched', 'public',
+        if any(_kw_hit(kw, condition_lower) for kw in ['observed', 'watched', 'public',
                'social presence', 'audience', 'with others']):
             modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.10
             modifiers['extremity'] = modifiers.get('extremity', 0) - 0.05
             modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.04
-        elif any(kw in condition_lower for kw in ['anonymous', 'private', 'alone',
+        elif any(_kw_hit(kw, condition_lower) for kw in ['anonymous', 'private', 'alone',
                  'unobserved', 'confidential']):
             modifiers['social_desirability'] = modifiers.get('social_desirability', 0) - 0.08
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.04
@@ -7242,12 +7851,12 @@ class EnhancedSimulationEngine:
         # --- Loss/Gain framing conditions ---
         # Tversky & Kahneman (1981): Loss frame increases attention, risk-seeking
         # Levin et al. (2002): Framing effects on risk perception
-        if any(kw in condition_lower for kw in ['loss frame', 'lose', 'forfeit',
+        if any(_kw_hit(kw, condition_lower) for kw in ['loss frame', 'lose', 'forfeit',
                'penalty', 'risk of losing']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.06
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.08
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
-        elif any(kw in condition_lower for kw in ['gain frame', 'earn', 'save',
+        elif any(_kw_hit(kw, condition_lower) for kw in ['gain frame', 'earn', 'save',
                  'benefit', 'reward']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.03
             modifiers['extremity'] = modifiers.get('extremity', 0) - 0.03
@@ -7255,17 +7864,17 @@ class EnhancedSimulationEngine:
         # --- Emotional induction conditions ---
         # Lerner & Keltner (2001): Anger → risk-seeking, certainty appraisals
         # Schwarz & Clore (1983): Mood-as-information
-        if any(kw in condition_lower for kw in ['anger', 'angry', 'outrage',
+        if any(_kw_hit(kw, condition_lower) for kw in ['anger', 'angry', 'outrage',
                'frustrated', 'hostile']):
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.14
             modifiers['acquiescence'] = modifiers.get('acquiescence', 0) - 0.08
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.06
-        elif any(kw in condition_lower for kw in ['sad', 'sadness', 'melanchol',
+        elif any(_kw_hit(kw, condition_lower) for kw in ['sad', 'sadness', 'melanchol',
                  'grief', 'lonely']):
             modifiers['extremity'] = modifiers.get('extremity', 0) - 0.06
             modifiers['engagement'] = modifiers.get('engagement', 0) - 0.05
             modifiers['response_consistency'] = modifiers.get('response_consistency', 0) - 0.04
-        elif any(kw in condition_lower for kw in ['happy', 'joy', 'elated',
+        elif any(_kw_hit(kw, condition_lower) for kw in ['happy', 'joy', 'elated',
                  'positive mood', 'cheerful']):
             modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.06
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.04
@@ -7273,12 +7882,12 @@ class EnhancedSimulationEngine:
         # --- Cognitive load conditions ---
         # Sweller (1988): Cognitive load reduces processing depth → satisficing
         # Gilbert et al. (1988): Load increases reliance on heuristics
-        if any(kw in condition_lower for kw in ['cognitive load', 'high load',
+        if any(_kw_hit(kw, condition_lower) for kw in ['cognitive load', 'high load',
                'dual task', 'multitask', 'distract']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.10
             modifiers['response_consistency'] = modifiers.get('response_consistency', 0) - 0.08
             modifiers['extremity'] = modifiers.get('extremity', 0) - 0.05
-        elif any(kw in condition_lower for kw in ['no load', 'low load', 'focused',
+        elif any(_kw_hit(kw, condition_lower) for kw in ['no load', 'low load', 'focused',
                  'undistracted']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.04
             modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.03
@@ -7286,7 +7895,7 @@ class EnhancedSimulationEngine:
         # --- Time pressure conditions ---
         # Dror et al. (1999): Time pressure reduces accuracy, increases satisficing
         # Maule & Edland (1997): Deadline stress → more extreme, less careful
-        if any(kw in condition_lower for kw in ['time pressure', 'deadline',
+        if any(_kw_hit(kw, condition_lower) for kw in ['time pressure', 'deadline',
                'hurry', 'limited time', 'timed']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.08
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.06
@@ -7295,7 +7904,7 @@ class EnhancedSimulationEngine:
         # --- Gender/Stereotype conditions ---
         # Steele & Aronson (1995): Stereotype threat increases anxiety, reduces performance
         # Schmader et al. (2008): Working memory interference under threat
-        if any(kw in condition_lower for kw in ['stereotype threat', 'gender salient',
+        if any(_kw_hit(kw, condition_lower) for kw in ['stereotype threat', 'gender salient',
                'race salient', 'diagnostic test']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.06
             modifiers['extremity'] = modifiers.get('extremity', 0) - 0.04
@@ -7304,7 +7913,7 @@ class EnhancedSimulationEngine:
         # --- Nostalgia/Memory conditions ---
         # Wildschut et al. (2006): Nostalgia increases positive affect, social connectedness
         # Mitchell et al. (1997): Rosy retrospection inflates positive recall
-        if any(kw in condition_lower for kw in ['nostalgia', 'remember', 'childhood',
+        if any(_kw_hit(kw, condition_lower) for kw in ['nostalgia', 'remember', 'childhood',
                'past experience', 'memory']):
             modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.06
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.05
@@ -7316,12 +7925,12 @@ class EnhancedSimulationEngine:
         # --- Power/Hierarchy conditions ---
         # Keltner et al. (2003): Power increases approach, reduces inhibition
         # Galinsky et al. (2003): Power priming increases risk-taking
-        if any(kw in condition_lower for kw in ['high power', 'power prime', 'boss',
+        if any(_kw_hit(kw, condition_lower) for kw in ['high power', 'power prime', 'boss',
                'leader role', 'in charge', 'manager']):
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.10
             modifiers['social_desirability'] = modifiers.get('social_desirability', 0) - 0.06
             modifiers['acquiescence'] = modifiers.get('acquiescence', 0) - 0.05
-        elif any(kw in condition_lower for kw in ['low power', 'subordinate',
+        elif any(_kw_hit(kw, condition_lower) for kw in ['low power', 'subordinate',
                  'employee role', 'follower', 'powerless']):
             modifiers['extremity'] = modifiers.get('extremity', 0) - 0.08
             modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.06
@@ -7329,14 +7938,14 @@ class EnhancedSimulationEngine:
 
         # --- Competition conditions ---
         # Deutsch (1949): Competition decreases cooperation, increases defensiveness
-        if any(kw in condition_lower for kw in ['competi', 'rival', 'contest',
+        if any(_kw_hit(kw, condition_lower) for kw in ['competi', 'rival', 'contest',
                'tournament', 'winner', 'ranking']):
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.08
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.06
 
         # --- Mindfulness/Reflection conditions ---
         # Brown & Ryan (2003): Mindfulness reduces reactivity, increases presence
-        if any(kw in condition_lower for kw in ['mindful', 'meditation', 'reflective',
+        if any(_kw_hit(kw, condition_lower) for kw in ['mindful', 'meditation', 'reflective',
                'contemplat', 'breathing exercise']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.08
             modifiers['extremity'] = modifiers.get('extremity', 0) - 0.08
@@ -7344,7 +7953,7 @@ class EnhancedSimulationEngine:
 
         # --- Accountability conditions ---
         # Lerner & Tetlock (1999): Accountability increases accuracy motivation
-        if any(kw in condition_lower for kw in ['accountable', 'justify decision',
+        if any(_kw_hit(kw, condition_lower) for kw in ['accountable', 'justify decision',
                'explain to', 'audience', 'evaluated by']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.06
             modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.05
@@ -7352,7 +7961,7 @@ class EnhancedSimulationEngine:
 
         # --- Goal-setting conditions ---
         # Locke & Latham (2002): Specific difficult goals increase effort
-        if any(kw in condition_lower for kw in ['specific goal', 'challenging goal',
+        if any(_kw_hit(kw, condition_lower) for kw in ['specific goal', 'challenging goal',
                'performance target', 'achievement goal']):
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.08
             modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.05
@@ -7360,7 +7969,7 @@ class EnhancedSimulationEngine:
         # --- Depletion/Fatigue conditions ---
         # Baumeister et al. (1998): Ego depletion reduces self-regulation
         # (Though replication debates exist, fatigue effects are robust)
-        if any(kw in condition_lower for kw in ['depleted', 'fatigued', 'exhausted',
+        if any(_kw_hit(kw, condition_lower) for kw in ['depleted', 'fatigued', 'exhausted',
                'ego depletion', 'self-control depletion']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.10
             modifiers['response_consistency'] = modifiers.get('response_consistency', 0) - 0.06
@@ -7369,7 +7978,7 @@ class EnhancedSimulationEngine:
         # --- Mortality salience conditions ---
         # Greenberg et al. (1990): Terror Management Theory
         # Mortality reminders increase worldview defense, self-esteem striving
-        if any(kw in condition_lower for kw in ['mortality salien', 'death remind',
+        if any(_kw_hit(kw, condition_lower) for kw in ['mortality salien', 'death remind',
                'think about death', 'mortality', 'funeral']):
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.12
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.06
@@ -7377,7 +7986,7 @@ class EnhancedSimulationEngine:
 
         # --- v1.0.4.9: Narrative transportation conditions ---
         # Green & Brock (2000): Transportation reduces counterarguing
-        if any(kw in condition_lower for kw in ['narrative', 'story', 'transported',
+        if any(_kw_hit(kw, condition_lower) for kw in ['narrative', 'story', 'transported',
                'immersed', 'fictional scenario']):
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.08
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.05
@@ -7385,24 +7994,24 @@ class EnhancedSimulationEngine:
 
         # --- v1.0.4.9: Social comparison conditions ---
         # Festinger (1954): Social comparison affects self-evaluation
-        if any(kw in condition_lower for kw in ['upward comparison', 'better than',
+        if any(_kw_hit(kw, condition_lower) for kw in ['upward comparison', 'better than',
                'outperformed', 'social comparison']):
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.08
             modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.06
-        elif any(kw in condition_lower for kw in ['downward comparison', 'worse than',
+        elif any(_kw_hit(kw, condition_lower) for kw in ['downward comparison', 'worse than',
                  'outperforming']):
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.04
 
         # --- v1.0.4.9: Gratitude/positive intervention conditions ---
         # Emmons & McCullough (2003): Gratitude increases positive affect
-        if any(kw in condition_lower for kw in ['gratitude', 'thankful', 'count blessings',
+        if any(_kw_hit(kw, condition_lower) for kw in ['gratitude', 'thankful', 'count blessings',
                'three good things', 'best possible self']):
             modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.05
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
 
         # --- v1.0.4.9: Moral threat/cleansing conditions ---
         # Sachdeva et al. (2009): Moral self-regulation
-        if any(kw in condition_lower for kw in ['moral threat', 'guilt', 'transgression',
+        if any(_kw_hit(kw, condition_lower) for kw in ['moral threat', 'guilt', 'transgression',
                'sacred value', 'taboo']):
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.10
             modifiers['social_desirability'] = modifiers.get('social_desirability', 0) + 0.08
@@ -7410,11 +8019,11 @@ class EnhancedSimulationEngine:
 
         # --- v1.0.4.9: Digital distraction conditions ---
         # Ward et al. (2017): Phone presence reduces cognitive capacity
-        if any(kw in condition_lower for kw in ['phone present', 'notification',
+        if any(_kw_hit(kw, condition_lower) for kw in ['phone present', 'notification',
                'multitask', 'distract', 'interrupted']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.08
             modifiers['response_consistency'] = modifiers.get('response_consistency', 0) - 0.05
-        elif any(kw in condition_lower for kw in ['no phone', 'focus mode',
+        elif any(_kw_hit(kw, condition_lower) for kw in ['no phone', 'focus mode',
                  'single task', 'no distraction']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.04
             modifiers['response_consistency'] = modifiers.get('response_consistency', 0) + 0.03
@@ -7428,7 +8037,7 @@ class EnhancedSimulationEngine:
         # ── 1. Nostalgia Induction (Wildschut et al., 2006; Sedikides et al., 2015) ──
         # Nostalgia increases positive affect, social connectedness, and meaning in life.
         # Enhances engagement and produces slightly more extreme, acquiescent responses.
-        if any(kw in condition_lower for kw in ['nostalgia induct', 'nostalgic',
+        if any(_kw_hit(kw, condition_lower) for kw in ['nostalgia induct', 'nostalgic',
                'recall a fond memory', 'sentimental', 'good old days']):
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.06
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.05
@@ -7437,7 +8046,7 @@ class EnhancedSimulationEngine:
         # ── 2. Self-Affirmation (Steele, 1988; Cohen & Sherman, 2014) ──
         # Self-affirmation reduces defensiveness and identity threat, leading to
         # more open, less socially desirable responding with greater consistency.
-        if any(kw in condition_lower for kw in ['self-affirm', 'self affirm',
+        if any(_kw_hit(kw, condition_lower) for kw in ['self-affirm', 'self affirm',
                'values affirmation', 'affirmed', 'wrote about values',
                'personal strengths']):
             modifiers['social_desirability'] = modifiers.get('social_desirability', 0) - 0.06
@@ -7447,7 +8056,7 @@ class EnhancedSimulationEngine:
         # ── 3. Mindfulness / Present-Moment Focus (Brown & Ryan, 2003; Arch & Craske, 2006) ──
         # Mindfulness increases attention and deliberate responding while reducing
         # reactive extremity. Enhances consistency through careful item processing.
-        if any(kw in condition_lower for kw in ['present-moment', 'present moment',
+        if any(_kw_hit(kw, condition_lower) for kw in ['present-moment', 'present moment',
                'body scan', 'mindful attention', 'focused awareness',
                'mindfulness induction']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.10
@@ -7457,7 +8066,7 @@ class EnhancedSimulationEngine:
         # ── 4. Gratitude Induction (Emmons & McCullough, 2003; Wood et al., 2010) ──
         # Gratitude elevates positive mood, increasing acquiescence and engagement.
         # Also produces slightly more extreme positive evaluations.
-        if any(kw in condition_lower for kw in ['gratitude induct', 'gratitude journal',
+        if any(_kw_hit(kw, condition_lower) for kw in ['gratitude induct', 'gratitude journal',
                'grateful', 'appreciation', 'counting blessings',
                'grateful reflection']):
             modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.06
@@ -7467,7 +8076,7 @@ class EnhancedSimulationEngine:
         # ── 5. Power Priming — High Power (Galinsky et al., 2003; Anderson & Berdahl, 2002) ──
         # High power increases approach motivation, risk-taking, and action orientation.
         # Reduces social desirability concerns and boosts engagement.
-        if any(kw in condition_lower for kw in ['power priming', 'high status',
+        if any(_kw_hit(kw, condition_lower) for kw in ['power priming', 'high status',
                'recall a time you had power', 'dominant role', 'authority role',
                'elevated status']):
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.10
@@ -7477,7 +8086,7 @@ class EnhancedSimulationEngine:
         # ── 6. Power Priming — Low Power (Keltner et al., 2003; Anderson & Galinsky, 2006) ──
         # Low power increases inhibition, conformity, and social monitoring.
         # Reduces extremity and increases social desirability and vigilant attention.
-        if any(kw in condition_lower for kw in ['low status', 'subordinate role',
+        if any(_kw_hit(kw, condition_lower) for kw in ['low status', 'subordinate role',
                'recall a time someone had power over', 'submissive', 'deferential',
                'disempowered']):
             modifiers['extremity'] = modifiers.get('extremity', 0) - 0.06
@@ -7487,7 +8096,7 @@ class EnhancedSimulationEngine:
         # ── 7. Cognitive Load — Dual Task (Sweller, 1988; Gilbert et al., 1988) ──
         # Heavy cognitive load impairs processing capacity, reducing attention and
         # consistency. Paradoxically increases extremity through reliance on heuristics.
-        if any(kw in condition_lower for kw in ['dual task', 'memorize number',
+        if any(_kw_hit(kw, condition_lower) for kw in ['dual task', 'memorize number',
                'concurrent task', 'working memory load', 'remember digits',
                'count backwards']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.12
@@ -7497,7 +8106,7 @@ class EnhancedSimulationEngine:
         # ── 8. Mortality Salience (Greenberg et al., 1990; Burke et al., 2010 meta) ──
         # Terror Management Theory: death awareness triggers worldview defense,
         # producing more extreme, engaged, and consistent value-congruent responding.
-        if any(kw in condition_lower for kw in ['death prime', 'mortality prime',
+        if any(_kw_hit(kw, condition_lower) for kw in ['death prime', 'mortality prime',
                'write about own death', 'life is short', 'impermanence',
                'end of life']):
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.14
@@ -7507,7 +8116,7 @@ class EnhancedSimulationEngine:
         # ── 9. Sleep Deprivation / Fatigue (Lim & Dinges, 2010; Killgore, 2010) ──
         # Sleep deprivation impairs executive function, reducing sustained attention
         # and response consistency. Increases extremity via reduced inhibition.
-        if any(kw in condition_lower for kw in ['sleep depriv', 'sleep restrict',
+        if any(_kw_hit(kw, condition_lower) for kw in ['sleep depriv', 'sleep restrict',
                'fatigued participant', 'tired', 'insufficient sleep',
                'sleep loss', 'no sleep']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) - 0.12
@@ -7517,7 +8126,7 @@ class EnhancedSimulationEngine:
         # ── 10. Nature Exposure / Green Space (Kaplan, 1995; Berman et al., 2008) ──
         # Attention Restoration Theory: exposure to natural environments restores
         # directed attention, reduces mental fatigue, and promotes calmer responding.
-        if any(kw in condition_lower for kw in ['nature exposure', 'nature walk',
+        if any(_kw_hit(kw, condition_lower) for kw in ['nature exposure', 'nature walk',
                'green space', 'outdoor', 'park scene', 'forest',
                'natural environment', 'nature image']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.06
@@ -7528,7 +8137,7 @@ class EnhancedSimulationEngine:
         # Ostracism threatens fundamental needs (belonging, self-esteem, control, meaning).
         # Produces more extreme responses, higher engagement, but reduced acquiescence
         # as excluded individuals resist conforming to group norms.
-        if any(kw in condition_lower for kw in ['social exclusion', 'ostracism',
+        if any(_kw_hit(kw, condition_lower) for kw in ['social exclusion', 'ostracism',
                'ostracized', 'excluded', 'cyberball exclusion', 'rejected',
                'left out', 'ignored by group']):
             modifiers['extremity'] = modifiers.get('extremity', 0) + 0.10
@@ -7538,12 +8147,12 @@ class EnhancedSimulationEngine:
         # ── 12. Warmth / Cold Priming (Williams & Bargh, 2008; IJzerman & Semin, 2009) ──
         # Physical warmth primes social warmth — increased acquiescence and engagement.
         # Physical cold primes social coldness — decreased acquiescence and engagement.
-        if any(kw in condition_lower for kw in ['warm cup', 'warm drink', 'warm prime',
+        if any(_kw_hit(kw, condition_lower) for kw in ['warm cup', 'warm drink', 'warm prime',
                'physical warmth', 'warm condition', 'heated room',
                'warm temperature']):
             modifiers['acquiescence'] = modifiers.get('acquiescence', 0) + 0.06
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.04
-        elif any(kw in condition_lower for kw in ['cold cup', 'cold drink', 'cold prime',
+        elif any(_kw_hit(kw, condition_lower) for kw in ['cold cup', 'cold drink', 'cold prime',
                  'physical cold', 'cold condition', 'cold temperature',
                  'ice']):
             modifiers['acquiescence'] = modifiers.get('acquiescence', 0) - 0.06
@@ -7552,7 +8161,7 @@ class EnhancedSimulationEngine:
         # ── 13. Scarcity Priming (Shah et al., 2012; Mullainathan & Shafir, 2013) ──
         # Scarcity captures attention (tunneling effect), increases engagement,
         # and produces more extreme evaluations of scarce resources.
-        if any(kw in condition_lower for kw in ['scarcity prime', 'resource scarce',
+        if any(_kw_hit(kw, condition_lower) for kw in ['scarcity prime', 'resource scarce',
                'financial scarcity', 'scarcity mindset', 'not enough',
                'running out', 'shortage']):
             modifiers['attention_level'] = modifiers.get('attention_level', 0) + 0.08
@@ -7563,7 +8172,7 @@ class EnhancedSimulationEngine:
         # Self-Determination Theory: autonomy support satisfies the need for autonomy,
         # increasing intrinsic motivation, engagement, and consistent responding
         # while reducing impression management.
-        if any(kw in condition_lower for kw in ['autonomy support', 'autonomous',
+        if any(_kw_hit(kw, condition_lower) for kw in ['autonomy support', 'autonomous',
                'free choice', 'self-determined', 'your decision',
                'choose freely', 'volitional']):
             modifiers['engagement'] = modifiers.get('engagement', 0) + 0.08
@@ -7573,7 +8182,7 @@ class EnhancedSimulationEngine:
         # ── 15. Autonomy Thwarting / Controlling (Deci & Ryan, 2000; Vansteenkiste & Ryan, 2013) ──
         # Controlling contexts undermine intrinsic motivation, reducing engagement
         # and consistency while increasing social desirability (conformity pressure).
-        if any(kw in condition_lower for kw in ['autonomy thwart', 'controlling',
+        if any(_kw_hit(kw, condition_lower) for kw in ['autonomy thwart', 'controlling',
                'forced choice', 'no choice', 'mandated', 'required to',
                'must comply', 'coerced']):
             modifiers['engagement'] = modifiers.get('engagement', 0) - 0.06
@@ -8569,7 +9178,13 @@ class EnhancedSimulationEngine:
         # STEP 2a: Get domain-specific calibration
         # Based on published norms for different construct types (v2.2.8)
         # =====================================================================
-        domain_calibration = self._get_domain_response_calibration(variable_name, condition)
+        # v1.2.9.1: a game word in a condition LABEL ("Dictator game", "Trust game") used to pick a
+        # per-label game baseline, so labels alone moved the mean by ~1.9 d even with inferred effects
+        # off or an explicit d. The label may inform the baseline only while inferred effects are on
+        # and this variable has no user-specified effect.
+        _name_shapes_response = self._condition_name_may_shape(variable_name)
+        domain_calibration = self._get_domain_response_calibration(
+            variable_name, condition if _name_shapes_response else "")
 
         # =====================================================================
         # STEP 2b: Get scale-type calibration
@@ -8688,6 +9303,11 @@ class EnhancedSimulationEngine:
         # Richard et al. (2003): Average d in social psychology ≈ 0.43
         # =====================================================================
         condition_effect = self._get_effect_for_condition(condition, variable_name)
+        # v1.2.9.1: a user effect on a scale that is generated next to other scales is built into the
+        # finished item responses (_apply_user_effect_to_scale); the generator sees no condition shift.
+        # The lookup above still runs so the metadata records the intended effect.
+        if condition_effect != 0.0 and variable_name in getattr(self, "_deferred_effect_vars", ()):
+            condition_effect = 0.0
 
         # v1.2.9.9: a condition effect is specified in Cohen's d — a GAP DIVIDED BY
         # AN SD — so it has to travel with whatever SD this variable ends up with.
@@ -9194,6 +9814,11 @@ class EnhancedSimulationEngine:
                 # that reliability analysts see in real data
                 _correctly_reversed = False
 
+            # v1.2.9.1: a deferred user effect must follow the same direction (see _apply_user_effect_to_scale)
+            _rok = getattr(self, "_reversal_ok_arr", None)
+            if _rok is not None and _rok[0] == variable_name and _p_idx is not None:
+                _rok[1][_p_idx, int(getattr(self, "_current_item_position", 1)) - 1] = _correctly_reversed
+
             # v1.0.4.9: Update reverse-item tracking for this participant
             if _p_idx is not None and hasattr(self, '_participant_reverse_tracking'):
                 self._participant_reverse_tracking[_p_idx]['total_reverse'] += 1
@@ -9434,8 +10059,9 @@ class EnhancedSimulationEngine:
                      'verbal_aggress', 'road_rage', 'retaliat']):
                 _sd_sensitivity = 1.45  # Strong norms against aggression
 
-            # Also check condition context for sensitivity
-            _cond_lower = condition.lower() if condition else ""
+            # Also check condition context for sensitivity (inferred effects only: with them off,
+            # or an explicit effect on this variable, the label must not change the response style)
+            _cond_lower = condition.lower() if (condition and _name_shapes_response) else ""
             if any(kw in _cond_lower for kw in ['dishonest', 'cheat', 'prejudic',
                    'discriminat', 'immoral']):
                 _sd_sensitivity = max(_sd_sensitivity, 1.3)
@@ -9977,7 +10603,39 @@ class EnhancedSimulationEngine:
                     _bmax = int(_le.get("scale_max", _le.get("scale_points", 7)))
                     for _bc in _le.get("columns_generated", []):
                         _col_bounds[_bc] = (_bmin, _bmax)
-                for i in range(n):
+                # v1.2.9.1: straight-lining is only suspicious when chance agreement is low,
+                # i.e. across at least five items with five or more response options. On a
+                # binary/3-point scale, or with only three items, most people legitimately
+                # give the same answer to every item, and "repairing" them randomised the
+                # data (and erased the condition effect).
+                #
+                # v1.3.0.4: the item-count half of that rule is relaxed for ONE case. The
+                # identical-answer pass further down puts the registry's share of constant
+                # rows back into every block of three or more items, and it was calibrated
+                # on data this audit had already cleaned: the audit strips them (clipped
+                # +/-1 jitter, which also drains the endpoint bins), the pass restores the
+                # measured share. With five or more scale items in the survey nothing
+                # changes. With 3 or 4 items, the whole survey of a short single-scale
+                # design, switching the audit off left 4.6% of respondents identical before
+                # the pass instead of 0.6% (8 seeds, N = 3,000), so the pass converted fewer,
+                # differently chosen rows and the top bin ended 2.5 points above the next
+                # one (P(7) - P(6) = +0.025 against -0.010 on main; the ceiling-spike guard
+                # failed on 3 of 8 seeds). The audit therefore also runs when the survey has
+                # a block of three or more items, which is exactly where that pass follows.
+                # Single-item DVs and two-item scales get no such pass, so identical rows
+                # across them stay as generated.
+                _min_points = (min(hi - lo + 1 for lo, hi in _col_bounds.values())
+                               if _col_bounds else 0)
+                _widest_block = max(
+                    (len(_le.get("columns_generated") or []) for _le in scale_generation_log
+                     if str(_le.get("type", "")).lower() not in _JOINT_DV_TYPES),
+                    default=0,
+                )
+                _check_straightlining = (
+                    _min_points >= _MIN_OPTIONS_FOR_STRAIGHTLINE_LOGIC
+                    and (len(existing_cols) >= 5 or _widest_block >= 3)
+                )
+                for i in range(n if _check_straightlining else 0):
                     vals = [float(df.iloc[i][c]) for c in existing_cols
                             if pd.notna(df.iloc[i][c])]
                     if len(vals) < 3:
@@ -10325,6 +10983,27 @@ class EnhancedSimulationEngine:
         }
         return report
 
+    @staticmethod
+    def _readable_topic(text: Any) -> str:
+        """``text`` when it reads like words (two or more real words, no underscores, few digits), else ''.
+
+        Survey titles such as "BDS5010_G12" or "Survey_v2_FINAL" are identifiers: written into an answer
+        ("thoughts about BDS5010_G12 ...") they are an artifact, not a topic."""
+        t = re.sub(r"\s+", " ", str(text or "")).strip()
+        if not t or "_" in t:
+            return ""
+        if len(re.findall(r"[A-Za-z]{3,}", t)) < 2 or sum(c.isdigit() for c in t) > 0.15 * len(t):
+            return ""
+        return t
+
+    def _readable_study_topic(self) -> str:
+        """The study title if it reads like words, else the start of the description, else ''."""
+        title = self._readable_topic(self.study_title)
+        if title:
+            return title
+        first_sentence = re.split(r"(?<=[.!?])\s", str(self.study_description or "").strip(), maxsplit=1)[0]
+        return self._readable_topic(first_sentence[:120])
+
     def _build_enriched_question_text(
         self, question_text: str, question_context: str, condition: str
     ) -> str:
@@ -10344,12 +11023,17 @@ class EnhancedSimulationEngine:
         single helper guarantees byte-identical keys so the pool is actually hit.
         """
         import re as _re
-        _qt = str(question_text or "")
+        # v1.2.9.1: decode HTML entities, drop tags/placeholder text/bare variable ids. When nothing
+        # usable remains, fall back to the study topic so answers still stay on topic.
+        _qt = _clean_question_text(question_text)
+        if not _qt:
+            _topic_fb = self._readable_study_topic() or "the questions asked"
+            _qt = f"Please share your thoughts about {_topic_fb}"
         _ctx = str(question_context or "").strip()
         if _ctx:
             _humanized = (_re.sub(r'[_\-]+', ' ', _qt).strip()
                           if _qt and " " not in _qt.strip() else _qt)
-            _study_topic = self.study_title or self.study_description or ""
+            _study_topic = self._readable_study_topic()
             _out = f"Question: {_humanized}\nContext: {_ctx}"
             if _study_topic:
                 _out += f"\nStudy topic: {_study_topic}"
@@ -10366,7 +11050,7 @@ class EnhancedSimulationEngine:
             # from study context. (No condition embedded here — mirrors prior
             # behavior; condition still varies the pool key as a separate field.)
             _humanized = _re.sub(r'[_\-]+', ' ', _qt).strip()
-            _study_topic = self.study_title or self.study_description or ""
+            _study_topic = self._readable_study_topic()
             if _study_topic:
                 return (f"In the context of a study about {_study_topic}, "
                         f"please share your thoughts on: {_humanized}")
@@ -10406,7 +11090,7 @@ class EnhancedSimulationEngine:
         self._last_oe_source = "Template"
         response_type = str(question_spec.get("type", "general"))
         question_text = str(question_spec.get("question_text", ""))
-        _original_question_text = question_text  # v1.0.4.7: Preserve before context embedding
+        _original_question_text = _clean_question_text(question_text)  # v1.0.4.7: preserve before context embedding (v1.2.9.1: HTML-clean)
         context_type = str(question_spec.get("context_type", "general"))
         question_context = str(question_spec.get("question_context", "")).strip()
 
@@ -12288,6 +12972,17 @@ class EnhancedSimulationEngine:
                 smax = float(log_entry.get("scale_max", 5))
                 if smax - smin <= 0 or smax - smin > 10:
                     continue    # wide/continuous DVs are shaped elsewhere
+                # v1.3.0.4 — the registry's rates were measured on 5- to 9-point
+                # instruments. On a binary, 3- or 4-point block chance agreement is far
+                # higher (about 77% of the rows of a 3-item binary block are identical
+                # as generated, against 19% in the registry for three items), so pulling
+                # the share down to the registry value rewrote honest answers: a
+                # requested d of 0.8 came back as 0.61 on a 3-item binary scale (0.77
+                # without this pass). A declined block is left as it was, the same rule
+                # the registry applies outside the designs it was measured on, and the
+                # consistency audit is gated on the same number of options.
+                if smax - smin + 1 < _MIN_OPTIONS_FOR_STRAIGHTLINE_LOGIC:
+                    continue
                 _rng = random.Random(self.seed + _stable_int_hash(str(log_entry.get("name", ""))))
                 cols = [_source(c) for c in icols]
                 if any(any(v != v for v in col) for col in cols):
@@ -12528,6 +13223,11 @@ class EnhancedSimulationEngine:
             except Exception:
                 _corr_matrix = None
 
+        self._latent_dv_names = set()
+        self._deferred_effect_vars = set()
+        self._deferred_effect_log = []
+        self._effect_build_errors = []
+        self._reversal_ok_arr = None
         if _corr_matrix is not None and len(_scale_names) > 1:
             try:
                 _latent_scores = generate_latent_scores(n, _calibrate_latent_correlation(_corr_matrix), self.seed)
@@ -12537,6 +13237,8 @@ class EnhancedSimulationEngine:
                         _scale_names[j]: float(_latent_scores[i, j])
                         for j in range(min(len(_scale_names), _latent_scores.shape[1]))
                     }
+                # the scales whose responses carry the cross-scale latent term (matched by name)
+                self._latent_dv_names = set(_scale_names[:_latent_scores.shape[1]])
                 self._log(f"Generated cross-DV latent scores for {len(_scale_names)} scales")
             except Exception as e:
                 self._log(f"WARNING: Failed to generate correlated latent scores: {e}")
@@ -12701,6 +13403,16 @@ class EnhancedSimulationEngine:
             if not hasattr(self, "_scale_effect_meta"):
                 self._scale_effect_meta = {}
             self._scale_effect_meta[str(scale_name)] = (num_items, scale_min, scale_max)
+
+            # v1.2.9.1: next to other scales every response carries a person-level latent term that
+            # triples the composite's SD, so a shift calibrated for a lone scale reaches only ~0.4 of
+            # the requested d. A user effect on such a scale is therefore built into the finished item
+            # responses, in units of the realised within-condition SD (_apply_user_effect_to_scale).
+            if self._defer_user_effect_for_scale(scale_name, scale_min, scale_max, bool(reverse_items)):
+                self._deferred_effect_vars.add(scale_name)
+                self._reversal_ok_arr = (scale_name, np.ones((n, num_items), dtype=bool))
+            else:
+                self._reversal_ok_arr = None
 
             for item_num in range(1, num_items + 1):
                 col_name = f"{scale_name}_{item_num}"
@@ -12942,6 +13654,19 @@ class EnhancedSimulationEngine:
                             f"WARNING: marginal shape pass failed for "
                             f"'{scale_name_raw}': {_md_err}"
                         )
+            # v1.2.9.1: build a deferred user effect into the finished items of this scale
+            if scale_name in self._deferred_effect_vars:
+                try:
+                    _ue_log = self._apply_user_effect_to_scale(
+                        data, scale_name, [f"{scale_name}_{j + 1}" for j in range(num_items)],
+                        reverse_items, scale_min, scale_max, conditions)
+                    if _ue_log:
+                        self._deferred_effect_log.append(_ue_log)
+                except Exception as _ue_err:  # the requested effect would be missing: say so loudly
+                    logger.warning("User effect on '%s' could not be built into the data: %s", scale_name, _ue_err)
+                    self._log(f"WARNING: user effect on '{scale_name}' could not be built in: {_ue_err}")
+                    self._effect_build_errors.append(f"The expected effect on '{scale_name}' could not be built into the data ({_ue_err}).")
+            self._reversal_ok_arr = None
 
         # v1.0.5.8: Anti-detection — detect and break alternating/zigzag patterns.
         # Mechanical alternation (e.g., 2,4,2,4,2,4 or 1,7,1,7,1,7) across items
@@ -13127,6 +13852,9 @@ class EnhancedSimulationEngine:
                     # numeric/categorical data, not text.  Also prevents demographic
                     # variable names (e.g. "Age") from polluting topic inference.
                     if str(oq.get("question_purpose", "")).strip() == "Demographic":
+                        continue
+                    # v1.2.9.1: numeric text boxes are answered with numbers, not LLM text.
+                    if _infer_numeric_answer_spec(oq.get("question_text", ""), oq.get("name", ""), oq) is not None:
                         continue
                     # v1.0.7.1: Check total budget before each OE question
                     _elapsed = time.time() - _prefill_wall_start
@@ -13407,7 +14135,9 @@ class EnhancedSimulationEngine:
                     elif any(kw in _demo_search_text for kw in ("income", "salary", "earn", "household income")):
                         _inc = int(np.clip(_d_rng.lognormal(10.8, 0.8), 15000, 300000))
                         _demo_responses.append(str(_inc))
-                    elif any(kw in _demo_search_text for kw in ("state", "location", "country", "city", "zip")):
+                    elif any(kw in _demo_search_text for kw in ("zip", "postal", "postcode")):
+                        _demo_responses.append(f"{int(_d_rng.randint(10000, 99999)):05d}")
+                    elif any(kw in _demo_search_text for kw in ("state", "location", "country", "city")):
                         _us_states = ["California", "Texas", "Florida", "New York",
                                       "Pennsylvania", "Illinois", "Ohio", "Georgia",
                                       "North Carolina", "Michigan", "Other"]
@@ -13416,7 +14146,30 @@ class EnhancedSimulationEngine:
                         # Generic demographic — generate short factual answers
                         _demo_responses.append(str(int(np.clip(_d_rng.normal(40, 15), 1, 99))))
                 data[col_name] = _demo_responses
+                self._structured_oe_columns.add(col_name)
                 self._log(f"Generated demographic data for '{col_name}' ({n} values)")
+                continue  # Skip normal OE text generation
+
+            # v1.2.9.1: numeric text boxes ("How many tickets...? (enter a number)", "year of birth")
+            # get numbers, honoring Qualtrics validation ranges and survey-flow visibility. They used
+            # to be answered with essays.
+            try:
+                _numeric_spec = _infer_numeric_answer_spec(q_text, col_name, q)
+            except Exception as _num_err:
+                logger.warning("Numeric-answer detection failed for '%s': %s", col_name, _num_err)
+                _numeric_spec = None
+            if _numeric_spec is not None:
+                _num_responses: List[str] = []
+                for _ni in range(n):
+                    _report_progress("generating", _ni, n)
+                    if not self.survey_flow_handler.is_question_visible(col_name, conditions.iloc[_ni]):
+                        _num_responses.append("")
+                        continue
+                    _n_rng = np.random.RandomState((self.seed + _ni * 100 + col_hash) % (2**31))
+                    _num_responses.append(_draw_numeric_answer(_numeric_spec, _n_rng))
+                data[col_name] = _num_responses
+                self._structured_oe_columns.add(col_name)
+                self._log(f"Generated numeric answers for '{col_name}' ({_numeric_spec.get('kind')}, {n} values)")
                 continue  # Skip normal OE text generation
 
             responses: List[str] = []
@@ -14061,6 +14814,8 @@ class EnhancedSimulationEngine:
                     "factor": e.get("factor", "") if isinstance(e, dict) else getattr(e, "factor", ""),
                     "cohens_d": e.get("cohens_d", 0.5) if isinstance(e, dict) else getattr(e, "cohens_d", 0.5),
                     "direction": e.get("direction", "") if isinstance(e, dict) else getattr(e, "direction", ""),
+                    "level_high": e.get("level_high", "") if isinstance(e, dict) else getattr(e, "level_high", ""),
+                    "level_low": e.get("level_low", "") if isinstance(e, dict) else getattr(e, "level_low", ""),
                 }
                 for e in self.effect_sizes
             ],
@@ -14103,6 +14858,10 @@ class EnhancedSimulationEngine:
                 }
                 for q in self.open_ended_questions
             ],
+            # v1.2.9.1: free-text boxes that repeated a numeric DV already in the data
+            "open_ended_duplicates_of_numeric_dvs": list(
+                getattr(self, "_oe_dropped_as_dv_duplicates", []) or []
+            ),
             # v1.4.6: LLM response generation stats
             # v1.0.6.1: Guard against .stats being None
             "llm_response_stats": (getattr(self.llm_generator, 'stats', None) or {"llm_calls": 0, "fallback_uses": 0}) if self.llm_generator else {"llm_calls": 0, "fallback_uses": 0},
@@ -14170,6 +14929,10 @@ class EnhancedSimulationEngine:
                     if isinstance(socsim_meta, dict):
                         metadata["socsim"] = socsim_meta
                         self._log(f"SocSim enrichment complete: {len(socsim_meta.get('enriched_dvs', []))} DVs enriched")
+                        try:
+                            self._reapply_user_effects_after_game_model(df, socsim_meta)
+                        except Exception as _reapply_err:
+                            self._log(f"SocSim: could not re-apply requested effects: {_reapply_err}")
                     else:
                         metadata["socsim"] = {"socsim_used": False, "error": "Invalid return from enrichment"}
                         self._log("SocSim enrichment returned invalid metadata")
@@ -14241,6 +15004,7 @@ class EnhancedSimulationEngine:
                         _known_oe_names.add(oeq.get("name", ""))
                 _known_oe_names.discard("")
                 _oe_cols = _detect_oe(df, known_oe_names=_known_oe_names or None)
+                _oe_cols = [c for c in _oe_cols if c not in self._structured_oe_columns]
                 if _oe_cols:
                     _applied = 0
                     _n_states = len(_hbs_participant_states)
@@ -14267,11 +15031,35 @@ class EnhancedSimulationEngine:
                 # v1.2.8.4: seed the validator per-run so its perturbations are
                 # reproducible WITHOUT seeding the process-global RNG (which let us
                 # drop the run-wide _GLOBAL_RNG_LOCK that serialized concurrent users).
-                _validator = HBSValidator(seed=self.seed)
+                _validator = HBSValidator(seed=self.seed, protected_columns=self._structured_oe_columns)
                 df, _validation_report = _validator.validate_and_correct(df)
                 self._log(f"ABE 3.0: Validation complete — {_validation_report.get('summary', 'ok')}")
             except Exception as _val_err:
                 self._log(f"ABE 3.0: Validation skipped: {_val_err}")
+
+        # Step C2 (v1.2.9.1): last mechanical tidy of every open-ended cell (spacing, a/an
+        # agreement, misplaced fillers, cut-off endings) after the stylometric and validation
+        # passes, which can both leave such artifacts behind.
+        try:
+            from utils import detect_oe_columns as _detect_oe_final
+            from .text_cleanup import finalize_generated_text as _finalize_oe_text
+            _known_final = set()
+            for _oeq in self.open_ended_questions:
+                if isinstance(_oeq, dict):
+                    _known_final.add(str(_oeq.get("variable_name", "") or ""))
+                    _known_final.add(str(_oeq.get("name", "") or ""))
+            _known_final.discard("")
+            for _col in _detect_oe_final(df, known_oe_names=_known_final or None):
+                if _col in self._structured_oe_columns:
+                    continue
+                for _idx in df.index:
+                    _val = df.at[_idx, _col]
+                    if isinstance(_val, str) and len(_val) > 10:
+                        _tidy = _finalize_oe_text(_val)
+                        if _tidy != _val:
+                            df.at[_idx, _col] = _tidy
+        except Exception as _tidy_err:
+            self._log(f"ABE 3.0: Final text tidy skipped: {_tidy_err}")
 
         # The validator may perturb item values: re-derive composites from the final items.
         self._refresh_scale_composites(df, getattr(self, "_scale_generation_log", None) or [])
@@ -14341,11 +15129,79 @@ class EnhancedSimulationEngine:
         except Exception as _rec_err:
             self._log(f"WARNING: composite reconciliation failed: {_rec_err}")
 
+        # v1.2.9.1: the observed-effect summary was computed before the game-model
+        # enrichment, the validator and the final reconciliation; recompute it from the
+        # data that is actually returned and describe what effect was built in.
+        try:
+            metadata["effect_sizes_observed"] = self._compute_observed_effect_sizes(df)
+            metadata["effect_sizes_applied"] = self._build_effects_applied(metadata["effect_sizes_observed"])
+        except Exception as _eff_err:
+            self._log(f"WARNING: final effect summary refresh skipped: {_eff_err}")
+
         return df, metadata
+
+    def _effect_spec_diagnostics(self) -> Dict[str, Any]:
+        """Check every user-specified effect against the generated variables and conditions.
+
+        Returns ``{"specs": [...], "warnings": [...]}``. A spec whose variable is not generated, or
+        whose levels name no condition, builds nothing into the data (the observed d then shows
+        nothing but sampling noise); a spec where only one level names a condition moves one arm only,
+        so the contrast is about half the requested d. Reporting both is the only protection against a
+        requested effect that silently went missing. Each row carries ``matched`` (the effect reached
+        at least one condition of a generated variable), ``status`` ("applied", "one_side_only",
+        "levels_not_found" or "variable_not_found") and the variables and conditions it reached.
+        """
+        columns = list(self._variable_alias_map().keys())
+        conditions = [(str(c), _label_norm(c)) for c in (self.conditions or [])]
+        rows: List[Dict[str, Any]] = []
+        warns: List[str] = []
+        for effect in getattr(self, "effect_sizes", None) or []:
+            variable = str(_spec_get(effect, "variable", "") or "")
+            level_high = str(_spec_get(effect, "level_high", "") or "")
+            level_low = str(_spec_get(effect, "level_low", "") or "")
+            variables = [c for c in columns if self._spec_applies_to_variable(variable, c)]
+            high_conditions = [c for c, norm in conditions if _spec_side(effect, norm) > 0]
+            low_conditions = [c for c, norm in conditions if _spec_side(effect, norm) < 0]
+            if not variables:
+                status = "variable_not_found"
+                warns.append(
+                    f"Expected effect on '{variable}' was NOT applied: no generated variable has that name "
+                    f"(variables: {', '.join(columns) if columns else 'none'})."
+                )
+            elif not high_conditions and not low_conditions:
+                status = "levels_not_found"
+                warns.append(
+                    f"Expected effect on '{variable}' ('{level_high}' vs '{level_low}') was NOT applied: "
+                    f"neither level matches a condition name (conditions: {', '.join(c for c, _ in conditions)})."
+                )
+            elif not high_conditions or not low_conditions:
+                status = "one_side_only"
+                missing = level_high if not high_conditions else level_low
+                warns.append(
+                    f"Expected effect on '{variable}' ('{level_high}' vs '{level_low}') was applied to one side only: "
+                    f"'{missing}' matches no condition name, so the contrast against the other conditions is "
+                    f"about half the requested d."
+                )
+            else:
+                status = "applied"
+            raw_d = _spec_get(effect, "cohens_d", None)
+            try:
+                d_value: Optional[float] = float(raw_d)
+            except (TypeError, ValueError):
+                d_value = None
+            rows.append({
+                "variable": variable, "level_high": level_high, "level_low": level_low, "cohens_d": d_value,
+                "matched": status in ("applied", "one_side_only"), "status": status,
+                "matched_variables": variables, "high_conditions": high_conditions, "low_conditions": low_conditions,
+            })
+        return {"specs": rows, "warnings": warns}
 
     def _check_generation_warnings(self, df: pd.DataFrame) -> List[str]:
         """Return any warnings about the generated data quality."""
         warnings: List[str] = []
+        # v1.2.9.1: an expected effect that reached no variable or condition must not go missing silently
+        warnings.extend(self._effect_spec_diagnostics()["warnings"])
+        warnings.extend(getattr(self, "_effect_build_errors", []) or [])
         if "CONDITION" in df.columns and len(self.conditions) >= 2:
             cell_counts = df["CONDITION"].value_counts()
             min_cell = int(cell_counts.min()) if len(cell_counts) > 0 else 0
@@ -14549,7 +15405,11 @@ class EnhancedSimulationEngine:
                         scale_report["columns_missing"].append(col_name)
                         continue
                     scale_report["columns_found"].append(col_name)
-                    col_values = df[col_name].tolist()
+                    # v1.2.9.1: missing cells are NaN; min/max/mean over them gave NaN, which
+                    # Metadata.json wrote as the invalid JSON token "NaN" (49 of 150 designs).
+                    col_values = df[col_name].dropna().tolist()
+                    if not col_values:
+                        continue
                     all_values.extend(col_values)
                     col_min = min(col_values)
                     col_max = max(col_values)
@@ -14565,8 +15425,10 @@ class EnhancedSimulationEngine:
                 expected_range = spec_points - 1
                 utilization = (observed_range / expected_range * 100) if expected_range > 0 else 0
                 scale_report["range_utilization_pct"] = round(utilization, 1)
-                scale_report["observed_min"] = min(all_values)
-                scale_report["observed_max"] = max(all_values)
+                _obs_min, _obs_max = min(all_values), max(all_values)
+                # columns holding missing cells are float typed: keep whole numbers whole, as before
+                scale_report["observed_min"] = int(_obs_min) if float(_obs_min).is_integer() else float(_obs_min)
+                scale_report["observed_max"] = int(_obs_max) if float(_obs_max).is_integer() else float(_obs_max)
                 scale_report["observed_mean"] = round(sum(all_values) / len(all_values), 2)
 
                 # Flag if range utilization is suspiciously low for large scales
@@ -14608,6 +15470,298 @@ class EnhancedSimulationEngine:
         if fixed:
             self._log(f"Reconciled {fixed} composite value(s) with their final item values")
         return fixed
+
+    def _defer_user_effect_for_scale(self, scale_name: str, scale_min: int, scale_max: int, has_reverse: bool) -> bool:
+        """Whether this scale's user-specified effect is built into the finished item responses.
+
+        True for a scale that carries the cross-scale latent term (several scales in the design) and
+        has a user effect. Not for knowledge-base economic-game outcomes: their generator shifts a latent
+        quantile of the published outcome distribution (keeping its spikes at zero and at an even
+        split) and never receives the latent term, so the ordinary route is exact for them.
+        """
+        if scale_name not in getattr(self, "_latent_dv_names", ()) or scale_max <= scale_min:
+            return False
+        if not self._variable_has_user_spec(scale_name):
+            return False
+        if not has_reverse and (scale_max - scale_min) >= 10:
+            geometry = self._detect_scale_geometry(scale_min, scale_max, scale_name)
+            calibration = self._get_domain_response_calibration(scale_name, "")
+            if (calibration.get("_kb_dist") and not geometry["is_bipolar"]
+                    and calibration.get("_game_variant") not in ("dictator_taking", "dictator_third_party")):
+                return False
+        return True
+
+    def _apply_user_effect_to_scale(
+        self,
+        data: Dict[str, list],
+        scale_name: str,
+        item_cols: List[str],
+        reverse_items: Set[int],
+        scale_min: int,
+        scale_max: int,
+        conditions: "pd.Series",
+    ) -> Optional[Dict[str, Any]]:
+        """Build a user-specified effect into a finished scale, in units of its own within-condition SD.
+
+        Why: next to other scales every response carries the cross-scale latent term, which makes the
+        composite's SD about 3x as large as for a lone scale and lets floor and ceiling swallow part of a
+        tendency shift, so a shift calibrated for a lone scale produced only ~0.4 of the requested d (no
+        matter how many scales, or how related). The requested d is a statement about the composite's
+        SD, so the shift is applied to the generated responses and sized from that SD.
+
+        How: the scale was generated without any condition shift. The pooled within-condition SD of its
+        scored composite is measured; each condition's participants are then moved by their target
+        (+/- d/2 SDs for the two arms of a spec, 0 for a reference condition) with randomised rounding,
+        so answers stay integers and a fractional shift moves the mean by exactly that fraction.
+        Floor and ceiling swallow part of the move, so each condition's multiplier is re-aimed until
+        the composite MEAN moved by its target. Only that applied move is controlled, never the realised
+        gap between arms: the arm differences already present by chance in the generated data remain, so
+        the observed d keeps its ordinary sampling variability around the request.
+        Reverse-keyed items move against the item direction, except for respondents who failed to
+        reverse them (recorded while generating), who move with it: the attenuation that careless reverse
+        responding causes in real data is kept, exactly as for a lone scale.
+
+        Returns a small log row (also written to ``effect_sizes_applied``) or None when nothing was to
+        be done.
+        """
+        applied = getattr(self, "_applied_effects", None) or {}
+        targets: Dict[str, float] = {}
+        for (cond, var), info in applied.items():
+            if var != scale_name or info.get("source") != "user":
+                continue
+            unit = float(info.get("unit") or 0.0)
+            if unit > 0:
+                targets[str(cond)] = float(info.get("offset", 0.0)) / (2.0 * unit)
+        targets = {c: t for c, t in targets.items() if abs(t) > 1e-9}
+        if not targets:
+            return None                                      # nothing was requested for this scale
+
+        def skipped(reason: str) -> None:
+            """The requested effect cannot be built in: say so instead of returning clean data."""
+            self._effect_build_errors.append(f"The expected effect on '{scale_name}' was not applied: {reason}.")
+            return None
+
+        cols = [c for c in item_cols if c in data]
+        n = len(conditions)
+        if not cols or scale_max <= scale_min or any(len(data[c]) != n for c in cols):
+            return skipped("the item columns are missing or inconsistent")
+        if n < 2:
+            return skipped("fewer than two participants")
+        k = len(cols)
+        lo, hi = float(scale_min), float(scale_max)
+        flip = lo + hi
+        X = np.array([data[c] for c in cols], dtype=float).T
+        rev = np.array([(j + 1) in reverse_items for j in range(k)], dtype=bool)
+        sign = np.where(rev, -1.0, 1.0)                      # direction of an item in the scored composite
+        ok = np.ones((n, k), dtype=bool)
+        rec = getattr(self, "_reversal_ok_arr", None)
+        if rec is not None and rec[0] == scale_name and rec[1].shape == (n, k):
+            ok = rec[1]
+        move = np.ones((n, k))                                # raw-answer direction of a construct-direction shift
+        if rev.any():
+            move[:, rev] = np.where(ok[:, rev], -1.0, 1.0)
+
+        def composite(M: np.ndarray) -> np.ndarray:
+            return (M * sign + flip * rev).mean(axis=1)
+
+        cond_arr = np.asarray(conditions.to_numpy() if hasattr(conditions, "to_numpy") else conditions, dtype=object)
+        groups = {c: cond_arr == c for c in dict.fromkeys(cond_arr.tolist())}
+        arms = {c: groups[c] for c in targets if c in groups and groups[c].any()}
+        if not arms:
+            return skipped("no participant was assigned to a condition named in the effect")
+
+        def pooled_sd(comp: np.ndarray) -> float:
+            num = den = 0.0
+            for m in groups.values():
+                if m.sum() > 1:
+                    num += float(comp[m].var(ddof=1)) * (int(m.sum()) - 1)
+                    den += int(m.sum()) - 1
+            return float(np.sqrt(num / den)) if den > 0 and num > 0 else 0.0
+
+        comp0 = composite(X)
+        sd = pooled_sd(comp0)
+        if sd <= 0:
+            return skipped("the scale shows no variation within conditions")
+        shrink = {c: float((sign * move)[m].mean()) for c, m in arms.items()}   # reverse-item failures
+        u = np.random.RandomState((int(self.seed) + _stable_int_hash(f"{scale_name}|user_effect")) % (2**31)).random_sample((n, k))
+        mult = {c: 1.0 for c in arms}
+        result, moved, iterations = X, {}, 0
+        for iterations in range(1, 15):
+            result = X.copy()
+            for c, m in arms.items():
+                result[m] = np.clip(np.floor(X[m] + move[m] * (mult[c] * targets[c] * sd) + u[m]), lo, hi)
+            comp = composite(result)
+            sd = pooled_sd(comp) or sd
+            moved = {c: float(comp[m].mean() - comp0[m].mean()) for c, m in arms.items()}
+            wanted = {c: targets[c] * sd * shrink[c] for c in arms}
+            if all(abs(moved[c] - wanted[c]) <= 0.004 * sd for c in arms):
+                break
+            for c in arms:
+                if moved[c] * wanted[c] > 1e-12:
+                    mult[c] = float(np.clip(mult[c] * wanted[c] / moved[c], 0.2, 8.0))
+                elif abs(wanted[c]) > 1e-12:
+                    mult[c] = float(np.clip(mult[c] * 2.0, 0.2, 8.0))
+        for j, col in enumerate(cols):
+            data[col] = result[:, j].astype(int).tolist()
+        log: Dict[str, Any] = {
+            "variable": scale_name, "method": "applied to the finished item responses",
+            "targets_sd": {c: round(t, 4) for c, t in targets.items()},
+            "within_condition_sd": round(float(sd), 4), "iterations": int(iterations),
+            "multiplier": {c: round(v, 3) for c, v in mult.items()},
+        }
+        if rev.any():
+            # share of the requested move that survives careless reverse-item answering, per condition
+            log["reverse_key_attenuation"] = {c: round(v, 3) for c, v in shrink.items()}
+        return log
+
+    def _reapply_user_effects_after_game_model(self, df: pd.DataFrame, socsim_meta: Dict[str, Any]) -> None:
+        """Restore the effect the user specified on a DV that the game model overwrote.
+
+        The behavioral-economics game model replaces the item columns of a game DV with its
+        own output, which knows nothing about the requested Cohen's d (observed d came out
+        near 0 for a requested 0.5). For every enriched DV that carries a user-specified
+        effect, move each condition's mean to the target pattern (+/- d/2 within-condition
+        SDs around the DV's overall mean, so two arms differ by d) and re-check after
+        rounding and clipping at the scale bounds. DVs without a requested effect keep the
+        game model's own condition differences.
+        """
+        enriched = {str(e.get("variable", "")) for e in (socsim_meta or {}).get("enriched_dvs", [])}
+        if not enriched or "CONDITION" not in df.columns:
+            return
+        applied = getattr(self, "_applied_effects", None) or {}
+        done: List[Dict[str, Any]] = []
+        for entry in getattr(self, "_scale_generation_log", None) or []:
+            all_cols = entry.get("columns_generated") or []
+            cols = [c for c in all_cols if c in df.columns]
+            if not cols:
+                continue
+            sc = next((x for x in self.scales if (str(x.get("name", "Scale")).strip() or "Scale") == entry.get("name")), {})
+            if not ({str(sc.get("variable_name", "")), str(sc.get("name", ""))} & enriched):
+                continue
+            prefix = all_cols[0].rsplit("_", 1)[0]
+            # per-condition target offset in units of "d" (arms sit at +/- d/2)
+            targets_d: Dict[str, float] = {}
+            for (cond, var), info in applied.items():
+                if var != prefix or info.get("source") != "user":
+                    continue
+                unit = float(info.get("unit") or 0.0)
+                if unit > 0:
+                    targets_d[cond] = float(info["offset"]) / (2.0 * unit)
+            if not any(abs(v) > 1e-9 for v in targets_d.values()):
+                continue
+            block = df[cols].apply(pd.to_numeric, errors="coerce")
+            comp = block.mean(axis=1)
+            groups = [g.dropna() for _, g in comp.groupby(df["CONDITION"])]
+            groups = [g for g in groups if len(g) > 1]
+            if not groups:
+                continue
+            pooled_var = sum(float(g.var()) * (len(g) - 1) for g in groups) / max(1, sum(len(g) - 1 for g in groups))
+            sd_w = float(np.sqrt(pooled_var)) if pooled_var > 0 else 0.0
+            if sd_w <= 0:
+                continue
+            lo, hi = float(entry["scale_min"]), float(entry["scale_max"])
+            grand = float(comp.mean())
+            masks = {cond: (df["CONDITION"] == cond).to_numpy() for cond in targets_d}
+            masks = {cond: m for cond, m in masks.items() if m.any()}
+            if not masks:
+                continue
+            # One uniform draw per participant, shared by the item columns, drives randomised
+            # rounding: the answers are integers, so a shift smaller than half a point would
+            # otherwise round away entirely (or jump a whole point), while randomised rounding
+            # moves the arm's mean by exactly the intended amount.
+            rng = np.random.RandomState((int(self.seed) + _stable_int_hash(prefix)) % (2**31))
+            u = rng.random_sample(len(df))
+            values = block.to_numpy(dtype=float)
+            groups_idx = [m for m in masks.values()]
+            shift = {cond: 0.0 for cond in masks}
+            sd_now = sd_w
+            result = values.copy()
+            for _ in range(8):  # clipping at the bounds eats part of the shift; re-aim
+                result = values.copy()
+                for cond, m in masks.items():
+                    result[m] = np.clip(np.floor(values[m] + shift[cond] + u[m][:, None]), lo, hi)
+                new_comp = np.nanmean(result, axis=1)
+                gaps = {}
+                for cond, m in masks.items():
+                    gaps[cond] = (grand + targets_d[cond] * sd_now) - float(np.nanmean(new_comp[m]))
+                var_parts = [(float(np.nanvar(new_comp[m], ddof=1)), int(m.sum()) - 1) for m in groups_idx if m.sum() > 1]
+                if var_parts:
+                    sd_now = float(np.sqrt(sum(v * k for v, k in var_parts) / max(1, sum(k for _, k in var_parts)))) or sd_now
+                if max(abs(g) for g in gaps.values()) < 0.01 * max(sd_now, 1e-9):
+                    break
+                for cond in masks:
+                    shift[cond] += gaps[cond]
+            for cond, m in masks.items():
+                shifted = pd.DataFrame(result[m], index=df.index[m], columns=cols)
+                df.loc[m, cols] = shifted if shifted.isna().any().any() else shifted.astype(int)
+            done.append({"variable": prefix, "conditions": {c: round(float(v), 3) for c, v in targets_d.items()}})
+        if done:
+            socsim_meta["user_effects_reapplied"] = done
+            self._log(f"SocSim: re-applied user-specified effects to {len(done)} game DV(s)")
+
+    def _build_effects_applied(self, observed_effects: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Describe, per DV and pair of conditions, the effect that was built into the data.
+
+        ``source`` is "user" (an effect you specified; calibrated so the observed Cohen's d on
+        the scale mean lands near ``intended_d``), "inferred" (a heuristic difference derived
+        from the condition names; NOT calibrated, so no intended d is given) or "none"
+        (inferred effects switched off). ``observed_d`` is the effect actually present in
+        this sample.
+        """
+        import itertools
+
+        applied = getattr(self, "_applied_effects", {}) or {}
+        by_var: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        for (cond, var), info in applied.items():
+            by_var.setdefault(var, {})[cond] = info
+        observed_by_key = {}
+        for o in observed_effects or []:
+            observed_by_key[(o.get("variable"), o.get("condition_1"), o.get("condition_2"))] = o.get("cohens_d")
+        rows: List[Dict[str, Any]] = []
+        for var, per_cond in by_var.items():
+            conds = [c for c in self.conditions if c in per_cond]
+            pairs = list(itertools.combinations(conds, 2))
+            if len(pairs) > 15:
+                pairs = [(conds[0], c) for c in conds[1:]]
+            for c1, c2 in pairs:
+                i1, i2 = per_cond[c1], per_cond[c2]
+                sources = {i1["source"], i2["source"]}
+                if sources == {"user"}:
+                    source = "user"
+                elif sources == {"none"}:
+                    source = "none"
+                elif sources <= {"inferred", "none"}:
+                    source = "inferred"
+                else:
+                    source = "mixed"
+                # the two arms of a requested effect sit at +/- d * unit, so their gap is
+                # 2 * d * unit in normalised-shift units
+                unit = float(i1.get("unit") or i2.get("unit") or 0.0)
+                intended = (i1["offset"] - i2["offset"]) / (2.0 * unit) if source in ("user", "none") and unit > 0 else None
+                observed = None
+                for col in (f"{var}_mean", f"{var}_1"):  # single-item scales have no mean column
+                    observed = observed_by_key.get((col, c1, c2))
+                    if observed is None:
+                        reverse = observed_by_key.get((col, c2, c1))
+                        observed = -reverse if reverse is not None else None
+                    if observed is not None:
+                        break
+                rows.append({
+                    "variable": var, "condition_1": c1, "condition_2": c2, "source": source,
+                    "intended_d": None if intended is None else round(float(intended), 3),
+                    "observed_d": None if observed is None else round(float(observed), 3),
+                })
+        return {
+            "inferred_effects_enabled": bool(getattr(self, "auto_effects", True)),
+            "contrasts": rows,
+            # v1.2.9.1: one entry per effect you specified: did it reach a variable and a condition?
+            "specs": self._effect_spec_diagnostics()["specs"],
+            # scales whose effect was built into the finished item responses (several scales in the design)
+            "applied_after_generation": list(getattr(self, "_deferred_effect_log", []) or []),
+            "note": ("Each contrast is condition_1 minus condition_2, in the order of the conditions. "
+                     "intended_d is given only for effects you specified. Inferred effects are a "
+                     "heuristic read of the condition names and are not calibrated to a target d."),
+        }
 
     def _compute_observed_effect_sizes(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
         """
@@ -14935,6 +16089,7 @@ class EnhancedSimulationEngine:
         """
         cols = set(df.columns) if df is not None and hasattr(df, "columns") else None
         out: List[Dict[str, Any]] = []
+        _skipped: List[str] = []
         _log = list(getattr(self, "_scale_generation_log", None) or [])
         _used: Set[int] = set()
         for scale in self.scales:
@@ -14974,9 +16129,22 @@ class EnhancedSimulationEngine:
             _sfx = "_r" if lowercase else "_R"
             _rev_cols = {f"{name}_{r}" for r in rev}
             composite_items = [(f"{it}{_sfx}" if it in _rev_cols else it) for it in items]
-            out.append({"raw": raw, "name": name, "items": items, "reverse": rev,
+            if not (_script_name_ok(name) and all(_script_name_ok(it) for it in items)):
+                # Names with quotes, brackets, spaces or line breaks cannot be written into code safely.
+                _skipped.append(_script_text(raw)[:60])
+                continue
+            out.append({"raw": _script_text(raw), "name": name, "items": items, "reverse": rev,
                         "points": points, "flip": flip, "composite_items": composite_items})
+        self._export_skipped_scales = _skipped
         return out
+
+    def _export_skipped_note(self, prefix: str, suffix: str = "") -> List[str]:
+        """Comment lines naming scales left out of an exported script because their names are unsafe in code."""
+        skipped = list(getattr(self, "_export_skipped_scales", None) or [])
+        if not skipped:
+            return []
+        names = ", ".join(skipped[:5]) + (" ..." if len(skipped) > 5 else "")
+        return [f"{prefix} Not scripted (the name has characters that cannot be written safely into code): {names}{suffix}", ""]
 
     def _export_has_gender(self, df: Optional[pd.DataFrame]) -> bool:
         if df is not None and hasattr(df, "columns"):
@@ -14991,16 +16159,16 @@ class EnhancedSimulationEngine:
         joined on ResponseId for the optional exclusion step.
         """
         def _r_quote(x: str) -> str:
-            x = str(x).replace("\\", "\\\\").replace('"', '\\"')
+            x = _script_text(x).replace("\\", "\\\\").replace('"', '\\"')
             return f'"{x}"'
 
         condition_levels = ", ".join([_r_quote(c) for c in self.conditions])
 
         lines: List[str] = [
             "# ============================================================",
-            f"# R Data Preparation Script - {self.study_title}",
+            f"# R Data Preparation Script - {_script_text(self.study_title)}",
             f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"# Run ID: {self.run_id}",
+            f"# Run ID: {_script_text(self.run_id)}",
             "# ============================================================",
             "",
             "# Load packages",
@@ -15036,6 +16204,7 @@ class EnhancedSimulationEngine:
             item_list = ", ".join([f"data${item}" for item in sc["composite_items"]])
             lines.append(f"data${sc['name']}_composite <- rowMeans(cbind({item_list}), na.rm = TRUE)")
             lines.append("")
+        lines.extend(self._export_skipped_note("#"))
 
         lines.extend(
             [
@@ -15067,16 +16236,16 @@ class EnhancedSimulationEngine:
         merged on ResponseId for the optional exclusion step.
         """
         def _py_quote(x: str) -> str:
-            x = str(x).replace("\\", "\\\\").replace("'", "\\'")
+            x = _script_text(x).replace("\\", "\\\\").replace("'", "\\'")
             return f"'{x}'"
 
         condition_levels = ", ".join([_py_quote(c) for c in self.conditions])
 
         lines: List[str] = [
             "# ============================================================",
-            f"# Python Data Preparation Script - {self.study_title}",
+            f"# Python Data Preparation Script - {_script_text(self.study_title)}",
             f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"# Run ID: {self.run_id}",
+            f"# Run ID: {_script_text(self.run_id)}",
             "# ============================================================",
             "",
             "import os",
@@ -15112,6 +16281,7 @@ class EnhancedSimulationEngine:
             item_list = ", ".join([f"'{item}'" for item in sc["composite_items"]])
             lines.append(f"data['{sc['name']}_composite'] = data[[{item_list}]].mean(axis=1)")
             lines.append("")
+        lines.extend(self._export_skipped_note("#"))
 
         lines.extend([
             "# Optional exclusion step",
@@ -15142,16 +16312,16 @@ class EnhancedSimulationEngine:
         joined on ResponseId for the optional exclusion step.
         """
         def _jl_quote(x: str) -> str:
-            x = str(x).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
+            x = _script_text(x).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
             return f'"{x}"'
 
         condition_levels = ", ".join([_jl_quote(c) for c in self.conditions])
 
         lines: List[str] = [
             "# ============================================================",
-            f"# Julia Data Preparation Script - {self.study_title}",
+            f"# Julia Data Preparation Script - {_script_text(self.study_title)}",
             f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"# Run ID: {self.run_id}",
+            f"# Run ID: {_script_text(self.run_id)}",
             "# ============================================================",
             "",
             "using CSV",
@@ -15191,6 +16361,7 @@ class EnhancedSimulationEngine:
                 f"mean(skipmissing(collect(r))) for r in eachrow(data[:, [{item_syms}]])]"
             )
             lines.append("")
+        lines.extend(self._export_skipped_note("#"))
 
         lines.extend([
             "# Optional exclusion step",
@@ -15225,9 +16396,9 @@ class EnhancedSimulationEngine:
         """
         lines: List[str] = [
             "* ============================================================.",
-            f"* SPSS Data Preparation Syntax - {self.study_title}.",
+            f"* SPSS Data Preparation Syntax - {_script_text(self.study_title)}.",
             f"* Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.",
-            f"* Run ID: {self.run_id}.",
+            f"* Run ID: {_script_text(self.run_id)}.",
             "* ============================================================.",
             "",
             "* Load the data first using:",
@@ -15260,6 +16431,7 @@ class EnhancedSimulationEngine:
             lines.append(f"COMPUTE {sc['name']}_composite = MEAN({' '.join(sc['composite_items'])}).")
             lines.append("EXECUTE.")
             lines.append("")
+        lines.extend(self._export_skipped_note("*", "."))
 
         lines.extend([
             "* Optional exclusion step.",
@@ -15297,14 +16469,15 @@ class EnhancedSimulationEngine:
         exclusion step.
         """
         def _stata_quote(x: str) -> str:
-            x = str(x).replace('"', "'")
+            # Stata expands `macros' and $globals inside double quotes, so neither may survive in a label
+            x = _script_text(x).replace('"', "'").replace("`", "'").replace("$", "")
             return f'"{x}"'
 
         lines: List[str] = [
             "// ============================================================",
-            f"// Stata Data Preparation Do-File - {self.study_title}",
+            f"// Stata Data Preparation Do-File - {_script_text(self.study_title)}",
             f"// Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"// Run ID: {self.run_id}",
+            f"// Run ID: {_script_text(self.run_id)}",
             "// ============================================================",
             "",
             "// Load the data (Qualtrics-style export; one header row)",
@@ -15339,6 +16512,7 @@ class EnhancedSimulationEngine:
             lines.append(f"// Create {sc['raw']} composite from the item columns")
             lines.append(f"egen {sc['name']}_composite = rowmean({' '.join(sc['composite_items'])})")
             lines.append("")
+        lines.extend(self._export_skipped_note("//"))
 
         lines.extend([
             "// Optional exclusion step",

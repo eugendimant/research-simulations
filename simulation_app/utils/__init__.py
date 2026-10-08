@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.3.0.3 - Two findings from review. A key belonging to a provider this app dropped (Cerebras, Mistral AI) is now refused rather than falling through to the "long key means Groq" default, which would have sent the user's credential to a vendor it was never issued for. And published construct norms gain an explicit scale_min: rescaling by a ratio of maxima had no notion of where a scale starts, so every zero-based instrument - a forced-choice proportion like the NPI, a 0-3 per-item mean like the PHQ-9 - landed below the target scale's own minimum and dragged its calibration to the floor. Twenty-one entries are marked zero-based and the rescale now preserves position within the range.
+Version: 1.3.0.4 - Reliable, observable instructor email (split delivery, retries, delivery log, admin tab); exact, honest instructor analysis; the survey's own DVs on the Design page; requested effect sizes that hold next to other scales; hardened HTML, exported scripts and QSF collection (see docs/CHANGELOG.md).
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.3.0.3"
+__version__ = "1.3.0.4"
 
 
 # =============================================================================
@@ -113,7 +113,11 @@ def detect_oe_columns(df, known_oe_names=None):
         _names = set(known_oe_names) if not isinstance(known_oe_names, set) else known_oe_names
         _names.discard("")
         if _names:
-            return [col for col in df.columns if col in _names]
+            # the protected-column guards also apply here: an open-ended question that happens to be
+            # named "Gender"/"CONDITION"/"Age" must never make the engine treat that SYSTEM column as text
+            return [col for col in df.columns
+                    if col in _names and col not in _PROTECTED_COLUMNS
+                    and not any(str(col).startswith(p) for p in _PROTECTED_PREFIXES)]
 
     # Fallback: heuristic detection with strict safety guards
     oe_cols = []

@@ -28,6 +28,11 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 logger = logging.getLogger(__name__)
 
 try:
+    from .text_cleanup import truncate_to_sentences
+except ImportError:  # imported as a top-level module (scripts, some test layouts)
+    from text_cleanup import truncate_to_sentences  # type: ignore[no-redef]
+
+try:
     import pandas as pd
 
     HAS_PANDAS = True
@@ -118,11 +123,15 @@ class HBSValidator:
     # ------------------------------------------------------------------
 
     def __init__(self, benchmarks: Optional[Dict[str, Dict[str, Any]]] = None,
-                 seed: Optional[int] = None) -> None:
+                 seed: Optional[int] = None,
+                 protected_columns: Optional[Any] = None) -> None:
         """Initialise the validator, optionally overriding default benchmarks.
 
         Args:
             benchmarks: Optional dict to merge with / override ``BENCHMARKS``.
+            protected_columns: Optional names of columns that hold structured answers (ages,
+                IDs, ZIP codes, counts) and must never be treated as free text. v1.2.9.1: the
+                length/uniqueness corrections used to append filler words to such cells.
             seed: Optional RNG seed. v1.2.8.4: the validator's perturbations now use
                 a PER-INSTANCE ``random.Random`` instead of the process-global
                 ``random`` module, so the engine no longer has to seed the global
@@ -131,6 +140,7 @@ class HBSValidator:
                 zero cross-session interference (Codex P2: de-serialize multi-user runs).
         """
         self._rng = random.Random(seed)
+        self._protected_columns = {str(c) for c in (protected_columns or ())}
         self._benchmarks = dict(self.BENCHMARKS)
         if benchmarks:
             for key, val in benchmarks.items():
@@ -724,21 +734,25 @@ class HBSValidator:
         return df
 
     def _correct_oe_uniqueness(self, df: Any) -> Any:
-        """Append random filler words to duplicate OE responses."""
+        """Make duplicate OE responses distinct by adding a short natural tag to the end.
+
+        v1.2.9.1: tags are comma-separated and chosen until the result is unique across the
+        column. Earlier versions appended bare fillers ("...fine I mean.") and, for a third
+        duplicate, a literal counter ("honestly (2).") that no participant would type.
+        """
         oe_cols = self._find_oe_columns(df)
         if not oe_cols:
             return df
 
-        _filler_phrases = [
-            " honestly", " I think", " in my opinion", " overall",
-            " personally", " to be fair", " basically", " I mean",
-            " you know", " I guess", " kind of", " really",
-            " for the most part", " in general", " more or less",
+        _tags = [
+            ", honestly", ", I think", ", in my opinion", ", overall", ", personally",
+            ", to be fair", ", basically", ", I guess", ", for the most part", ", in general",
+            ", more or less", ", at least for me",
         ]
 
         for col in oe_cols:
             n_rows = self._nrows(df)
-            seen: Dict[str, int] = {}
+            seen: set = set()
             for row_idx in range(n_rows):
                 v = self._cell_value(df, row_idx, col)
                 if v is None:
@@ -748,19 +762,19 @@ class HBSValidator:
                     continue
 
                 normalised = text.lower()
-                if normalised in seen:
-                    # This is a duplicate — append filler to make unique
-                    filler = self._rng.choice(_filler_phrases)
-                    # Vary by adding count to avoid re-duplication
-                    count = seen[normalised]
-                    suffix = filler if count == 1 else f"{filler} ({count})"
-                    new_text = text.rstrip(".") + suffix.rstrip() + "."
-                    self._set_cell(df, row_idx, col, new_text)
-                    seen[normalised] = count + 1
-                else:
-                    seen[normalised] = 1
+                if normalised not in seen:
+                    seen.add(normalised)
+                    continue
 
-        logger.info("Corrected OE uniqueness by appending fillers to duplicates.")
+                base = text.rstrip(".!? ")
+                order = self._rng.sample(_tags, len(_tags))
+                candidates = [base + tag + "." for tag in order]
+                candidates += [base + a + b + "." for a in order[:4] for b in order[4:8]]
+                new_text = next((c for c in candidates if c.lower() not in seen), candidates[-1])
+                self._set_cell(df, row_idx, col, new_text)
+                seen.add(new_text.lower())
+
+        logger.info("Corrected OE uniqueness by appending short tags to duplicates.")
         return df
 
     def _correct_oe_length(self, df: Any) -> Any:
@@ -771,12 +785,13 @@ class HBSValidator:
 
         lo, hi = self._benchmarks["oe_responses"]["mean_words_range"]
 
+        # Sentiment-neutral on purpose: an extension must not contradict the rating the
+        # participant gave (v1.2.9.1: "mixed feelings" removed).
         _extension_phrases = [
             "I feel this way because of my personal experience.",
             "This is something I think about quite often.",
             "It really depends on the specific situation though.",
             "There are many factors that contribute to this.",
-            "I have mixed feelings about the whole thing.",
         ]
 
         for col in oe_cols:
@@ -806,9 +821,9 @@ class HBSValidator:
                 for row_idx, text in texts:
                     words = text.split()
                     if len(words) > hi:
-                        truncated = " ".join(words[:self._rng.randint(lo, hi)])
-                        if not truncated.endswith("."):
-                            truncated += "."
+                        # never below ~60% of the upper bound: cutting a long answer to 8 words
+                        # left only an opener or a one-liner
+                        truncated = truncate_to_sentences(text, self._rng.randint(max(lo, int(0.6 * hi)), hi))
                         self._set_cell(df, row_idx, col, truncated)
 
             elif mean_wc < lo:
@@ -847,7 +862,7 @@ class HBSValidator:
             import pandas as _pd
             if isinstance(df, _pd.DataFrame):
                 from utils import detect_oe_columns
-                return detect_oe_columns(df)
+                return [c for c in detect_oe_columns(df) if c not in self._protected_columns]
         except (ImportError, Exception):
             pass
 
@@ -896,8 +911,8 @@ class HBSValidator:
         _multi_item_bases = {b for b, c in _base_counts.items() if c >= 2}
 
         for col in columns:
-            # Skip protected columns
-            if col in self._PROTECTED_COL_PATTERNS:
+            # Skip protected columns (structured text boxes such as counts/ages are never Likert items)
+            if col in self._PROTECTED_COL_PATTERNS or col in self._protected_columns:
                 continue
             if any(col.startswith(p) for p in self._PROTECTED_COL_PREFIXES):
                 continue
@@ -919,9 +934,12 @@ class HBSValidator:
             min_v = min(values)
             max_v = max(values)
 
-            # Accept 1-5, 1-7, 1-9, 0-10 scales
+            # Accept 1-5, 1-7, 1-9, 0-10 scales. v1.2.9.1: items with fewer than five
+            # observed response options are skipped. On a binary/3-point item most people give
+            # the same answer to every item by chance, so "repairing" straight-liners there
+            # randomised genuine data.
             if min_v >= 0 and max_v <= 10 and max_v - min_v <= 9:
-                if len(set(int(v) for v in values)) >= 2:
+                if max_v - min_v >= 4 and len(set(int(v) for v in values)) >= 5:
                     scale_cols.append(col)
 
         return scale_cols

@@ -2,7 +2,7 @@
 
 **Behavioral Experiment Simulation Tool v1.0.8.0**
 
-**Proprietary Software** | Dr. Eugen Dimant
+**PolyForm Noncommercial License 1.0.0** | Dr. Eugen Dimant
 
 ---
 
@@ -333,4 +333,4 @@ Richard, F. D., Bond, C. F., & Stokes-Zoota, J. J. (2003). One hundred years of 
 
 ---
 
-*© 2026 Dr. Eugen Dimant. All rights reserved. Proprietary and confidential.*
+*© 2026 Dr. Eugen Dimant. Licensed under the PolyForm Noncommercial License 1.0.0 (see the LICENSE file).*

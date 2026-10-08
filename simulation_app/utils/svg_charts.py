@@ -18,6 +18,17 @@ def _escape_xml(text: str) -> str:
     return str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
 
 
+def _p_label(p_value: float) -> str:
+    """p-value annotation text: 'p < .001' for tiny values (never 'p = 0.0000'), XML-escaped."""
+    try:
+        p = float(p_value)
+    except (TypeError, ValueError):
+        return "p undefined"
+    if p != p:
+        return "p undefined"
+    return _escape_xml("p < .001" if p < 0.001 else f"p = {p:.4f}")
+
+
 def create_bar_chart_svg(
     data: Dict[str, Tuple[float, float]],
     title: str = "Comparison by Condition",
@@ -172,7 +183,7 @@ def create_bar_chart_svg(
         annotation_parts = []
         if p_value is not None:
             sig = "***" if p_value < 0.001 else ("**" if p_value < 0.01 else ("*" if p_value < 0.05 else "ns"))
-            annotation_parts.append(f"p = {p_value:.4f} {sig}")
+            annotation_parts.append(f"{_p_label(p_value)} {sig}")
         if effect_size is not None:
             annotation_parts.append(f"d = {effect_size:.2f}")
 
@@ -672,7 +683,7 @@ def create_effect_size_svg(
         sig = "***" if p_value < 0.001 else ("**" if p_value < 0.01 else ("*" if p_value < 0.05 else "ns"))
         sig_color = "#2ecc71" if p_value < 0.05 else "#e74c3c"
         svg_parts.append(
-            f'<text x="{width/2}" y="{height - 15}" text-anchor="middle" font-size="12" fill="{sig_color}">p = {p_value:.4f} {sig}</text>'
+            f'<text x="{width/2}" y="{height - 15}" text-anchor="middle" font-size="12" fill="{sig_color}">{_p_label(p_value)} {sig}</text>'
         )
 
     svg_parts.append('</svg>')

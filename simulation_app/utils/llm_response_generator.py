@@ -35,6 +35,17 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    from .text_cleanup import (
+        apply_contractions, drop_one_optional_word, finalize_generated_text, has_opener,
+        insert_filler, lower_first, swap_one_word, split_sentences, is_probably_non_english,
+    )
+except ImportError:  # imported as a top-level module (scripts, some test layouts)
+    from text_cleanup import (  # type: ignore[no-redef]
+        apply_contractions, drop_one_optional_word, finalize_generated_text, has_opener,
+        insert_filler, lower_first, swap_one_word, split_sentences, is_probably_non_english,
+    )
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -429,10 +440,59 @@ _CASUAL_STARTERS = [
     "So yeah ", "Lol ", "Fr ", "Lowkey ",
 ]
 
-_FORMAL_CONNECTORS = [
-    "I would also add that ", "On top of that, ",
-    "It's also true that ", "That said, ",
-    "And I should mention, ", "Along those lines, ",
+# v1.2.9.1: openers and fillers are only added where they read naturally (see
+# utils/text_cleanup.py). The former "connectors" ("On top of that,") made no sense as the
+# first words of an answer.
+_FORMAL_OPENERS = [
+    "Overall,", "In general,", "On balance,", "Generally,", "In my view,", "From my perspective,",
+]
+_CASUAL_OPENERS = ["Honestly,", "Basically,", "Frankly,", "Actually,"]
+_MID_FORMALITY_STARTERS = [
+    "I think ", "I feel like ", "In my view, ", "For me, ", "Personally, ", "I'd say ",
+]
+_PREPOSITION_ENDINGS = frozenset({"to", "of", "for", "with", "at", "in", "on", "by", "about", "from", "into"})
+_CASUAL_TAGS = [", I guess", ", honestly", ", tbh", ", to be honest", ", for what it's worth"]
+_FORMAL_TAGS = [", in my view", ", from my perspective", ", at least for me"]
+_CASUAL_ELABORATIONS = [
+    "I could go on but yeah.",
+    "theres more to it but whatever.",
+    "anyway thats my take.",
+    "idk I could keep going lol.",
+    "but yeah thats basically it.",
+    "so yeah. thats where im at.",
+    "honestly could write way more about this.",
+    "its complicated tho.",
+    "thats the gist of it anyway.",
+    "like I said its a lot to unpack.",
+    "but ill leave it at that.",
+]
+_FORMAL_ELABORATIONS = [
+    "There is more I could say, but that is my main point.",
+    "I could elaborate further, but this captures my position.",
+    "That is the core of my view.",
+    "There are other considerations, but this is what matters most to me.",
+    "That summarizes where I stand.",
+]
+# A sentence that starts with one of these leans on the sentence before it, so it must not be
+# moved or have its neighbour removed.
+_DEPENDENT_SENTENCE_START = re.compile(
+    r"^(?:and|but|so|also|plus|because|which|then|still|however|though|yet|that|this|it|its|"
+    r"they|he|she|these|those|there|overall|anyway|honestly|basically|in short|in general|"
+    r"on top of that|first|second|third|finally|lastly|next|moreover|additionally|furthermore|therefore|thus|"
+    r"instead|otherwise|nevertheless|nonetheless|meanwhile|similarly|likewise|for example|for instance|"
+    r"in addition|as a result|in conclusion|on the other hand|on the one hand|such|the latter|the former)\b", re.IGNORECASE)
+_GOING_TO_NOUN = (r"(?!\s+(?:the|a|an|my|our|your|their|his|her|this|that|these|those|school|"
+                  r"work|class|bed|town)\b)")
+_REGISTER_PHRASE_SWAPS_CASUAL = [
+    (re.compile(r"\bHowever,\s+"), "But "),
+    (re.compile(r"\bTherefore,\s+"), "So "),
+    (re.compile(r"\bperhaps\b"), "maybe"),
+    (re.compile(r"\ba lot of\b"), "tons of"),
+    (re.compile(r"\bkind of\b"), "kinda"),
+    (re.compile(r"\bsort of\b"), "sorta"),
+    (re.compile(r"\bgoing to\b(?=\s+\w)" + _GOING_TO_NOUN), "gonna"),
+    (re.compile(r"\bwant to\b(?=\s+\w)"), "wanna"),
+    (re.compile(r"(?<!n't )(?<!not )\bneed to\b(?=\s+\w)"), "gotta"),
 ]
 
 _TYPO_MAP = {
@@ -3374,21 +3434,25 @@ class LLMResponseGenerator:
         rng: random.Random,
         behavioral_profile: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Apply deep persona-driven variation to a pool response.
+        """Apply persona-driven variation to a pool response.
 
-        Combines multiple transformation layers so even the same base text
-        produces different outputs for different participants.  Layers fire
-        at ALL persona levels — not just extremes — to guarantee uniqueness.
+        Several layers combine so the same base text yields different outputs for different
+        participants. Every layer edits only where the edit is grammatical (see
+        ``utils/text_cleanup.py``): earlier versions dropped, swapped and inserted words at
+        random positions, which produced damage such as "moral felt calls surprisingly human
+        clearly" and "I wanna to".
 
-        v1.0.5.6: behavioral_profile modulates every layer:
+        behavioral_profile modulates the layers:
         - straight_lined → drastically truncate, skip elaboration, add disengagement
         - strongly_positive/negative → amplify intensity language, add emphasis
         - high extremity → replace hedging with absolutes
         - high social_desirability → add qualifying hedges
-        - low attention → inject typos more aggressively, skip complex transforms
+        - low attention → inject typos more aggressively
         """
         if not text or len(text) < 5:
             return text
+        if is_probably_non_english(text):   # English openers/tags/elaborations must not be added to other languages
+            return text.strip()
 
         # --- Extract behavioral signals for layer modulation ---
         _straight_lined = False
@@ -3397,7 +3461,6 @@ class LLMResponseGenerator:
         _trait_extremity = 0.5
         _trait_sd = 0.5
         _trait_attention = 0.5
-        _trait_consistency = 0.5
         if behavioral_profile:
             _straight_lined = behavioral_profile.get('straight_lined', False)
             _response_pattern = behavioral_profile.get('response_pattern', 'neutral')
@@ -3406,114 +3469,72 @@ class LLMResponseGenerator:
             _trait_extremity = tp.get('extremity', 0.5)
             _trait_sd = tp.get('social_desirability', 0.5)
             _trait_attention = tp.get('attention', 0.5)
-            _trait_consistency = tp.get('consistency', 0.5)
+
+        _formal = formality >= 0.5
 
         # --- BEHAVIORAL OVERRIDE: straight-liners get minimal text ---
         if _straight_lined:
-            # Straight-liners produce very short, disengaged text
-            first_sent = re.split(r'(?<=[.!?])\s+', text)[0]
-            # Cap at 8 words
-            _words = first_sent.split()[:8]
-            _truncated = " ".join(_words)
-            # 60% chance: prepend disengagement marker
+            first_sent = split_sentences(text)[0]
+            _truncated = " ".join(first_sent.split()[:8])
             if rng.random() < 0.6:
                 _disengage = [
                     "idk.", "fine.", "meh.", "whatever.", "sure.",
                     "ok.", "yeah.", "eh.", "I guess.", "not much to say.",
                 ]
                 _truncated = rng.choice(_disengage) + " " + _truncated
-            # Lowercase everything for careless feel
-            return _truncated.lower().strip()
+            return finalize_generated_text(_truncated.lower().strip())
 
-        sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = split_sentences(text)
 
-        # --- Layer 0: ALWAYS-FIRE multi-axis micro-variation ---
-        # Uses multiple independent rng draws to create a combinatorial
-        # explosion of variations.  Even with 1 base text and 500 identical
-        # personas, each participant gets a unique combination.
+        # --- Layer 0: micro-variation (grammar-safe) ---
         words = text.split()
         if len(words) > 5:
-            # Axis 1: drop a word (50% chance)
-            if rng.random() < 0.5 and len(words) > 8:
-                drop_idx = rng.randint(2, len(words) - 3)
-                words.pop(drop_idx)
-
-            # Axis 2: insert a transition (40% chance, independent)
-            if rng.random() < 0.4 and len(words) > 4:
-                transitions = [
-                    "also", "though", "still", "however", "but",
-                    "actually", "definitely", "probably", "maybe", "certainly",
-                    "really", "just", "often", "sometimes", "perhaps",
-                    "clearly", "indeed", "typically", "generally", "honestly",
-                ]
-                insert_pos = rng.randint(2, max(2, len(words) - 2))
-                words.insert(insert_pos, rng.choice(transitions))
-
-            # Axis 3: swap two adjacent words (30% chance, independent)
-            if rng.random() < 0.30 and len(words) > 6:
-                swap_idx = rng.randint(1, len(words) - 3)
-                words[swap_idx], words[swap_idx + 1] = words[swap_idx + 1], words[swap_idx]
-
-            # Axis 4: replace a common word with an alternative (40% chance)
-            if rng.random() < 0.40:
-                replacements = {
-                    "good": ["nice", "great", "solid", "fine", "decent", "alright"],
-                    "bad": ["not great", "rough", "off", "meh", "crappy", "weak"],
-                    "like": ["enjoy", "dig", "prefer", "am into"],
-                    "think": ["feel", "believe", "reckon", "figure", "guess"],
-                    "really": ["honestly", "seriously", "legit", "for real"],
-                    "very": ["quite", "pretty", "super", "so", "real"],
-                    "was": ["felt", "seemed", "came across as"],
-                    "interesting": ["cool", "wild", "neat", "weird", "surprising"],
-                    "important": ["big", "huge", "key", "a big deal"],
-                    "different": ["not the same", "way off", "another thing entirely"],
-                    "understand": ["get", "see", "follow"],
-                    "difficult": ["hard", "tough", "rough", "tricky"],
-                    "agree": ["go along with", "buy that", "am on board with"],
-                    "disagree": ["don't buy that", "can't get behind", "push back on"],
-                    "concerned": ["worried", "uneasy", "not comfortable"],
-                    "positive": ["good", "solid", "encouraging"],
-                    "negative": ["not good", "rough", "bad"],
-                    "experience": ["thing", "situation", "deal"],
-                    "opinion": ["take", "view", "feeling"],
-                    "believe": ["feel", "think", "figure", "reckon"],
-                    "definitely": ["for sure", "absolutely", "100%", "no doubt"],
-                    "probably": ["I guess", "most likely", "I bet"],
-                    "however": ["but", "though", "still"],
-                    "because": ["cause", "since", "bc", "cuz"],
-                    "although": ["even though", "but", "despite that"],
-                }
-                for i, w in enumerate(words):
-                    clean_w = w.lower().strip(".,!?;:")
-                    if clean_w in replacements:
-                        trail = w[len(clean_w):] if len(w) > len(clean_w) else ""
-                        new_word = rng.choice(replacements[clean_w])
-                        words[i] = new_word + trail
-                        break  # Only one replacement per pass
-
+            # Drop one optional intensifier ("really", "just", ...). Skipped for intense raters,
+            # whose wording should stay emphatic.
+            if rng.random() < 0.5 and len(words) > 8 and _intensity <= 0.6:
+                drop_one_optional_word(words, rng)
+            # Swap one word for a synonym that fits its context.
+            if rng.random() < 0.55:
+                swap_one_word(words, rng, _formal)
             text = " ".join(words)
-            sentences = re.split(r'(?<=[.!?])\s+', text)
+            # Open with a discourse marker (never stacked on an existing opener).
+            if rng.random() < 0.35 and not has_opener(text):
+                _openers = _FORMAL_OPENERS if _formal else _CASUAL_OPENERS
+                text = rng.choice(_openers) + " " + lower_first(text)
+            # Close with a short tag ("..., I guess.") on the final sentence.
+            if (rng.random() < 0.25 and text.rstrip().endswith((".", "!")) and len(text.split()) > 6
+                    and not re.search(r"(?:\.\.\.|[!?]{2,}|\b(?:etc|vs|e\.g|i\.e|Dr|Mr|Mrs|Ms|Prof|U\.S|a\.m|p\.m)\.)\s*$", text)):
+                _tag = rng.choice(_FORMAL_TAGS if _formal else _CASUAL_TAGS)
+                _last = re.sub(r"[^\w']", "", text.split()[-1]).lower()
+                if _last not in _PREPOSITION_ENDINGS and _tag.strip(", ") not in text[-40:]:
+                    text = text.rstrip()[:-1] + _tag + text.rstrip()[-1]
+            sentences = split_sentences(text)
 
-        # --- Layer 1: Sentence-level restructuring (ALL personas) ---
+        # --- Layer 1: Sentence-level restructuring (only sentences that stand alone) ---
+        def _stands_alone(sent: str) -> bool:
+            return not _DEPENDENT_SENTENCE_START.match(sent.strip())
+
         if len(sentences) > 2:
             r = rng.random()
             if r < 0.30:
-                # Shuffle middle sentences
                 middle = sentences[1:-1]
-                rng.shuffle(middle)
-                sentences = [sentences[0]] + middle + [sentences[-1]]
+                if all(_stands_alone(s) for s in sentences[1:]):
+                    rng.shuffle(middle)
+                    sentences = [sentences[0]] + middle + [sentences[-1]]
             elif r < 0.45:
-                # Move last sentence to middle
-                last = sentences.pop()
-                insert_at = rng.randint(1, max(1, len(sentences) - 1))
-                sentences.insert(insert_at, last)
+                if _stands_alone(sentences[-1]):
+                    last = sentences.pop()
+                    insert_at = rng.randint(1, max(1, len(sentences) - 1))
+                    if _stands_alone(sentences[insert_at]):
+                        sentences.insert(insert_at, last)
+                    else:
+                        sentences.append(last)
             elif r < 0.55 and len(sentences) > 3:
-                # Drop a random middle sentence
                 drop_idx = rng.randint(1, len(sentences) - 2)
-                sentences.pop(drop_idx)
+                if _stands_alone(sentences[drop_idx + 1]):
+                    sentences.pop(drop_idx)
 
         # --- Layer 2: Verbosity control (behavioral-aware) ---
-        # v1.0.5.6: Strong intensity raters write more; low attention = less
         _effective_verbosity = verbosity
         if behavioral_profile:
             if _intensity > 0.7 and _response_pattern in ('strongly_positive', 'strongly_negative'):
@@ -3528,73 +3549,42 @@ class LLMResponseGenerator:
         elif _effective_verbosity < 0.5:
             sentences = sentences[:max(2, len(sentences) // 2)]
         elif _effective_verbosity > 0.7 and rng.random() < 0.45:
-            # v1.0.3.9: Elaborations that extend the thought without
-            # adding off-topic meta-commentary. These are deliberately
-            # neutral continuations that work with ANY topic.
-            elaborations = [
-                "I could go on but yeah.",
-                "theres more to it but whatever.",
-                "anyway thats my take.",
-                "idk I could keep going lol.",
-                "but yeah thats basically it.",
-                "so yeah. thats where im at.",
-                "honestly could write way more about this.",
-                "its complicated tho.",
-                "thats the gist of it anyway.",
-                "like I said its a lot to unpack.",
-                "but ill leave it at that.",
-            ]
-            sentences.append(rng.choice(elaborations))
+            # Neutral continuations that work with ANY topic, in the persona's register.
+            sentences.append(rng.choice(_FORMAL_ELABORATIONS if _formal else _CASUAL_ELABORATIONS))
 
         text = " ".join(sentences)
 
         # --- Layer 3: Formality adjustments ---
         if formality < 0.3:
-            if rng.random() < 0.55 and len(text) > 1:
-                if not any(text.startswith(s) for s in _CASUAL_STARTERS):
-                    text = rng.choice(_CASUAL_STARTERS) + text[0].lower() + text[1:]
+            if rng.random() < 0.55 and not has_opener(text):
+                text = rng.choice(_CASUAL_STARTERS) + lower_first(text)
             if rng.random() < 0.3 and len(text) > 40:
                 w = text.split()
-                if len(w) > 6:
-                    pos = rng.randint(3, len(w) - 3)
-                    w.insert(pos, rng.choice(_FILLER_INSERTIONS))
+                if len(w) > 6 and insert_filler(w, rng.choice(_FILLER_INSERTIONS), rng):
                     text = " ".join(w)
         elif formality < 0.6:
-            # Mid-formality: occasional hedging or connector
-            if rng.random() < 0.30 and len(text) > 1:
-                mid_starters = [
-                    "I think ", "I feel like ", "In my view, ",
-                    "For me, ", "Personally, ", "I'd say ",
-                ]
-                if not any(text.startswith(s) for s in mid_starters):
-                    text = rng.choice(mid_starters) + text[0].lower() + text[1:]
+            if rng.random() < 0.30 and not has_opener(text):
+                text = rng.choice(_MID_FORMALITY_STARTERS) + lower_first(text)
         else:
-            if rng.random() < 0.3 and len(text) > 1:
-                text = rng.choice(_FORMAL_CONNECTORS) + text[0].lower() + text[1:]
-            for contraction, expansion in [
-                ("don't", "do not"), ("can't", "cannot"), ("won't", "will not"),
-                ("I'm", "I am"), ("it's", "it is"), ("didn't", "did not"),
-                ("wasn't", "was not"), ("they're", "they are"),
-            ]:
-                if rng.random() < 0.6:
-                    text = text.replace(contraction, expansion)
+            if rng.random() < 0.3 and not has_opener(text):
+                text = rng.choice(_FORMAL_OPENERS) + " " + lower_first(text)
+            text = apply_contractions(text, rng, expand=True, prob=0.6)
+        if formality < 0.45:
+            text = apply_contractions(text, rng, expand=False, prob=0.5)
 
         # --- Layer 4: Engagement modulation ---
         if engagement < 0.2:
-            cur_sents = re.split(r'(?<=[.!?])\s+', text)
+            cur_sents = split_sentences(text)
             if len(cur_sents) > 1:
                 text = cur_sents[0]
             if rng.random() < 0.5:
                 text = rng.choice(["Idk. ", "Not sure. ", "Meh. ", ""]) + text
-        elif engagement < 0.4 and rng.random() < 0.4:
-            if len(text) > 1:
-                text = rng.choice(_HEDGING_PHRASES) + text[0].lower() + text[1:]
+        elif engagement < 0.4 and rng.random() < 0.4 and not has_opener(text):
+            text = rng.choice(_HEDGING_PHRASES) + lower_first(text)
 
-        # --- Layer 4b: Behavioral intensity amplification (v1.0.5.6) ---
+        # --- Layer 4b: Behavioral intensity amplification ---
         if behavioral_profile and _intensity > 0.6:
-            _strongly = _response_pattern in ('strongly_positive', 'strongly_negative')
             _is_neg = _response_pattern in ('negative', 'strongly_negative')
-            # High-intensity raters use emphatic language
             _amp_prob = 0.25 + (_intensity - 0.5) * 0.8  # 0.33 at 0.6, 0.65 at 0.9
             if rng.random() < _amp_prob:
                 if _is_neg:
@@ -3613,14 +3603,15 @@ class LLMResponseGenerator:
                         "this is exactly right.",
                         "couldn't agree more honestly.",
                     ]
-                # 50% prepend, 50% append
-                if rng.random() < 0.5:
-                    text = rng.choice(_emphatics) + " " + text
-                else:
-                    text = text.rstrip(".!? ") + ". " + rng.choice(_emphatics)
+                # Always AFTER the content ("... fair. 100% behind this."), so "this" has something
+                # to point at; as a prefix it read as a stray one-liner.
+                _emph = rng.choice(_emphatics)
+                if formality >= 0.5:
+                    _emph = _emph[:1].upper() + _emph[1:]     # a formal writer starts the sentence with a capital
+                text = text.rstrip(".!? ") + ". " + _emph
 
-        # --- Layer 4c: Social desirability hedging (v1.0.5.6) ---
-        if behavioral_profile and _trait_sd > 0.7 and rng.random() < 0.4:
+        # --- Layer 4c: Social desirability hedging ---
+        if behavioral_profile and _trait_sd > 0.7 and rng.random() < 0.4 and not has_opener(text):
             _hedges = [
                 "I could be wrong but ",
                 "I don't want to offend anyone but ",
@@ -3628,24 +3619,19 @@ class LLMResponseGenerator:
                 "this is just my perspective but ",
                 "I try to see both sides and ",
             ]
-            if len(text) > 1:
-                text = rng.choice(_hedges) + text[0].lower() + text[1:]
+            text = rng.choice(_hedges) + lower_first(text)
 
-        # --- Layer 4d: Extremity → absolute language (v1.0.5.6) ---
+        # --- Layer 4d: Extremity → absolute language ---
         if behavioral_profile and _trait_extremity > 0.7 and rng.random() < 0.5:
             _hedge_to_absolute = [
                 ("I think", "I know"), ("maybe", "definitely"),
-                ("somewhat", "completely"), ("kind of", "totally"),
-                ("probably", "absolutely"), ("might", "will"),
-                ("could be", "is"), ("I guess", "I'm sure"),
-                ("perhaps", "certainly"), ("it seems", "it clearly is"),
+                ("somewhat", "completely"), ("probably", "absolutely"),
+                ("might", "will"), ("I guess", "I'm sure"), ("perhaps", "certainly"),
             ]
-            _pair = rng.choice(_hedge_to_absolute)
-            if _pair[0] in text:
-                text = text.replace(_pair[0], _pair[1], 1)
+            _old, _new = rng.choice(_hedge_to_absolute)
+            text = re.sub(r"\b" + re.escape(_old) + r"\b", _new, text, count=1)
 
         # --- Layer 5: Typo injection for careless/casual personas ---
-        # v1.0.5.6: Low-attention personas get more typos
         _typo_prob = 0.25
         if behavioral_profile and _trait_attention < 0.3:
             _typo_prob = 0.50  # Double typo rate for inattentive respondents
@@ -3664,39 +3650,18 @@ class LLMResponseGenerator:
                     w[idx] = replacement + trail
                     text = " ".join(w)
 
-        # --- Layer 6: Synonym swaps (ALL personas, higher probability) ---
-        swaps = [
-            ("I think", "I feel"), ("I feel", "I think"),
-            ("really", "honestly"), ("very", "pretty"),
-            ("good", "decent"), ("bad", "rough"),
-            ("important", "a big deal"), ("interesting", "worth noting"),
-            ("a lot", "tons"), ("kind of", "sorta"),
-            ("because", "since"), ("but", "though"),
-            ("want", "wanna"), ("need", "gotta"),
-            ("seems", "looks"), ("shows", "tells me"),
-            ("maybe", "I guess"), ("definitely", "for sure"),
-            ("difficult", "hard"), ("easy", "simple"),
-            ("understand", "get"), ("agree", "am with you on"),
-            ("surprised", "caught off guard"), ("concerned", "worried"),
-            ("enjoy", "dig"), ("prefer", "lean toward"),
-            ("believe", "figure"), ("consider", "look at"),
-            ("However,", "But"), ("Therefore,", "So"),
-            ("certainly", "for sure"), ("perhaps", "maybe"),
-        ]
-        # Apply 1-3 random swaps
-        n_swaps = rng.randint(1, min(3, len(swaps)))
-        chosen_swaps = rng.sample(swaps, n_swaps)
-        for old_w, new_w in chosen_swaps:
-            if old_w in text:
-                text = text.replace(old_w, new_w, 1)
+        # --- Layer 6: Register-fixed phrase swaps (whole-word, context-checked) ---
+        if formality < 0.3:
+            _hits = [(pat, new) for pat, new in _REGISTER_PHRASE_SWAPS_CASUAL if pat.search(text)]
+            if _hits:
+                for pat, new in rng.sample(_hits, rng.randint(1, min(2, len(_hits)))):
+                    text = pat.sub(new, text, count=1)
 
-        # --- Layer 7: Punctuation variation ---
-        if rng.random() < 0.3:
-            if text.endswith("."):
-                endings = [".", "!", "...", ""]
-                text = text[:-1] + rng.choice(endings)
+        # --- Layer 7: Punctuation variation (casual writers only) ---
+        if formality < 0.5 and rng.random() < 0.3 and text.endswith("."):
+            text = text[:-1] + rng.choice([".", "!", "...", ""])
 
-        return text.strip()
+        return finalize_generated_text(text).strip()
 
     # ------------------------------------------------------------------
     # Connectivity check (used by UI to show status)

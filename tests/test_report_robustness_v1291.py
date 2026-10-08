@@ -1,0 +1,580 @@
+"""Robustness of the instructor-analysis reports (Markdown, HTML) and of how the app delivers them.
+
+Everything here builds small DataFrames/metadata directly (no engine run), so it is fast. The statistics
+tests run twice: with scipy and with the pure-numpy fallbacks the deployed app uses (scipy is not in
+requirements.txt), by switching the module's availability flags.
+"""
+import importlib.util
+import re
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+_APP_DIR = Path(__file__).resolve().parent.parent / "simulation_app"
+if str(_APP_DIR) not in sys.path:
+    sys.path.insert(0, str(_APP_DIR))
+
+import utils.instructor_report as ir  # noqa: E402
+from utils.instructor_report import ComprehensiveInstructorReport  # noqa: E402
+
+NAN_INF = re.compile(r"(?<![A-Za-z0-9_])(nan|NaN|inf|-inf|Infinity)(?![A-Za-z0-9_])")
+
+
+@pytest.fixture(params=["scipy", "numpy-fallback"])
+def stats_mode(request, monkeypatch):
+    """Run the test with scipy and with the numpy fallbacks."""
+    if request.param == "numpy-fallback":
+        monkeypatch.setattr(ir, "SCIPY_AVAILABLE", False)
+        monkeypatch.setattr(ir, "scipy_stats", None)
+    elif not ir.SCIPY_AVAILABLE:
+        pytest.skip("scipy is not installed")
+    return request.param
+
+
+def _text_of_html(markup: str) -> str:
+    """The visible text of a report (tags dropped), enough to scan for stray nan / inf."""
+    markup = re.sub(r"<style.*?</style>", " ", markup, flags=re.S)
+    return re.sub(r"<[^>]+>", " | ", markup)
+
+
+def _base_frame(n_per_condition: int = 30, conditions=("Control", "Treatment"), seed: int = 3) -> pd.DataFrame:
+    rng = np.random.RandomState(seed)
+    rows = []
+    for cond in conditions:
+        for _ in range(n_per_condition):
+            rows.append({
+                "PARTICIPANT_ID": len(rows) + 1, "CONDITION": cond, "Age": int(rng.randint(18, 70)),
+                "Gender": str(rng.choice(["Male", "Female"])), "Attention_Pass_Rate": 1.0,
+                "Completion_Time_Seconds": int(rng.randint(300, 900)), "Exclude_Recommended": 0,
+            })
+    return pd.DataFrame(rows)
+
+
+def _likert_items(df: pd.DataFrame, name: str, shift_by_condition=None, k: int = 3, seed: int = 5) -> list:
+    """Add k correlated 1-7 items named <name>_1..k; returns the column names."""
+    rng = np.random.RandomState(seed)
+    shift_by_condition = shift_by_condition or {}
+    base = rng.normal(0, 1.0, len(df))
+    cols = []
+    for i in range(1, k + 1):
+        col = f"{name}_{i}"
+        mu = 4.0 + df["CONDITION"].map(shift_by_condition).fillna(0.0).to_numpy()
+        df[col] = np.clip(np.round(mu + base + rng.normal(0, 0.8, len(df))), 1, 7).astype(int)
+        cols.append(col)
+    return cols
+
+
+def _meta(df: pd.DataFrame, scales: list, registry: dict = None, **extra) -> dict:
+    conditions = list(dict.fromkeys(df["CONDITION"].tolist()))
+    meta = {
+        "study_title": "Robustness study", "study_description": "Small synthetic study.", "conditions": conditions,
+        "sample_size": len(df), "factors": [], "open_ended_questions": [], "scales": scales,
+        "run_id": "R1", "generation_timestamp": "2026-10-06T10:00:00", "effect_sizes_observed": [],
+        "scale_generation_log": [{"name": n, "columns_generated": cols} for n, cols in (registry or {}).items()],
+    }
+    meta.update(extra)
+    return meta
+
+
+def _scale(name: str, k: int, kind: str = "likert", lo: int = 1, hi: int = 7) -> dict:
+    return {"name": name, "num_items": k, "scale_points": hi - lo + 1, "scale_min": lo, "scale_max": hi, "type": kind}
+
+
+def _both_reports(df, meta, prereg: str = ""):
+    gen = ComprehensiveInstructorReport()
+    md = gen.generate_comprehensive_report(df=df, metadata=meta, schema_validation={}, prereg_text=prereg, team_info={})
+    html = ComprehensiveInstructorReport().generate_html_report(df=df, metadata=meta, schema_validation={}, prereg_text=prereg, team_info={})
+    return md, html
+
+
+def _assert_clean(md: str, html: str):
+    visible = _text_of_html(html)
+    for label, text in (("markdown", md), ("html", visible)):
+        assert not NAN_INF.search(text), f"{label}: {NAN_INF.search(text).group(0)!r} in {text[max(0, NAN_INF.search(text).start() - 80):NAN_INF.search(text).end() + 40]!r}"
+        assert not re.search(r"\bp\s*=\s*0\.0{3,4}(?![0-9])", text), f"{label}: p = 0.0000"
+    assert "Report Error" not in html and "Report generation encountered an error" not in md
+
+
+# ---------------------------------------------------------------------------
+# 1. A preregistration that yields a hypothesis used to stub both attachments
+# ---------------------------------------------------------------------------
+PREREG_TEXTS = [
+    "Participants in the gamified group will see a tier badge; participants in the control group will not.",
+    "1. Trust (higher = more trust)\n2. Purchase intention",
+    "- Loyalty should be measured on a 7-point scale",
+    "Trust will be higher in the Treatment condition",
+    "Hypotheses\nH1: Participants in the treatment condition will report higher trust than those in the control condition.",
+    "Analysis: independent samples t-test; we predict that trust is higher after the treatment.",
+]
+
+
+@pytest.fixture()
+def trust_study():
+    df = _base_frame(40)
+    cols = _likert_items(df, "Trust", {"Treatment": 1.2})
+    return df, _meta(df, [_scale("Trust", 3)], {"Trust": cols})
+
+
+@pytest.mark.parametrize("prereg", PREREG_TEXTS)
+def test_prereg_with_hypotheses_does_not_crash_either_report(trust_study, stats_mode, prereg):
+    df, meta = trust_study
+    assert ComprehensiveInstructorReport()._parse_prereg_hypotheses(prereg)["hypotheses"] or "H1" not in prereg
+    md, html = _both_reports(df, meta, prereg)
+    _assert_clean(md, html)
+    assert "Executive Summary" in html
+
+
+def test_hypotheses_are_plain_strings_and_the_summary_accepts_strings_and_dicts(trust_study, monkeypatch):
+    df, meta = trust_study
+    gen = ComprehensiveInstructorReport()
+    parsed = gen._parse_prereg_hypotheses("Trust will be higher in the Treatment condition")
+    assert parsed["hypotheses"] and all(isinstance(h, str) for h in parsed["hypotheses"])
+    # an older caller (or a future parser) may return dicts: both shapes must work
+    for shape in (["Trust will be higher in the Treatment condition"],
+                  [{"text": "Trust will be higher in the Treatment condition"}],
+                  [None, "", {"text": ""}, 42, "Trust will be higher in the Treatment condition"]):
+        monkeypatch.setattr(ComprehensiveInstructorReport, "_parse_prereg_hypotheses",
+                            lambda self, text, _s=shape: {"hypotheses": list(_s), "control_variables": []})
+        html = ComprehensiveInstructorReport().generate_html_report(df=df, metadata=meta, prereg_text="x", team_info={})
+        assert "Pre-Registration Hypotheses" in html and "Report Error" not in html
+
+
+def test_hypothesis_lines_never_claim_support(stats_mode):
+    df = _base_frame(60)
+    cols = _likert_items(df, "Trust", {"Treatment": 1.5})
+    _likert_items(df, "Loyalty", {}, seed=11)
+    meta = _meta(df, [_scale("Trust", 3), _scale("Loyalty", 3)], {"Trust": cols, "Loyalty": ["Loyalty_1", "Loyalty_2", "Loyalty_3"]})
+    prereg = "Participants in the Treatment condition will show lower trust.\nLoyalty will be higher in the Treatment condition."
+    html = ComprehensiveInstructorReport().generate_html_report(df=df, metadata=meta, prereg_text=prereg, team_info={})
+    text = _text_of_html(html)
+    assert "Supported" not in text and "supported</strong>" not in html and "Not supported" not in text
+    # the (opposite-direction) hypothesis about trust is only called "related", with the caveat that direction was not checked
+    assert "a significant result on a related measure was found (Trust)" in text
+    assert "the direction was not checked" in text
+    assert "no significant related result" in text  # the loyalty hypothesis: no significant loyalty effect
+
+
+# ---------------------------------------------------------------------------
+# 3. Open-ended text columns and odd scale names in the markdown tables
+# ---------------------------------------------------------------------------
+def test_text_column_sharing_the_scale_prefix_is_not_a_scale_column():
+    df = _base_frame(10)
+    cols = _likert_items(df, "Punitive_Pilot", k=3)
+    df["Punitive_Pilot_03"] = "I think the punishment was fair because of the story."
+    scale = _scale("Punitive_Pilot", 3)
+    assert ir._find_scale_columns(df, scale) == cols  # prefix match: the text column is left out
+    assert ir._find_scale_columns(df, scale, {"Punitive_Pilot": cols + ["Punitive_Pilot_03"]}) == cols  # even a bad registry
+    # a longer name that merely starts with the prefix is not an item of the shorter scale
+    _likert_items(df, "Punitive", k=2, seed=9)
+    df["Punitive_Pilot_mean"] = 4.0
+    assert ir._find_scale_columns(df, _scale("Punitive", 2)) == ["Punitive_1", "Punitive_2"]
+
+
+def test_markdown_range_table_survives_text_columns_and_lists_digit_leading_scales(stats_mode):
+    df = _base_frame(30)
+    cols_a = _likert_items(df, "Punitive_Pilot", {"Treatment": 0.8}, k=3)
+    df["Punitive_Pilot_03"] = "free text answer"  # open-ended question named like an item
+    cols_b = [f"1_9Q_{i}" for i in (1, 2)]
+    for col in cols_b:
+        df[col] = np.random.RandomState(2).randint(1, 8, len(df))
+    meta = _meta(df, [_scale("Punitive_Pilot", 3), _scale("1.9Q", 2)], {"Punitive_Pilot": cols_a, "1.9Q": cols_b})
+    md, html = _both_reports(df, meta)
+    _assert_clean(md, html)
+    table = md.split("### Automated Quality Checks")[1].split("###")[0]
+    assert re.search(r"\| Punitive_Pilot \| 3 \|", table), table
+    assert re.search(r"\| 1\.9Q \| 2 \|", table), table  # used to be left out: "1.9Q" never matched "1_9Q_1"
+    # the text column is not described as a scale item anywhere in the DV analysis
+    assert "| Punitive_Pilot_03 |" not in md
+
+
+def test_scale_without_any_numeric_column_is_reported_not_dropped_or_crashed():
+    df = _base_frame(10)
+    df["Q7_1"] = "text"
+    md, html = _both_reports(df, _meta(df, [_scale("Q7", 1)], {"Q7": ["Q7_1"]}))
+    assert "| Q7 | 0 |" in md and "no columns found" in md
+    assert "Report Error" not in html
+
+
+# ---------------------------------------------------------------------------
+# 4. Constant-sum / rank-order composites and other zero-variance cells
+# ---------------------------------------------------------------------------
+def _constant_sum_frame(n_per=30, total=100, k=4, seed=4):
+    df = _base_frame(n_per, seed=seed)
+    rng = np.random.RandomState(seed)
+    shares = rng.dirichlet(np.ones(k), size=len(df)) * total
+    alloc = np.floor(shares).astype(int)
+    for i in range(len(df)):
+        alloc[i, int(rng.randint(k))] += total - alloc[i].sum()
+    cols = []
+    for j in range(k):
+        df[f"QID5_{j + 1}"] = alloc[:, j]
+        cols.append(f"QID5_{j + 1}")
+    return df, cols
+
+
+def test_constant_sum_composite_is_not_tested_and_options_are_compared(stats_mode):
+    df, cols = _constant_sum_frame()
+    meta = _meta(df, [_scale("QID5", 4, "constant_sum", 0, 100)], {"QID5": cols})
+    md, html = _both_reports(df, meta)
+    _assert_clean(md, html)
+    text = _text_of_html(html)
+    assert "shares of one fixed total" in text and "shares of one fixed total" in md
+    assert "t = 2500000" not in text and "Independent Samples t-test" not in html.split("QID5", 1)[1]
+    # each option is compared across conditions instead (one row per option, p-values not corrected)
+    for col in cols:
+        assert col in text and col in md
+    assert "not corrected for the 4 comparisons" in text
+    assert "Executive Summary" in html and "could not be tested as a composite" in text
+
+
+def test_constant_sum_with_float_noise_in_the_mean_is_still_constant(stats_mode):
+    df, cols = _constant_sum_frame(k=3)  # 100 / 3 carries ~1e-14 of float noise per participant
+    assert ir._composite_has_no_variation(df[cols].mean(axis=1), df["CONDITION"])
+    md, html = _both_reports(df, _meta(df, [_scale("QID5", 3, "constant_sum", 0, 100)], {"QID5": cols}))
+    _assert_clean(md, html)
+
+
+def test_rank_order_composite_is_not_tested(stats_mode):
+    df = _base_frame(30)
+    rng = np.random.RandomState(8)
+    ranks = np.array([rng.permutation(4) + 1 for _ in range(len(df))])
+    cols = []
+    for j in range(4):
+        df[f"RK_{j + 1}"] = ranks[:, j]
+        cols.append(f"RK_{j + 1}")
+    md, html = _both_reports(df, _meta(df, [_scale("RK", 4, "rank_order", 1, 4)], {"RK": cols}))
+    _assert_clean(md, html)
+    assert "items of this question are ranks" in _text_of_html(html)
+
+
+def test_a_dv_with_no_variation_at_all_gets_one_sentence_and_no_nan(stats_mode):
+    df = _base_frame(20)
+    df["Flat_1"] = 5
+    df["Flat_2"] = 5
+    md, html = _both_reports(df, _meta(df, [_scale("Flat", 2)], {"Flat": ["Flat_1", "Flat_2"]}))
+    _assert_clean(md, html)
+    assert "has the same score on this measure (M = 5.00)" in _text_of_html(html)
+
+
+def test_constant_cells_with_different_means_do_not_give_infinite_t_or_a_significant_yes(stats_mode):
+    """Three conditions, each constant but at different levels: t is +/-inf for every pair."""
+    df = _base_frame(10, conditions=("A", "B", "C"))
+    df["Const_1"] = df["CONDITION"].map({"A": 2, "B": 4, "C": 6})
+    df["Const_2"] = df["Const_1"]
+    md, html = _both_reports(df, _meta(df, [_scale("Const", 2)], {"Const": ["Const_1", "Const_2"]}))
+    _assert_clean(md, html)
+    assert "Significant</th>" not in html  # no pairwise table is built from undefined tests
+
+
+def test_pairs_of_constant_groups_are_left_out_but_the_rest_of_the_block_stays(stats_mode):
+    df = _base_frame(20, conditions=("A", "B", "C"))
+    rng = np.random.RandomState(1)
+    df["Mix_1"] = np.where(df["CONDITION"] == "C", rng.randint(1, 8, len(df)), 4)  # A and B constant and equal
+    df["Mix_2"] = df["Mix_1"]
+    md, html = _both_reports(df, _meta(df, [_scale("Mix", 2)], {"Mix": ["Mix_1", "Mix_2"]}))
+    _assert_clean(md, html)
+    assert "One-way ANOVA" in html  # the omnibus test is still defined and still shown
+
+
+def test_tiny_p_values_are_written_as_less_than_001(stats_mode):
+    df = _base_frame(80)
+    cols = _likert_items(df, "Big", {"Treatment": 2.5})
+    md, html = _both_reports(df, _meta(df, [_scale("Big", 3)], {"Big": cols}))
+    _assert_clean(md, html)
+    assert re.search(r"p (?:&lt;|<) \.001|(?:&lt;|<) \.001", html)
+
+
+# ---------------------------------------------------------------------------
+# 5. One bad section is replaced by one line; the rest of the report is kept
+# ---------------------------------------------------------------------------
+@pytest.fixture()
+def full_study():
+    """A study whose metadata makes every optional section appear."""
+    df = _base_frame(40)
+    cols = _likert_items(df, "Trust", {"Treatment": 1.0})
+    meta = _meta(
+        df, [_scale("Trust", 3)], {"Trust": cols},
+        effect_sizes_configured=[{"variable": "Trust", "cohens_d": 0.5, "direction": "higher", "level_high": "Treatment", "level_low": "Control"}],
+        effect_sizes_observed=[{"variable": "Trust", "cohens_d": 0.5, "condition_high": "Treatment", "condition_low": "Control"}],
+        exclusion_summary={"flagged_speed": 1, "flagged_attention": 0, "flagged_straightline": 2, "total_excluded": 3},
+        generation_warnings=["a generation warning"], column_descriptions={"Trust_1": "first item"},
+        persona_distribution={"engaged": 0.6, "satisficer": 0.4},
+    )
+    return df, meta
+
+
+MD_SECTIONS = {  # method -> (title in the note, heading the section writes)
+    "_md_overview": ("Study overview", "## STUDY OVERVIEW"),
+    "_md_quality_assurance": ("Data quality assurance", "## DATA QUALITY ASSURANCE"),
+    "_md_data_quality": ("1. Data quality summary", "## 1. DATA QUALITY SUMMARY"),
+    "_md_design": ("2. Experimental design verification", "## 2. EXPERIMENTAL DESIGN VERIFICATION"),
+    "_md_dv_header": ("3. Dependent variable analysis", "## 3. DEPENDENT VARIABLE ANALYSIS"),
+    "_md_dv_scale": ("3. Dependent variable analysis: Trust", "### Trust"),
+    "_md_prereg": ("4. Preregistration alignment check", "## 4. PREREGISTRATION ALIGNMENT CHECK"),
+    "_md_persona": ("5. Persona distribution and impact", "## 5. PERSONA DISTRIBUTION & IMPACT"),
+    "_md_open_ended": ("6. Open-ended questions summary", "## 6. OPEN-ENDED QUESTIONS SUMMARY"),
+    "_md_effect_sizes": ("7. Effect size quality assessment", "## 7. EFFECT SIZE QUALITY ASSESSMENT"),
+    "_md_condition_balance": ("8. Condition balance analysis", "## 8. CONDITION BALANCE ANALYSIS"),
+    "_md_recommendations": ("9. Instructor recommendations", "## 9. INSTRUCTOR RECOMMENDATIONS"),
+}
+
+HTML_SECTIONS = {
+    "_html_overview": ("Study overview", "Study Overview</h2>"),
+    "_html_sample_overview": ("1. Sample overview", "1. Sample Overview</h2>"),
+    "_html_dv_header": ("3. Statistical analysis by DV", "3. Statistical Analysis by DV</h2>"),
+    "_html_dv_scale": ("3. Statistical analysis by DV: Trust", "<h3>Trust</h3>"),
+    "_html_persona": ("4-5. Persona and categorical analysis", "4. Persona Analysis"),
+    "_html_exec_summary": ("2. Executive summary", "2. Executive Summary</h2>"),
+    "_html_effect_verification": ("6. Effect size verification", "6. Effect Size Verification</h2>"),
+    "_html_exclusions": ("7. Data quality and exclusions", "7. Data Quality &amp; Exclusions</h2>"),
+    "_html_generation_warnings": ("Generation warnings", "a generation warning"),
+    "_html_methodology": ("8. Instructor notes and methodology", "8. Instructor Notes &amp; Methodology</h2>"),
+    "_html_data_dictionary": ("9. Data dictionary", "9. Data Dictionary</h2>"),
+}
+
+
+def _boom(*_a, **_k):
+    raise RuntimeError("boom <b>x</b>")
+
+
+def test_a_clean_run_lists_no_skipped_sections(full_study):
+    df, meta = full_study
+    gen_md, gen_html = ComprehensiveInstructorReport(), ComprehensiveInstructorReport()
+    md = gen_md.generate_comprehensive_report(df=df, metadata=meta, prereg_text="Trust will be higher in Treatment", team_info={})
+    html = gen_html.generate_html_report(df=df, metadata=meta, prereg_text="Trust will be higher in Treatment", team_info={})
+    assert gen_md.section_errors == [] and gen_html.section_errors == []
+    assert "could not be generated" not in md and "could not be generated" not in html
+    for _title, heading in MD_SECTIONS.values():
+        assert heading in md, heading
+    for _title, heading in HTML_SECTIONS.values():
+        assert heading in html, heading
+
+
+@pytest.mark.parametrize("method", sorted(MD_SECTIONS))
+def test_a_failing_markdown_section_costs_only_that_section(full_study, method):
+    df, meta = full_study
+    gen = ComprehensiveInstructorReport()
+    setattr(gen, method, _boom)
+    md = gen.generate_comprehensive_report(df=df, metadata=meta, prereg_text="Trust will be higher in Treatment", team_info={})
+    title, own_heading = MD_SECTIONS[method]
+    assert f'[section "{title}" could not be generated: RuntimeError: boom <b>x</b>]' in md
+    assert own_heading not in md or method == "_md_dv_header"  # what the failed section had written is gone
+    for other, (_t, heading) in MD_SECTIONS.items():
+        if other not in (method, "_md_dv_header" if method == "_md_dv_scale" else method):
+            assert heading in md, f"{heading} lost when {method} failed"
+    assert md.count("could not be generated") == 1
+    assert gen.section_errors == [f"'{title}': RuntimeError: boom <b>x</b>"]
+    assert "END OF COMPREHENSIVE INSTRUCTOR REPORT" in md or method == "_md_recommendations"
+
+
+@pytest.mark.parametrize("method", sorted(HTML_SECTIONS))
+def test_a_failing_html_section_costs_only_that_section(full_study, method):
+    df, meta = full_study
+    gen = ComprehensiveInstructorReport()
+    if method == "_html_exec_summary":
+        gen._generate_executive_summary = _boom  # the summary builder itself fails
+    else:
+        setattr(gen, method, _boom)
+    html = gen.generate_html_report(df=df, metadata=meta, prereg_text="Trust will be higher in Treatment", team_info={})
+    title, own_heading = HTML_SECTIONS[method]
+    assert "[section &quot;" + title + "&quot; could not be generated: RuntimeError: boom &lt;b&gt;x&lt;/b&gt;]" in html
+    assert "<b>x</b>" not in html  # the reason is escaped
+    assert own_heading not in html or method in ("_html_dv_header", "_html_exec_summary")
+    for other, (_t, heading) in HTML_SECTIONS.items():
+        if other == method or (method == "_html_dv_scale" and other in ("_html_dv_header", "_html_exec_summary")):
+            continue  # (with no analysable DV left there is nothing to summarise, as before)
+        assert heading in html, f"{heading} lost when {method} failed"
+    assert html.count("could not be generated") == 1
+    assert len(gen.section_errors) == 1 and gen.section_errors[0].startswith(f"'{title}': RuntimeError")
+    assert html.rstrip().endswith("</html>") and "Back to top" in html  # the document is still well-formed to the end
+
+
+def test_the_executive_summary_note_stays_in_the_summary_slot(full_study):
+    df, meta = full_study
+    gen = ComprehensiveInstructorReport()
+    gen._generate_executive_summary = _boom
+    html = gen.generate_html_report(df=df, metadata=meta, team_info={})
+    assert html.index("could not be generated") < html.index("3. Statistical Analysis by DV</h2>")
+    assert "EXEC_SUMMARY_PLACEHOLDER" not in html
+
+
+def test_one_bad_dv_does_not_cost_the_other_dvs(stats_mode):
+    df = _base_frame(40)
+    cols_a = _likert_items(df, "Alpha", {"Treatment": 1.0})
+    cols_b = _likert_items(df, "Beta", {"Treatment": 1.0}, seed=9)
+    # the middle entry is not a scale at all (a malformed spec from the builder path)
+    meta = _meta(df, [_scale("Alpha", 3), "garbled scale spec", _scale("Beta", 3)], {"Alpha": cols_a, "Beta": cols_b})
+    gen_md, gen_html = ComprehensiveInstructorReport(), ComprehensiveInstructorReport()
+    md = gen_md.generate_comprehensive_report(df=df, metadata=meta, team_info={})
+    html = gen_html.generate_html_report(df=df, metadata=meta, team_info={})
+    for text in (md, _text_of_html(html)):
+        assert "Alpha" in text and "Beta" in text
+        assert "garbled scale spec" in text and "could not be generated" in text
+    assert "<h3>Alpha</h3>" in html and "<h3>Beta</h3>" in html and "Executive Summary" in html
+    assert "### Alpha" in md and "### Beta" in md and "END OF COMPREHENSIVE INSTRUCTOR REPORT" in md
+    assert any("garbled scale spec" in e for e in gen_md.section_errors + gen_html.section_errors)
+
+
+def test_instances_made_without_init_still_work(full_study):
+    df, meta = full_study
+    gen = ComprehensiveInstructorReport.__new__(ComprehensiveInstructorReport)
+    assert "Executive Summary" in gen.generate_html_report(df=df, metadata=meta, team_info={})
+    assert gen.section_errors == []
+
+
+def test_malformed_metadata_values_do_not_stop_the_report():
+    df = _base_frame(10)
+    meta = {"conditions": None, "scales": None, "factors": None, "open_ended_questions": None, "study_title": "x"}
+    md, html = _both_reports(df, meta)
+    assert "COMPREHENSIVE INSTRUCTOR REPORT" in md and html.rstrip().endswith("</html>")
+
+
+def test_the_app_lists_skipped_sections_and_keeps_the_real_report(app_env, full_study, monkeypatch):
+    df, meta = full_study
+
+    def broken_persona(self, ctx):
+        raise KeyError("persona_distribution")
+
+    monkeypatch.setattr(app_env.ComprehensiveInstructorReport, "_html_persona", broken_persona)
+    out = app_env._build_instructor_reports(**_kwargs(df, meta))
+    assert "<h1>Report Error</h1>" not in out["comp_html"] and "Executive Summary" in out["comp_html"]
+    assert "COMPREHENSIVE INSTRUCTOR REPORT" in out["comp_md"]
+    assert out["problems"] == ["instructor analysis (HTML), skipped section '4-5. Persona and categorical analysis': KeyError: 'persona_distribution'"]
+
+
+# ---------------------------------------------------------------------------
+# Helper units
+# ---------------------------------------------------------------------------
+def test_helper_units():
+    assert ir._fnum(float("nan")) == "n/a" and ir._fnum(float("inf")) == "n/a" and ir._fnum(None) == "n/a"
+    assert ir._fnum(1.2345, ".2f") == "1.23" and ir._fnum(0.5, ".0%") == "50%"
+    assert ir._report_p_text(0.00001) == "p < .001" and ir._report_p_text(0.00001, html=True) == "p &lt; .001"
+    assert ir._report_p_text(0.0432) == "p = 0.0432" and ir._report_p_text(float("nan")) == "p n/a"
+    assert ir._report_p_cell(0.0) == "< .001" and ir._report_p_cell(None) == "n/a"
+    assert ir._hypothesis_text({"text": " a b "}) == "a b" and ir._hypothesis_text(None) == "" and ir._hypothesis_text(7) == "7"
+
+    cond = pd.Series(["A"] * 4 + ["B"] * 4)
+    assert ir._composite_has_no_variation(pd.Series([5.0] * 8), cond)
+    assert ir._composite_has_no_variation(pd.Series([100 / 3] * 4 + [(100 + 3e-14) / 3] * 4), cond)  # float noise
+    assert not ir._composite_has_no_variation(pd.Series([5.0, 5.0, 5.0, 5.0, 4.0, 5.0, 5.0, 5.0]), cond)
+    assert ir._composite_has_no_variation(pd.Series([5.0] * 4 + [np.nan] * 4), cond)  # only one group has two values
+    assert not ir._composite_has_no_variation(pd.Series([5.0, np.nan, np.nan, np.nan, 3.0, np.nan, np.nan, np.nan]), cond)  # n < 2
+    assert not ir._composite_has_no_variation(pd.Series([np.nan] * 8), cond)
+    assert ir._composite_has_no_variation(pd.Series([2.0, 2.0, 2.0]), None)
+    assert not ir._composite_has_no_variation(pd.Series(["a", "b", "c"]), None)  # text never counts as a constant composite
+
+    results = {
+        "t_test": {"statistic": float("nan"), "p_value": float("nan")},
+        "anova": {"f_statistic": 3.2, "p_value": 0.04, "significant": True},
+        "pairwise_comparisons": [{"t_stat": float("inf"), "p_value": 0.0}, {"t_stat": 2.0, "p_value": 0.03}],
+        "coefficients": {"intercept": {"estimate": 25.0, "t_stat": float("inf")}, "x": {"estimate": 1.0, "t_stat": 2.0}},
+        "scipy_used": True, "error": "text stays",
+    }
+    cleaned = ir._finite_results_only(results)
+    assert "t_test" not in cleaned and cleaned["anova"]["f_statistic"] == 3.2
+    assert cleaned["pairwise_comparisons"] == [{"t_stat": 2.0, "p_value": 0.03}]
+    assert list(cleaned["coefficients"]) == ["x"] and cleaned["scipy_used"] is True and cleaned["error"] == "text stays"
+    assert ir._finite_results_only("not a dict") == "not a dict"
+
+
+# ---------------------------------------------------------------------------
+# 2. The app delivers each document on its own
+# ---------------------------------------------------------------------------
+def _load_app():
+    spec = importlib.util.spec_from_file_location("_app_report_robustness_test", str(_APP_DIR / "app.py"))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["_app_report_robustness_test"] = module
+    try:
+        spec.loader.exec_module(module)
+    except SystemExit:
+        pass
+    return module
+
+
+@pytest.fixture()
+def app_env(monkeypatch, tmp_path):
+    import streamlit as st
+
+    monkeypatch.chdir(tmp_path)
+    app = _load_app()
+    monkeypatch.setattr(st, "session_state", {})
+    return app
+
+
+def _kwargs(df, meta):
+    return dict(df=df, metadata=meta, schema_results={}, prereg_text="", team_info={"team_name": "T", "team_members": "A\nB"})
+
+
+def test_app_builds_all_three_documents_when_nothing_fails(app_env, trust_study):
+    df, meta = trust_study
+    out = app_env._build_instructor_reports(**_kwargs(df, meta))
+    assert out["problems"] == []
+    assert "Report Error" not in out["comp_html"] and "encountered an error" not in out["comp_md"]
+    assert out["comp_html"].lstrip().lower().startswith("<!doctype html") and "COMPREHENSIVE INSTRUCTOR REPORT" in out["comp_md"]
+    assert out["student_md"].strip()
+
+
+def test_a_markdown_failure_does_not_stub_the_html_report(app_env, trust_study, monkeypatch):
+    df, meta = trust_study
+
+    def boom(self, *a, **k):
+        raise KeyError("DV_mean")
+
+    monkeypatch.setattr(app_env.ComprehensiveInstructorReport, "generate_comprehensive_report", boom)
+    out = app_env._build_instructor_reports(**_kwargs(df, meta))
+    assert "encountered an error" in out["comp_md"] and "DV_mean" in out["comp_md"]
+    assert "Report Error" not in out["comp_html"] and "Executive Summary" in out["comp_html"]  # the real HTML report
+    assert out["student_md"].strip() and "encountered an error" not in out["student_md"]
+    assert out["problems"] == ["instructor analysis (Markdown): KeyError: 'DV_mean'"]
+
+
+def test_an_html_failure_does_not_stub_the_markdown_report(app_env, trust_study, monkeypatch):
+    df, meta = trust_study
+
+    def boom(self, *a, **k):
+        raise ValueError("bad chart")
+
+    monkeypatch.setattr(app_env.ComprehensiveInstructorReport, "generate_html_report", boom)
+    out = app_env._build_instructor_reports(**_kwargs(df, meta))
+    assert "<h1>Report Error</h1>" in out["comp_html"] and "bad chart" in out["comp_html"]
+    assert "encountered an error" not in out["comp_md"] and "COMPREHENSIVE INSTRUCTOR REPORT" in out["comp_md"]
+    assert out["problems"] == ["instructor analysis (HTML): ValueError: bad chart"]
+
+
+def test_a_study_summary_failure_stubs_only_the_study_summary(app_env, trust_study, monkeypatch):
+    df, meta = trust_study
+
+    def boom(self, *a, **k):
+        raise RuntimeError("summary down")
+
+    monkeypatch.setattr(app_env.InstructorReportGenerator, "generate_markdown_report", boom)
+    out = app_env._build_instructor_reports(**_kwargs(df, meta))
+    assert "encountered an error" in out["student_md"] and "summary down" in out["student_md"]
+    assert "Report Error" not in out["comp_html"] and "encountered an error" not in out["comp_md"]
+    assert out["problems"] == ["study summary: RuntimeError: summary down"]
+
+
+def test_all_three_can_fail_together_and_each_is_listed(app_env, trust_study, monkeypatch):
+    df, meta = trust_study
+
+    def boom(self, *a, **k):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(app_env.InstructorReportGenerator, "generate_markdown_report", boom)
+    monkeypatch.setattr(app_env.ComprehensiveInstructorReport, "generate_comprehensive_report", boom)
+    monkeypatch.setattr(app_env.ComprehensiveInstructorReport, "generate_html_report", boom)
+    out = app_env._build_instructor_reports(**_kwargs(df, meta))
+    assert [p.split(":")[0] for p in out["problems"]] == ["study summary", "instructor analysis (Markdown)", "instructor analysis (HTML)"]
+    assert all("down" in out[k] for k in ("student_md", "comp_md", "comp_html"))
+
+
+def test_an_empty_or_non_text_result_counts_as_a_failure(app_env, trust_study, monkeypatch):
+    df, meta = trust_study
+    monkeypatch.setattr(app_env.ComprehensiveInstructorReport, "generate_html_report", lambda self, *a, **k: "   ")
+    monkeypatch.setattr(app_env.ComprehensiveInstructorReport, "generate_comprehensive_report", lambda self, *a, **k: None)
+    out = app_env._build_instructor_reports(**_kwargs(df, meta))
+    assert len(out["problems"]) == 2 and "no text" in out["problems"][0]
+    assert "<h1>Report Error</h1>" in out["comp_html"] and "encountered an error" in out["comp_md"]

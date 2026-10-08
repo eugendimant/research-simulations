@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below and name the software version (shown in the app footer and in Metadata.json)."
+title: "Behavioral Experiment Simulation Tool"
+type: software
+version: "1.3.0.4"
+date-released: "2026-10-07"
+authors:
+  - family-names: Dimant
+    given-names: Eugen
+    website: "https://eugendimant.github.io/"
+repository-code: "https://github.com/eugendimant/research-simulations"
+license: PolyForm-Noncommercial-1.0.0
+abstract: >-
+  A Streamlit application that turns a Qualtrics survey file into a synthetic dataset for testing
+  survey logic and analysis code before data collection, and for teaching. Simulated participants
+  have response styles, optional built-in effects and open-ended text. The output is synthetic and
+  is not data about real people.
+keywords:
+  - synthetic data
+  - survey simulation
+  - experiment design
+  - Qualtrics
+  - research methods
+  - teaching

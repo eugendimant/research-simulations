@@ -46,6 +46,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import streamlit.components.v1 as _st_components
+from html import escape as html_escape  # v1.2.9.1: escape user/QSF text before raw-HTML rendering
 
 # =============================================================================
 # MODULE VERSION VERIFICATION
@@ -54,8 +55,8 @@ import streamlit.components.v1 as _st_components
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.0.3"
-BUILD_ID = "20261006-v13003-codex-findings"
+REQUIRED_UTILS_VERSION = "1.3.0.4"
+BUILD_ID = "20261007-v13004-reliable-email-exact-reports"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -96,6 +97,32 @@ from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
 from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
 from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport
+
+
+def _log_optional_import_failure(module: str, exc: BaseException) -> None:
+    """Record why an optional module was skipped; the app keeps loading without it."""
+    import logging
+
+    logging.getLogger("simulation_app").warning(
+        "Optional module %s is unavailable (%s: %s); continuing without it.", module, type(exc).__name__, exc
+    )
+
+
+# The three guards below cover OPTIONAL modules. A partial deploy can fail with more than an
+# ImportError (a SyntaxError in a half-copied file, an AttributeError at import time, ...), and one
+# bad optional module must never take the whole app down, so they catch Exception and log it.
+try:  # reliable, observable email delivery (v1.2.9.1); the legacy sender below is the fallback
+    from utils import email_delivery as _email_delivery
+except Exception as _email_import_exc:  # partial deploy: keep the app loading
+    _log_optional_import_failure("utils.email_delivery", _email_import_exc)
+    _email_delivery = None  # type: ignore[assignment]
+try:  # neutralises active content in generated HTML files (v1.2.9.1)
+    from utils.html_safety import harden_report_html as _harden_report_html
+except Exception as _html_safety_import_exc:  # partial deploy: keep the app loading
+    _log_optional_import_failure("utils.html_safety", _html_safety_import_exc)
+
+    def _harden_report_html(document: str) -> str:  # type: ignore[misc]
+        return document
 from utils.survey_builder import SurveyDescriptionParser, ParsedDesign, ParsedCondition, ParsedScale, KNOWN_SCALES, AVAILABLE_DOMAINS, generate_qsf_from_design
 from utils.persona_library import PersonaLibrary, Persona
 from utils.enhanced_simulation_engine import (
@@ -103,6 +130,21 @@ from utils.enhanced_simulation_engine import (
     EffectSizeSpec,
     ExclusionCriteria,
 )
+try:
+    from utils.enhanced_simulation_engine import (
+        clean_question_text,
+        draw_numeric_answer,
+        infer_numeric_answer_spec,
+    )
+except ImportError:  # keep the app loading if the engine module is older than the app
+    def clean_question_text(text: Any) -> str:  # type: ignore[misc]
+        return str(text or "")
+
+    def infer_numeric_answer_spec(*_args: Any, **_kwargs: Any) -> Optional[Dict[str, Any]]:  # type: ignore[misc]
+        return None
+
+    def draw_numeric_answer(*_args: Any, **_kwargs: Any) -> str:  # type: ignore[misc]
+        return ""
 from utils.condition_identifier import (
     DesignAnalysisResult,
     VariableRole,
@@ -119,7 +161,8 @@ try:
         get_correlation_summary,
     )
     _HAS_CORRELATION_MODULE = True
-except ImportError:
+except Exception as _correlation_import_exc:  # optional module: any import-time failure disables it
+    _log_optional_import_failure("utils.correlation_matrix", _correlation_import_exc)
     _HAS_CORRELATION_MODULE = False
 
 # Verify expected utils version.  If there is a mismatch (stale module cache
@@ -146,7 +189,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.3.0.3"  # v1.3.0.3: recall audit of all 484 literature calibration entries
+APP_VERSION = "1.3.0.4"  # v1.3.0.4: reliable instructor email, exact instructor analysis, detected DVs on the Design page, effects that hold next to other scales, hardened HTML/scripts/collection
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -192,8 +235,8 @@ try:
     _self_heal_result = _self_heal_check(APP_VERSION)
     if _self_heal_result:
         _log(_self_heal_result, level="info")
-except Exception:
-    pass  # Self-healing must never crash the app
+except Exception as _self_heal_exc:  # Self-healing must never crash the app
+    _log(f"Self-healing check skipped: {type(_self_heal_exc).__name__}: {_self_heal_exc}", level="warning")
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +278,38 @@ def _decrypt_api_key(ciphertext_hex: str) -> str:
 
 MAX_SIMULATED_N = 10000
 MAX_FREE_LLM_N = 100  # v1.2.1.9: Cap free LLM generation to prevent API exhaustion
+# v1.2.9.1: the generator assigns each simulated participant to ONE condition. The design type
+# chosen on the pages does not change the structure of the data and is not written to Metadata.json
+# (only the randomization level of the QSF path is listed in the design summary), so the note must
+# not say that the choice is recorded.
+DESIGN_STRUCTURE_NOTE = (
+    "This version generates one condition per participant (between-subjects, randomized at the "
+    "participant level). The design type you choose here does not change that: the generated data "
+    "will not contain repeated measures, mixed-design columns or clustered observations."
+)
+
+# Whole-word cues in condition labels that suggest a repeated-measures ("within") or "mixed" design.
+# Matching whole words keeps "Premium", "Present" or "Prevention" from reading as "pre".
+_WITHIN_LABEL_RE = re.compile(
+    r"\b(?:pre|post|before|after|baseline|follow(?: ?ups?)?|(?:time|wave|session) ?[12])\b"
+)
+_MIXED_LABEL_RE = re.compile(r"\b(?:mixed|repeated)\b")
+
+
+def _detect_design_from_condition_names(names: Any) -> str:
+    """Suggest "within", "mixed" or "between" from condition labels (whole words only).
+
+    "Pre-test"/"Post-test", "Time 1", "Wave 2" or "Follow-up" suggest repeated measures;
+    "Premium brand", "Present" or "Prevention message" do not (a plain substring test for
+    "pre" used to match inside them).
+    """
+    text = " ".join(str(name).lower() for name in (names or []))
+    text = re.sub(r"[_\-/.:]+", " ", text)
+    if _WITHIN_LABEL_RE.search(text):
+        return "within"
+    if _MIXED_LABEL_RE.search(text):
+        return "mixed"
+    return "between"
 
 STANDARD_DEFAULTS = {
     "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12, "age_min": 18, "age_max": 80, "include_age_column": True, "include_gender_column": True},
@@ -260,8 +335,20 @@ ADVANCED_DEFAULTS = {
 # -----------------------------
 # Utilities
 # -----------------------------
+def _finite_json_value(obj: Any) -> Any:
+    """Copy of ``obj`` with every NaN/Infinity float replaced by None: ``json.dumps`` writes them
+    as the bare tokens NaN/Infinity, which are not valid JSON (R, jq and browsers reject the file)."""
+    if isinstance(obj, float):
+        return obj if obj == obj and obj not in (float("inf"), float("-inf")) else None
+    if isinstance(obj, dict):
+        return {k: _finite_json_value(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_finite_json_value(v) for v in obj]
+    return obj
+
+
 def _safe_json(obj: Any) -> str:
-    return json.dumps(obj, indent=2, ensure_ascii=False, default=str)
+    return json.dumps(_finite_json_value(obj), indent=2, ensure_ascii=False, default=str)
 
 
 # v1.5.0: Removed unused validation helpers, SimulationError class, and related
@@ -283,7 +370,7 @@ def _markdown_to_html(markdown_text: str, title: str = "Study Summary") -> str:
         '<head>',
         '<meta charset="UTF-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
-        f'<title>{title}</title>',
+        f'<title>{html_escape(str(title))}</title>',
         '<style>',
         'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; ',
         '       max-width: 900px; margin: 40px auto; padding: 20px; line-height: 1.6; color: #333; }',
@@ -307,7 +394,8 @@ def _markdown_to_html(markdown_text: str, title: str = "Study Summary") -> str:
         '<body>',
     ]
 
-    content = markdown_text
+    # Study titles, condition names and other text come from users: escape first, then add our own markup.
+    content = html_escape(str(markdown_text), quote=False)
 
     # Convert headers
     content = re.sub(r'^### (.+)$', r'<h3>\1</h3>', content, flags=re.MULTILINE)
@@ -377,7 +465,93 @@ def _markdown_to_html(markdown_text: str, title: str = "Study Summary") -> str:
     html_parts.append('</body>')
     html_parts.append('</html>')
 
-    return '\n'.join(html_parts)
+    return _harden_report_html('\n'.join(html_parts))
+
+
+def _build_instructor_reports(
+    *,
+    df: pd.DataFrame,
+    metadata: Dict[str, Any],
+    schema_results: Dict[str, Any],
+    prereg_text: str,
+    team_info: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build the student summary and the two instructor analyses; each document fails on its own.
+
+    The Markdown analysis, the HTML analysis and the student summary used to share try blocks,
+    so one failure replaced several attachments with a stub (an HTML failure also threw away
+    the Markdown text that had already been built). Every document now has its own try block
+    and its own stub, and every failure is added to ``problems``, which the instructor email
+    turns into a [REPORT ERROR] subject. A section the generator had to skip on its own
+    (``section_errors``) is listed too: that document is still delivered, with a one-line note
+    where the section would have been.
+
+    Returns ``{"student_md": str, "comp_md": str, "comp_html": str, "problems": List[str]}``.
+    """
+    problems: List[str] = []
+
+    def _build(label: Any, produce: Any, stub: Any) -> str:
+        try:
+            reporter, text = produce()
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError("the generator returned no text")
+        except Exception as err:  # noqa: BLE001 - one failed document must not replace the others
+            _log(f"{label} generation failed: {type(err).__name__}: {err}", level="error")
+            problems.append(f"{label}: {type(err).__name__}: {err}")
+            return stub(err)
+        for note in list(getattr(reporter, "section_errors", None) or []):
+            _log(f"{label}: skipped section {note}", level="warning")
+            problems.append(f"{label}, skipped section {note}")
+        return text
+
+    def _student() -> Tuple[Any, str]:
+        generator = InstructorReportGenerator()
+        return generator, generator.generate_markdown_report(
+            df=df, metadata=metadata, schema_validation=schema_results,
+            prereg_text=prereg_text, team_info=team_info)
+
+    def _analysis_md() -> Tuple[Any, str]:
+        reporter = ComprehensiveInstructorReport()
+        return reporter, reporter.generate_comprehensive_report(
+            df=df, metadata=metadata, schema_validation=schema_results,
+            prereg_text=prereg_text, team_info=team_info)
+
+    def _analysis_html() -> Tuple[Any, str]:
+        reporter = ComprehensiveInstructorReport()
+        return reporter, reporter.generate_html_report(
+            df=df, metadata=metadata, schema_validation=schema_results,
+            prereg_text=prereg_text, team_info=team_info)
+
+    return {
+        "student_md": _build(
+            "study summary", _student,
+            lambda err: f"# Study Summary\n\nReport generation encountered an error: {err}\n\nData was generated successfully."),
+        "comp_md": _build(
+            "instructor analysis (Markdown)", _analysis_md,
+            lambda err: f"# Comprehensive Report\n\nReport generation encountered an error: {err}\n\nData was generated successfully."),
+        "comp_html": _build(
+            "instructor analysis (HTML)", _analysis_html,
+            lambda err: f"<html><body><h1>Report Error</h1><p>{html_escape(str(err))}</p></body></html>"),
+        "problems": problems,
+    }
+
+
+def _zip_without_prefix(zip_bytes: bytes, prefix: str) -> bytes:
+    """Copy of a ZIP without the entries under ``prefix`` (the original bytes when nothing changes or on any error)."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as src:
+            names = src.namelist()
+            if not any(n.startswith(prefix) for n in names):
+                return zip_bytes
+            out = io.BytesIO()
+            with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as dst:
+                for name in names:
+                    if not name.startswith(prefix):
+                        dst.writestr(name, src.read(name))
+            return out.getvalue()
+    except Exception as exc:  # noqa: BLE001 - fall back to the full ZIP rather than losing the email
+        _app_logging.getLogger(__name__).warning("Could not build a ZIP without %s: %s", prefix, exc)
+        return zip_bytes
 
 
 def _bytes_to_zip(files: Dict[str, bytes]) -> bytes:
@@ -1410,9 +1584,16 @@ def _generate_preview_data(
                 continue
             _oe_responses = []
             _quality_levels = ['high', 'medium', 'high', 'medium', 'low']
+            # v1.2.9.1: same rules as the full run: clean question text, and numeric text boxes
+            # (age, counts, amounts...) preview as numbers, not essays.
+            _q_text = clean_question_text(_q_text) or str(_var)
+            _numeric_spec = infer_numeric_answer_spec(_q_text, _var, oe if isinstance(oe, dict) else None)
             for _p_idx in range(n_rows):
                 _cond = conditions[_p_idx % len(conditions)] if conditions else ""
-                if _p_idx < _n_oe_preview:
+                if _numeric_spec is not None and _p_idx < _n_oe_preview:
+                    _num_seed = (sum(ord(c) * (i + 1) for i, c in enumerate(str(_var)[:60])) + _p_idx * 7919) % (2 ** 31)
+                    _oe_responses.append(draw_numeric_answer(_numeric_spec, np.random.RandomState(_num_seed)))
+                elif _p_idx < _n_oe_preview:
                     _oe_responses.append(_get_sample_text_response(
                         quality=_quality_levels[_p_idx % len(_quality_levels)],
                         participant_idx=_p_idx,
@@ -2243,17 +2424,43 @@ def _merge_condition_sources(qsf_conditions: List[str], prereg_conditions: List[
     return conditions, sources
 
 
+# A real .qsf export is a few hundred KB (a very large survey a few MB). A ZIP that inflates beyond
+# this limit is refused before anything is decompressed, so a small upload cannot expand into
+# hundreds of MB of memory (a "zip bomb"). The member count bounds the directory scan the same way.
+MAX_QSF_UNZIPPED_BYTES = 25 * 1024 * 1024
+MAX_QSF_ZIP_MEMBERS = 1000
+
+
 def _extract_qsf_payload(uploaded_bytes: bytes) -> Tuple[bytes, str]:
     """
     Return JSON bytes from a QSF upload (supports raw JSON or ZIP wrappers).
+
+    Raises ValueError (shown to the user as "QSF parsing failed: ...") for a ZIP without a survey
+    file, with more than MAX_QSF_ZIP_MEMBERS entries, or whose survey file would inflate beyond
+    MAX_QSF_UNZIPPED_BYTES.
     """
     if zipfile.is_zipfile(io.BytesIO(uploaded_bytes)):
         with zipfile.ZipFile(io.BytesIO(uploaded_bytes)) as zf:
-            candidates = [n for n in zf.namelist() if n.lower().endswith((".qsf", ".json"))]
+            members = zf.infolist()
+            if len(members) > MAX_QSF_ZIP_MEMBERS:
+                raise ValueError(
+                    f"The ZIP holds {len(members):,} files; a QSF upload should contain a single survey file."
+                )
+            candidates = [m for m in members if m.filename.lower().endswith((".qsf", ".json")) and not m.is_dir()]
             if not candidates:
                 raise ValueError("ZIP did not contain a .qsf or .json file.")
             selected = candidates[0]
-            return zf.read(selected), selected
+            limit_mb = MAX_QSF_UNZIPPED_BYTES // (1024 * 1024)
+            if selected.file_size > MAX_QSF_UNZIPPED_BYTES:
+                raise ValueError(
+                    f"{selected.filename} would expand to {selected.file_size / (1024 * 1024):,.0f} MB; a survey "
+                    f"file is far smaller (limit {limit_mb} MB). Upload the .qsf file itself."
+                )
+            with zf.open(selected) as handle:
+                data = handle.read(MAX_QSF_UNZIPPED_BYTES + 1)  # bounded even if the header understates the size
+            if len(data) > MAX_QSF_UNZIPPED_BYTES:
+                raise ValueError(f"{selected.filename} expands beyond the {limit_mb} MB limit for a survey file.")
+            return data, selected.filename
     return uploaded_bytes, "uploaded.qsf"
 
 
@@ -2560,14 +2767,20 @@ def _build_variable_review_rows(
 
     # Add open-ended questions
     for q in inferred.get("open_ended_questions", []):
-        if q and q not in seen_vars:
-            seen_vars.add(q)
+        # open-ended questions are dicts ({"variable_name", "question_text", ...}) in current designs and bare names in old ones
+        if isinstance(q, dict):
+            q_name = str(q.get("variable_name") or q.get("name") or "").strip()
+            q_text = str(q.get("question_text") or "")
+        else:
+            q_name, q_text = str(q or "").strip(), ""
+        if q_name and q_name not in seen_vars:
+            seen_vars.add(q_name)
             rows.append({
-                "Variable": q,
-                "Display Name": q.replace("_", " ").title(),
+                "Variable": q_name,
+                "Display Name": q_name.replace("_", " ").title(),
                 "Type": "Survey Question",
                 "Role": "Open-ended",
-                "Question Text": "",
+                "Question Text": q_text[:60] + ("..." if len(q_text) > 60 else ""),
             })
 
     # If no rows, add a placeholder
@@ -3300,14 +3513,16 @@ def _render_feedback_button() -> None:
         user_email = st.text_input(
             "Your email (optional, for follow-up)",
             placeholder="your.email@example.com",
-            key="feedback_user_email"
+            key="feedback_user_email",
+            max_chars=200,
         )
 
         feedback_message = st.text_area(
             "Describe the bug or your recommendation",
             placeholder="Please provide as much detail as possible. For bugs: what were you trying to do? What happened instead? For recommendations: what feature would you like to see?",
             height=150,
-            key="feedback_message"
+            key="feedback_message",
+            max_chars=5000,
         )
 
         if st.button("📧 Send Feedback", type="primary", key="send_feedback_btn"):
@@ -3337,12 +3552,17 @@ SYSTEM INFO:
 - Study Title: {st.session_state.get('study_title', 'N/A')}
 """
 
-                # Try to send via SMTP
-                ok, msg = _send_email(
-                    to_email=FEEDBACK_EMAIL,
-                    subject=subject,
-                    body_text=body,
-                )
+                # Try to send via SMTP (rate-limited like the other student-triggered emails)
+                _fb_allowed, _fb_reason = _user_email_allowed()
+                if _fb_allowed:
+                    ok, msg = _send_email(
+                        to_email=FEEDBACK_EMAIL,
+                        subject=subject,
+                        body_text=body,
+                        kind="feedback",
+                    )
+                else:
+                    ok, msg = False, _fb_reason
 
                 if ok:
                     st.success("✅ Thank you! Your feedback has been sent successfully.")
@@ -3363,18 +3583,20 @@ SYSTEM INFO:
         st.caption(f"Feedback is sent to Dr. Eugen Dimant ({FEEDBACK_EMAIL})")
 
 
-def _send_email_with_smtp(
+def _send_email_with_smtp_legacy(
     to_email: str,
     subject: str,
     body_text: str,
     attachments: Optional[List[Tuple[str, bytes]]] = None,
 ) -> Tuple[bool, str]:
     """
+    Legacy single-attempt SMTP sender, used only when utils/email_delivery.py is unavailable.
+
     Send an email using SMTP (free alternative to SendGrid).
 
     Supports Gmail, Google Workspace, Outlook, or any SMTP provider.
 
-    Required Streamlit secrets:
+    Required secrets (environment variables or Streamlit secrets, see ``_secret``):
         - SMTP_SERVER (e.g., "smtp.gmail.com")
         - SMTP_PORT (e.g., 587)
         - SMTP_USERNAME (your email address)
@@ -3395,13 +3617,16 @@ def _send_email_with_smtp(
     from email import encoders
 
     # Get SMTP configuration from secrets
-    smtp_server = st.secrets.get("SMTP_SERVER", "")
-    smtp_port = int(st.secrets.get("SMTP_PORT", 587))
-    smtp_username = st.secrets.get("SMTP_USERNAME", "")
-    smtp_password = st.secrets.get("SMTP_PASSWORD", "")
-    from_email = st.secrets.get("SMTP_FROM_EMAIL", smtp_username)
-    from_name = st.secrets.get("SMTP_FROM_NAME", "Behavioral Experiment Simulation Tool")
-    use_tls = st.secrets.get("SMTP_USE_TLS", True)
+    smtp_server = _secret("SMTP_SERVER", "")
+    try:  # an environment variable is text, and a mistyped one must not stop the send before it starts
+        smtp_port = int(_secret("SMTP_PORT", 587) or 587)
+    except (TypeError, ValueError):
+        smtp_port = 587
+    smtp_username = _secret("SMTP_USERNAME", "")
+    smtp_password = _secret("SMTP_PASSWORD", "")
+    from_email = _secret("SMTP_FROM_EMAIL", smtp_username)
+    from_name = _secret("SMTP_FROM_NAME", "Behavioral Experiment Simulation Tool")
+    use_tls = _secret_bool("SMTP_USE_TLS", True)
 
     if not smtp_server or not smtp_username or not smtp_password:
         return False, "Email not configured. Contact the administrator."
@@ -3471,11 +3696,101 @@ def _send_email_with_smtp(
         return False, "Email could not be sent. Please check the configuration and try again."
 
 
+
+def _secret(name: str, default: Any = "") -> Any:
+    """Read one deployment secret: environment variable first, then ``st.secrets``, then ``default``.
+
+    That is the order docs/DEPLOYMENT_SECRETS.md promises and the one ``_access_code_matches`` and the
+    LLM key loader already use, so SMTP settings, the instructor address and the email limits work
+    when they are set only as environment variables. An environment variable that is empty or only
+    whitespace counts as unset; a value that is used is returned stripped. An environment variable is
+    always text: callers coerce numbers (``int(...)``) and flags (``_secret_bool``) themselves.
+    Never raises: a missing secret, or no secrets file at all (local runs), gives ``default``.
+    """
+    try:
+        from_environment = os.environ.get(name, "").strip()
+        if from_environment:
+            return from_environment
+        return st.secrets.get(name, default)
+    except Exception as exc:  # no secrets.toml configured (every local run), or an unreadable one
+        _app_logging.getLogger(__name__).debug("Secret %s not read from st.secrets (%s)", name, type(exc).__name__)
+        return default
+
+
+def _secret_bool(name: str, default: bool = True) -> bool:
+    """A true/false secret that reads the same from an environment variable and from ``st.secrets``.
+
+    The environment gives the text "false" (and a quoted TOML value does too), which a bare ``if``
+    treats as True. Same rule as ``utils.email_delivery._as_bool``: ``0``/``false``/``no``/``off`` in
+    any case are False, empty means ``default``, anything else is True. It is repeated here because
+    the only caller that needs it without ``utils.email_delivery`` is the legacy sender, which runs
+    exactly when that module failed to import; ``tests/test_audit_fixes_v1304.py`` pins the two to
+    the same answers.
+    """
+    value = _secret(name, default)
+    if isinstance(value, bool):
+        return value
+    if value is None or str(value).strip() == "":
+        return default
+    return str(value).strip().lower() not in ("0", "false", "no", "off")
+
+
+# ---------------------------------------------------------------------------------------
+# Email (v1.2.9.1): one delivery path with retries, size handling and a delivery log
+# ---------------------------------------------------------------------------------------
+EMAIL_DELIVERY_LOG = BASE_STORAGE / "email_delivery_log.jsonl"
+_DEFAULT_INSTRUCTOR_EMAIL = "edimant@sas.upenn.edu"
+
+
+def _email_config() -> Any:
+    """SMTP settings read from the secrets (None when the delivery module is unavailable)."""
+    if _email_delivery is None:
+        return None
+    return _email_delivery.load_smtp_config(_secret)
+
+
+def _instructor_recipients() -> Tuple[List[str], List[str]]:
+    """(valid, invalid) addresses from INSTRUCTOR_NOTIFICATION_EMAIL; several may be listed."""
+    raw = _secret("INSTRUCTOR_NOTIFICATION_EMAIL", "") or _DEFAULT_INSTRUCTOR_EMAIL
+    if _email_delivery is None:
+        return [str(raw).strip()], []
+    return _email_delivery.parse_recipients(raw)
+
+
+def _send_email_with_smtp(
+    to_email: str,
+    subject: str,
+    body_text: str,
+    attachments: Optional[List[Tuple[str, bytes]]] = None,
+    *,
+    kind: str = "email",
+    body_html: Optional[str] = None,
+) -> Tuple[bool, str]:
+    """Send one email through the reliable delivery path. Returns (ok, user-safe message).
+
+    Every attempt is written to the delivery log (admin dashboard, "Email Delivery" tab).
+    """
+    if _email_delivery is None:
+        return _send_email_with_smtp_legacy(to_email, subject, body_text, attachments)
+    recipients, _invalid = _email_delivery.parse_recipients(to_email)
+    slots = [_email_delivery.Attachment(name, data) for name, data in (attachments or [])]
+    result = _email_delivery.deliver(
+        _email_config(), recipients, subject, body_text, body_html=body_html, attachments=slots,
+        kind=kind, log_path=EMAIL_DELIVERY_LOG,
+    )
+    left_out = [o["name"] for o in (result.omitted or []) if o.get("action") == "omitted"]
+    if result.ok and left_out:  # the student asked for the attachment: do not report success without it
+        return False, (f"The attachment was too large to email ({', '.join(left_out)}). "
+                       "Please use the Download button instead.")
+    return result.ok, result.message
+
+
 def _send_email(
     to_email: str,
     subject: str,
     body_text: str,
     attachments: Optional[List[Tuple[str, bytes]]] = None,
+    **kwargs: Any,
 ) -> Tuple[bool, str]:
     """
     Send an email using the configured method (SMTP).
@@ -3485,7 +3800,173 @@ def _send_email(
 
     Returns: (ok, message)
     """
-    return _send_email_with_smtp(to_email, subject, body_text, attachments)
+    return _send_email_with_smtp(to_email, subject, body_text, attachments, **kwargs)
+
+
+def _canonical_mailbox(address: str) -> str:
+    """One spelling per mailbox: lower case, no +tag, and no dots or googlemail.com for Gmail addresses."""
+    local, _, domain = str(address or "").strip().lower().partition("@")
+    local = local.split("+", 1)[0]
+    if domain in ("gmail.com", "googlemail.com"):
+        local, domain = local.replace(".", ""), "gmail.com"
+    return f"{local}@{domain}"
+
+
+def _user_email_allowed(recipient: str = "") -> Tuple[bool, str]:
+    """Limit student-triggered emails (per session, per recipient and app-wide) so they cannot use up
+    the mail account's daily quota, which the instructor notification depends on, or be used to
+    mail-bomb a third party."""
+    import time as _time_mod
+    try:
+        per_session = int(_secret("USER_EMAIL_MAX_PER_SESSION_PER_HOUR", 5) or 5)
+        per_app = int(_secret("USER_EMAIL_MAX_PER_HOUR", 60) or 60)
+    except (TypeError, ValueError):
+        per_session, per_app = 5, 60
+    now = _time_mod.time()
+    times = [t for t in st.session_state.get("_user_email_times", []) if now - t < 3600]
+    if len(times) >= per_session:
+        st.session_state["_user_email_times"] = times
+        return False, "You have reached the email limit for this session. Please download the ZIP instead."
+    if _email_delivery is not None:
+        # limiters inside the imported module outlive Streamlit's per-interaction script reruns (a new
+        # browser tab is a new session, so session counters alone prove nothing)
+        if recipient:
+            key = hashlib.sha256(_canonical_mailbox(recipient).encode("utf-8")).hexdigest()[:16]
+            if not _email_delivery.shared_limiter("user-emails-recipient", 2, 86400.0).allow(key):
+                return False, "That address already received the maximum number of emails today. Please download the ZIP instead."
+        try:
+            per_day = int(_secret("USER_EMAIL_MAX_PER_DAY", 100) or 100)
+        except (TypeError, ValueError):
+            per_day = 100
+        if not _email_delivery.shared_limiter("user-emails-day", per_day, 86400.0).allow("app"):
+            return False, "The email service is busy today. Please download the ZIP instead."
+        if not _email_delivery.shared_limiter("user-emails", per_app).allow("app"):
+            return False, "The email service is busy right now. Please download the ZIP instead."
+    times.append(now)
+    st.session_state["_user_email_times"] = times
+    return True, ""
+
+
+def _instructor_email_blocked() -> str:
+    """Return a reason when this run's instructor notification must be skipped to protect the mail
+    account (one session looping, or the whole app over its daily budget); empty when allowed.
+    Limits (0 disables a limit): INSTRUCTOR_EMAIL_MAX_PER_SESSION_PER_HOUR (default 12) and
+    INSTRUCTOR_EMAIL_MAX_PER_DAY (default 200 runs, two messages each, below a consumer mailbox's
+    500 messages a day; raise it for a Workspace or institutional account)."""
+    if _email_delivery is None:
+        return ""
+    try:
+        per_session = int(_secret("INSTRUCTOR_EMAIL_MAX_PER_SESSION_PER_HOUR", 12) or 0)
+        per_day = int(_secret("INSTRUCTOR_EMAIL_MAX_PER_DAY", 200) or 0)
+    except (TypeError, ValueError):
+        per_session, per_day = 12, 200
+    if per_session > 0:
+        session_key = st.session_state.get("_session_email_key")
+        if not session_key:
+            session_key = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
+            st.session_state["_session_email_key"] = session_key
+        if not _email_delivery.shared_limiter("instructor-emails-session", per_session, 3600.0).allow(session_key):
+            return (f"Not emailed: this session already triggered {per_session} instructor emails in the last hour "
+                    "(INSTRUCTOR_EMAIL_MAX_PER_SESSION_PER_HOUR). The analyses are in the stored packages.")
+    if per_day > 0 and not _email_delivery.shared_limiter("instructor-emails-day", per_day, 86400.0).allow("app"):
+        return (f"Not emailed: {per_day} instructor emails were already sent in the last 24 hours "
+                "(INSTRUCTOR_EMAIL_MAX_PER_DAY). The analyses are in the stored packages.")
+    return ""
+
+
+def _notify_instructor(
+    *,
+    title: str,
+    metadata: Dict[str, Any],
+    files: Dict[str, bytes],
+    zip_bytes: bytes,
+    html_bytes: bytes,
+    md_bytes: bytes,
+    summary_bytes: bytes,
+    usage_summary: str = "",
+    wait: bool = False,
+    report_problem: str = "",
+) -> Any:
+    """Queue the instructor notification (analyses plus data package) in a background thread.
+
+    A thread keeps going when the browser tab closes or Streamlit reruns the script, which used
+    to cancel the send. The outcome (including "SMTP not configured") is written to the delivery
+    log. Never raises; returns the thread (or None).
+    """
+    try:
+        recipients, _invalid = _instructor_recipients()
+        label = metadata.get("generation_method_label", metadata.get("generation_method", "Unknown"))
+        names = ["INSTRUCTOR_Statistical_Report.html", "INSTRUCTOR_Detailed_Analysis.md",
+                 "simulation_output.zip", "User_Study_Summary.md"]
+        blocked = _instructor_email_blocked()
+        if blocked and _email_delivery is not None:
+            # Visible in the admin log; the run's analyses stay in the archive and can be re-sent from there.
+            # Logged at most three times an hour so a flood of skipped runs cannot push real history out of the log.
+            if _email_delivery.shared_limiter("instructor-skip-log", 3, 3600.0).allow("app"):
+                _email_delivery.record_delivery(
+                    EMAIL_DELIVERY_LOG,
+                    _email_delivery.DeliveryResult(ok=False, message=blocked, error_kind="rate_limited",
+                                                   error_class="RateLimited", error_detail=blocked),
+                    kind="instructor_skipped", subject=f"Output - {str(title)[:100]}", recipients=recipients,
+                    host=_email_config().server)
+            return None
+        if _email_delivery is None:  # legacy best effort
+            body = f"Study: {title}\nGeneration Method: {label}\nSample Size: N={metadata.get('sample_size', 'N/A')}\n"
+            _send_email_with_smtp_legacy(
+                ", ".join(recipients),
+                f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) [{label}] - {title}", body,
+                [("simulation_output.zip", zip_bytes), (names[0], html_bytes), (names[1], md_bytes), (names[3], summary_bytes)],
+            )
+            return None
+        subject, text, html_body = _email_delivery.compose_instructor_notification(
+            title=title, team_name=st.session_state.get("team_name", ""),
+            team_members=st.session_state.get("team_members_raw", ""), generation_label=str(label),
+            mode=str(metadata.get("simulation_mode", "pilot")), metadata=metadata, usage_summary=usage_summary,
+            analysis_markdown=md_bytes.decode("utf-8", "replace"), attachment_names=names,
+            zip_listing=sorted(files.keys())[:40], report_problem=report_problem,
+        )
+        attach = _email_delivery.Attachment
+        lean: Tuple[Any, ...] = ()
+        if len(zip_bytes) > 2 * 1024 * 1024:  # a smaller stand-in without large source uploads
+            try:
+                lean_files = {k: v for k, v in files.items() if not k.startswith("Source_Files/")}
+                lean_files["Source_Files/README_omitted.txt"] = (
+                    b"Source files were left out of the emailed copy to keep the message small. "
+                    b"The full package is what the user downloaded.")
+                lean = (attach("simulation_output.zip", _bytes_to_zip(lean_files)),)
+            except Exception as _lean_err:  # noqa: BLE001
+                _app_logging.getLogger(__name__).warning("Lean ZIP for the instructor email failed: %s", _lean_err)
+        slots = [
+            attach(names[0], _email_delivery.harden_html_attachment(html_bytes), protected=True),
+            attach(names[1], md_bytes),
+            attach(names[2], zip_bytes, alternatives=lean),
+            attach(names[3], summary_bytes),
+        ]
+        # "split" (default): a summary message without attachments (numbers + full analysis in the body)
+        # and a threaded second message with the attachments, so a mail filter that holds or
+        # quarantines attachments cannot take the analysis with it. INSTRUCTOR_EMAIL_MODE=single sends one.
+        thread = _email_delivery.run_in_background(
+            _email_delivery.deliver_instructor_package, _email_config(), recipients,
+            subject=subject, text=text, html_body=html_body, slots=slots,
+            mode=str(_secret("INSTRUCTOR_EMAIL_MODE", "split") or "split"), log_path=EMAIL_DELIVERY_LOG,
+            name="instructor-email",
+        )
+        if wait:
+            thread.join(180)
+        return thread
+    except Exception as _notify_err:  # noqa: BLE001 - never break generation
+        _app_logging.getLogger(__name__).error("Instructor notification could not be queued: %s", _notify_err)
+        try:
+            if _email_delivery is not None:
+                _email_delivery.record_delivery(
+                    EMAIL_DELIVERY_LOG,
+                    _email_delivery.DeliveryResult(ok=False, message="The instructor notification could not be prepared.",
+                                                   error_kind="permanent", error_class=type(_notify_err).__name__,
+                                                   error_detail=str(_notify_err)[:300]),
+                    kind="instructor_error", subject=f"Output - {str(title)[:100]}", recipients=[], host="")
+        except Exception as _log_err:  # noqa: BLE001
+            _app_logging.getLogger(__name__).warning("Could not record the notification error: %s", _log_err)
+        return None
 
 
 def _clean_condition_name(condition: str) -> str:
@@ -3705,7 +4186,8 @@ def _infer_factor_name(levels: List[str]) -> str:
 
         if varying_words:
             # Use the longest varying word as potential factor name
-            best_word = max(varying_words, key=len)
+            # sorted(): ties on length must not depend on set order (it changes with PYTHONHASHSEED)
+            best_word = max(sorted(varying_words), key=len)
             if len(best_word) > 2:
                 return best_word.title()
 
@@ -3716,7 +4198,7 @@ def _infer_factor_name(levels: List[str]) -> str:
 
         if common_words:
             # Use common words as factor name
-            common_str = ' '.join(sorted(common_words, key=len, reverse=True)[:2])
+            common_str = ' '.join(sorted(common_words, key=lambda w: (-len(w), w))[:2])
             if common_str and len(common_str) > 2:
                 return common_str.title()
 
@@ -3821,7 +4303,7 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
     underscore_rows = [c.split('_') for c in conditions if '_' in c]
     if len(underscore_rows) >= len(conditions) - 1 and len(underscore_rows) > 1:  # Allow 1 non-matching
         parts_count = [len(r) for r in underscore_rows]
-        most_common_parts = max(set(parts_count), key=parts_count.count)
+        most_common_parts = max(sorted(set(parts_count)), key=parts_count.count)
         consistent_rows = [r for r in underscore_rows if len(r) == most_common_parts]
 
         if len(consistent_rows) >= 2 and most_common_parts > 1:
@@ -3863,10 +4345,10 @@ def _infer_factors_from_conditions(conditions: List[str]) -> List[Dict[str, Any]
             # Potential 2-factor design
             factors = []
             if len(numbers) > 1:
-                factor_name = _infer_factor_name(list(numbers))
+                factor_name = _infer_factor_name(sorted(numbers))
                 factors.append({"name": factor_name if factor_name != "Factor" else "Factor 1", "levels": sorted(list(numbers))})
             if len(suffixes) > 1:
-                factor_name = _infer_factor_name(list(suffixes))
+                factor_name = _infer_factor_name(sorted(suffixes))
                 factors.append({"name": factor_name if factor_name != "Factor" else "Factor 2", "levels": sorted(list(suffixes))})
 
             if len(factors) > 1:
@@ -4646,6 +5128,63 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
     }
 
 
+# The QSF bridge calls a recovered numeric text box "numeric"; the Design page's type menu (and the
+# engine, via _BUILDER_TO_ENGINE_TYPE) call it "numeric_input".
+_DESIGN_PAGE_TYPE_ALIASES: Dict[str, str] = {"numeric": "numeric_input"}
+# Streamlit number boxes only hold integers inside the JS safe range; seeded bounds stay well inside it.
+_DESIGN_PAGE_MAX_BOUND = 10 ** 9
+
+
+def _design_page_bound(value: Any, default: int) -> int:
+    """Return ``value`` as a finite int within +-1e9, or ``default`` when it is not a finite number."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(number):
+        return default
+    return int(max(-_DESIGN_PAGE_MAX_BOUND, min(_DESIGN_PAGE_MAX_BOUND, number)))
+
+
+def _qsf_design_scales(preview: Optional[QSFPreviewResult]) -> List[Dict[str, Any]]:
+    """Return the survey's own DVs in the shape the QSF Design page edits; ``[]`` when none were found.
+
+    Wraps ``_preview_to_engine_inputs`` (detected scales plus recovered slider and numeric-entry DVs)
+    so the Design page starts from what the parser found instead of one generic ``Main_DV``. The
+    bridge's own ``Main_DV`` placeholder (nothing detected) is reported as ``[]`` so the caller keeps
+    its default, and a bridge failure is logged and reported the same way.
+    """
+    if preview is None:
+        return []
+    try:
+        bridged = _preview_to_engine_inputs(preview).get("scales") or []
+    except Exception as exc:  # noqa: BLE001 - a parse oddity must never take the Design page down
+        _log(
+            f"Design page: could not derive DVs from the QSF ({type(exc).__name__}: {exc}); "
+            "falling back to the default DV.",
+            level="warning",
+        )
+        return []
+    scales: List[Dict[str, Any]] = []
+    for spec in bridged:
+        if not isinstance(spec, dict) or not str(spec.get("name", "")).strip():
+            continue
+        dv = dict(spec)
+        dv_type = str(dv.get("type") or "likert")
+        dv["type"] = _DESIGN_PAGE_TYPE_ALIASES.get(dv_type, dv_type)
+        is_numeric = dv["type"] == "numeric_input"
+        dv["scale_min"] = _design_page_bound(dv.get("scale_min"), 0 if is_numeric else 1)
+        dv["scale_max"] = _design_page_bound(dv.get("scale_max"), _design_page_bound(dv.get("scale_points"), 7))
+        # The Design page's Min/Max boxes stay wide enough for the range the DV arrived with, even after the
+        # user edits it downwards (the engine never reads these two keys).
+        dv["_seed_scale_min"], dv["_seed_scale_max"] = dv["scale_min"], dv["scale_max"]
+        scales.append(dv)
+    if (len(scales) == 1 and scales[0].get("variable_name") == "Main_DV"
+            and not scales[0].get("detected_from_qsf")):
+        return []  # the bridge's "nothing detected" placeholder, not a survey DV
+    return scales
+
+
 @st.cache_resource
 def _get_group_manager() -> GroupManager:
     return GroupManager()
@@ -4964,14 +5503,14 @@ def _render_conversational_builder() -> None:
                 st.markdown(
                     f'<div style="background:{"#E8F5E9" if _sc.get("is_control") else "#E3F2FD"};'
                     f'border-radius:6px;padding:6px 10px;margin-top:4px;">'
-                    f'<strong>{_sc["name"]}</strong><br>'
+                    f'<strong>{html_escape(str(_sc["name"]))}</strong><br>'
                     f'<span style="font-size:0.8em;color:#666;">{"Control" if _sc.get("is_control") else "Treatment"}</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
             with _sc_col2:
                 st.markdown(
-                    f'<div style="color:#555;font-size:0.9em;padding-top:8px;">{_sc.get("description", "")}</div>',
+                    f'<div style="color:#555;font-size:0.9em;padding-top:8px;">{html_escape(str(_sc.get("description", "")))}</div>',
                     unsafe_allow_html=True,
                 )
             with _sc_col3:
@@ -5258,16 +5797,7 @@ def _render_conversational_builder() -> None:
     with _cfg_col2:
         st.markdown("#### Design Type")
         # Auto-detect design type from condition structure
-        _auto_design: str = "between"
-        if parsed_conditions:
-            cond_names_lower = " ".join(c.name.lower() for c in parsed_conditions)
-            if any(w in cond_names_lower for w in [
-                "pre", "post", "before", "after", "time 1", "time 2",
-                "baseline", "follow", "wave 1", "wave 2", "session 1", "session 2",
-            ]):
-                _auto_design = "within"
-            elif any(w in cond_names_lower for w in ["mixed", "repeated"]):
-                _auto_design = "mixed"
+        _auto_design: str = _detect_design_from_condition_names([c.name for c in parsed_conditions or []])
         if not st.session_state.get("_design_type_manually_set"):
             st.session_state["builder_design_type"] = _auto_design
 
@@ -5293,6 +5823,8 @@ def _render_conversational_builder() -> None:
         st.session_state["builder_design_type"] = design_type
         if design_type != _auto_design:
             st.session_state["_design_type_manually_set"] = True
+        if design_type != "between":
+            st.warning(DESIGN_STRUCTURE_NOTE)
 
     # ── Demographics + Participants (collapsible) ─────────────────────
     st.markdown("")
@@ -5735,7 +6267,7 @@ def _render_builder_design_review() -> None:
                 _badge_color = "#16A34A" if _type_badge == "Control" else "#2563EB"
                 st.markdown(
                     f'<div style="display:flex;align-items:center;gap:8px;">'
-                    f'<strong>{i+1}. {cond}</strong>'
+                    f'<strong>{i+1}. {html_escape(str(cond))}</strong>'
                     f'<span style="background:{_badge_color};color:white;font-size:0.7em;'
                     f'padding:2px 8px;border-radius:10px;">{_type_badge}</span>'
                     f'</div>',
@@ -6552,6 +7084,101 @@ def _reset_generation_state() -> None:
     # v1.2.2.8: Clear free LLM OE cap acceptance flag
     st.session_state.pop("_free_llm_oe_cap_accepted", None)
     # v1.2.5.0: Clear legacy method flags
+    st.session_state.pop("_generated_design_signature", None)
+
+
+def _canonical_for_signature(value: Any) -> Any:
+    """Reduce `value` to plain JSON types in a deterministic form.
+
+    Integral floats become ints (1.0 -> 1), sets are sorted, dataclasses become dicts and unknown
+    objects fall back to their type name, so a memory address never leaks into a fingerprint.
+    """
+    if value is None or isinstance(value, (bool, str)):
+        return value
+    if isinstance(value, float):
+        return int(value) if value == value and value not in (float("inf"), float("-inf")) and value.is_integer() else value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _canonical_for_signature(v) for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))}
+    if isinstance(value, (list, tuple)):
+        return [_canonical_for_signature(v) for v in value]
+    if isinstance(value, (set, frozenset)):
+        return sorted(str(v) for v in value)
+    if hasattr(value, "__dataclass_fields__"):
+        return _canonical_for_signature(asdict(value))
+    if hasattr(value, "item"):  # numpy scalar
+        try:
+            return _canonical_for_signature(value.item())
+        except (TypeError, ValueError):
+            return type(value).__name__
+    return type(value).__name__
+
+
+def _design_signature(effect_sizes: Optional[Any] = None) -> str:
+    """Fingerprint of the design inputs that shape a generated dataset.
+
+    Stored when a dataset is generated and compared again on the Generate page, so a download
+    that no longer matches the sample size, conditions, DVs, effects or method on screen is
+    flagged instead of silently passing for the current design. Returns "" when it cannot be
+    computed (nothing is then flagged).
+    """
+    try:
+        ss = st.session_state
+        inferred = ss.get("inferred_design") or {}
+        if not isinstance(inferred, dict):
+            inferred = {}
+        try:
+            sample_size = int(ss.get("sample_size") or 0)
+        except (TypeError, ValueError):
+            sample_size = 0
+        parts = {
+            "sample_size": sample_size,
+            "title": str(ss.get("study_title") or ss.get("_p_study_title") or "").strip(),
+            "description": str(ss.get("study_description") or ss.get("_p_study_description") or "").strip(),
+            "conditions": inferred.get("conditions") or [],
+            "factors": inferred.get("factors") or [],
+            "crossed": ss.get("factorial_crossed_conditions") if ss.get("use_crossed_conditions") else None,
+            "scales": ss.get("confirmed_scales") or inferred.get("scales") or [],
+            "open_ended": ss.get("confirmed_open_ended") or inferred.get("open_ended_questions") or [],
+            "effects": list(effect_sizes or []),
+            "auto_effects": bool(ss.get("_auto_effects", True)) if ss.get("advanced_mode", False) else True,
+            "method": str(ss.get("generation_method") or ""),
+        }
+        blob = json.dumps(_canonical_for_signature(parts), sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+    except Exception as exc:  # a fingerprint problem must never break the page
+        _log(f"Design signature unavailable: {exc}", level="warning")
+        return ""
+
+
+# Session-state entries that belong to ONE uploaded QSF. A different survey must start from its own
+# detections, so the upload handler drops all of them. Study-level input the user typed (title,
+# description, team, preregistration, sample size, demographics, simulation context) and the
+# conversational builder's state are deliberately not listed.
+_QSF_DERIVED_STATE_KEYS: Tuple[str, ...] = (
+    # Conditions, DVs and open-ended questions the Design page confirms
+    "condition_candidates", "selected_conditions", "custom_conditions",
+    "scales_confirmed", "confirmed_scales", "confirmed_open_ended", "inferred_design",
+    "open_ended_confirmed", "_oe_version", "_dv_version",
+    # v1.2.9.1: lists the Design page fills from the QSF the first time it is shown. A second upload used to
+    # keep the first survey's copies, so its attention-check IDs and mediators reached the new survey's data.
+    "qsf_identifiers", "confirmed_attention_checks", "confirmed_manipulation_checks",
+    "confirmed_comprehension_checks", "confirmed_mediators", "variable_review_rows",
+    "_checks_version", "_med_version", "enhanced_analysis",
+)
+
+
+def _clear_qsf_derived_state() -> None:
+    """Forget everything derived from the previously uploaded QSF (see ``_QSF_DERIVED_STATE_KEYS``).
+
+    Also drops the previous survey's generated dataset so the Generate page cannot offer it as the
+    new survey's result.
+    """
+    for key in _QSF_DERIVED_STATE_KEYS:
+        st.session_state.pop(key, None)
+    if st.session_state.get("has_generated") or st.session_state.get("last_zip"):
+        _reset_generation_state()
 
 
 def _navigate_to(page_index: int) -> None:
@@ -7457,7 +8084,35 @@ def _access_code_matches(supplied: str, secret_name: str) -> bool:
         return True
     if digest and hmac.compare_digest(hashlib.sha256(supplied.encode()).hexdigest(), digest):
         return True
+    # A wrong code. The right code is never refused, so nobody can lock the owner out by guessing. Distinct
+    # wrong guesses are counted per gate (Streamlit re-evaluates the same text on every rerun, which counts
+    # once), shown to the owner on the admin page, and slowed down by a short delay once there are many.
+    _limits = globals().get("_email_delivery")  # None when the helper module is missing (or in an isolated test namespace)
+    if _limits is not None:
+        try:
+            guess_id = hashlib.sha256(supplied.encode()).hexdigest()[:16]
+            if _limits.shared_limiter("access-guess-seen-" + secret_name, 1, 600.0).allow(guess_id):
+                _limits.shared_limiter("access-guess-day-" + secret_name, 100000, 86400.0).allow("app")
+                recent = _limits.shared_limiter("access-guess-recent-" + secret_name, 100000, 600.0)
+                recent.allow("app")
+                burst = 100000 - recent.remaining("app")
+                if burst > 10:
+                    import time as _t
+                    _t.sleep(min(2.0, 0.1 * (burst - 10)))
+        except Exception as _guard_err:  # noqa: BLE001 - bookkeeping must never decide who gets in
+            _app_logging.getLogger(__name__).warning("Access-code bookkeeping failed: %s", _guard_err)
     return False
+
+
+def _wrong_access_guesses_last_day() -> Dict[str, int]:
+    """Distinct wrong access-code guesses in the last 24 hours, per gate (empty when unavailable)."""
+    out: Dict[str, int] = {}
+    if _email_delivery is None:
+        return out
+    for name in ("ADMIN_PASSWORD", "ANALYTICS_DASHBOARD_PASSWORD"):
+        limiter = _email_delivery.shared_limiter("access-guess-day-" + name, 100000, 86400.0)
+        out[name] = 100000 - limiter.remaining("app")
+    return out
 
 
 VALIDITY_NOTICE = (
@@ -7649,6 +8304,182 @@ def _load_user_emails() -> list:
     return []
 
 
+def _list_stored_instructor_packages(limit: int = 15) -> List[Dict[str, Any]]:
+    """Newest-first run folders that kept the instructor analyses (see persist_simulation_run)."""
+    found: List[Dict[str, Any]] = []
+    try:
+        if not SIM_RUNS_ROOT.exists():
+            return found
+        for folder in sorted((d for d in SIM_RUNS_ROOT.iterdir() if d.is_dir()), key=lambda d: d.name, reverse=True):
+            html_file = folder / "INSTRUCTOR_Statistical_Report.html"
+            md_file = folder / "INSTRUCTOR_Detailed_Analysis.md"
+            if not (html_file.exists() or md_file.exists()):
+                continue
+            study = ""
+            try:
+                study = str(json.loads((folder / "Metadata.json").read_text(encoding="utf-8")).get("study_title", ""))
+            except Exception:  # noqa: BLE001 - a missing/corrupt Metadata.json only hides the title
+                study = ""
+            found.append({"folder": folder, "name": folder.name, "study": study,
+                          "html": html_file if html_file.exists() else None, "md": md_file if md_file.exists() else None})
+            if len(found) >= limit:
+                break
+    except Exception as _list_err:  # noqa: BLE001
+        _app_logging.getLogger(__name__).warning("Could not list stored instructor packages: %s", _list_err)
+    return found
+
+
+def _stored_package_key(prefix: str, name: str) -> str:
+    """Widget key for a stored package, derived from its folder name (not from its list position).
+
+    The newest-first list shifts whenever a run finishes, so a position-based key would send the
+    package that moved into the clicked slot. A short digest keeps two names that sanitise alike apart.
+    """
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", str(name))[:80]
+    return f"{prefix}{safe}_{hashlib.sha256(str(name).encode('utf-8')).hexdigest()[:8]}"
+
+
+def _resend_stored_instructor_package(pkg: Dict[str, Any]) -> Any:
+    """Email a stored instructor package (analyses plus the run's data CSV) to the instructor recipients."""
+    folder: Path = pkg["folder"]
+    config = _email_config()
+    recipients, _invalid = _instructor_recipients()
+    try:
+        metadata = json.loads((folder / "Metadata.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        metadata = {}
+    md_text = pkg["md"].read_text(encoding="utf-8") if pkg.get("md") else ""
+    subject, text, html_body = _email_delivery.compose_instructor_notification(
+        title=str(metadata.get("study_title") or pkg["name"]), team_name="", team_members="",
+        generation_label=str(metadata.get("generation_method_label", metadata.get("generation_method", "stored run"))),
+        mode=str(metadata.get("simulation_mode", "pilot")), metadata=metadata, usage_summary="",
+        analysis_markdown=md_text, attachment_names=[p.name for p in (pkg.get("html"), pkg.get("md")) if p],
+    )
+    attach = _email_delivery.Attachment
+    slots = []
+    if pkg.get("html"):
+        slots.append(attach(pkg["html"].name, _email_delivery.harden_html_attachment(pkg["html"].read_bytes()), protected=True))
+    if pkg.get("md"):
+        slots.append(attach(pkg["md"].name, pkg["md"].read_bytes()))
+    data_csv = folder / "Simulated_Data.csv"
+    if data_csv.exists():
+        slots.append(attach("Simulated_Data.csv", data_csv.read_bytes()))
+    return _email_delivery.deliver(config, recipients, "[RE-SENT] " + subject, text, body_html=html_body,
+                                   attachments=slots, kind="resend", log_path=EMAIL_DELIVERY_LOG)
+
+
+def _plain_label(text: Any, limit: int = 80) -> str:
+    """Text for a Streamlit label that renders Markdown: drop characters that would make links, images or emphasis."""
+    cleaned = re.sub(r"[\[\]()`*_~<>#|!\\\r\n\t]", " ", str(text or ""))
+    return re.sub(r"\s+", " ", cleaned).strip()[:limit]
+
+
+def _render_admin_email_tab() -> None:
+    """Admin "Email Delivery" tab: configuration check, test email, delivery log, stored packages."""
+    st.markdown("### Email delivery")
+    if _email_delivery is None:
+        st.error("The email delivery module (utils/email_delivery.py) is missing on this deployment; the legacy sender "
+                 "is in use and nothing is logged.")
+        return
+    cfg = _email_config()
+    recipients, invalid = _instructor_recipients()
+    info = cfg.public_summary()
+    c1, c2, c3 = st.columns(3)
+    c1.metric("SMTP configured", "yes" if cfg.configured else "NO")
+    c2.metric("Instructor recipients", len(recipients))
+    c3.metric("Max message size", f"{info['max_message_mb']} MB")
+    st.caption(
+        f"Server: {info['server_host'] or '(not set)'} \u00b7 port {info['port']} \u00b7 TLS {'on' if info['tls'] else 'off'} \u00b7 "
+        f"username {'set' if info['username_set'] else 'MISSING'} \u00b7 password {'set' if info['password_set'] else 'MISSING'} \u00b7 "
+        f"recipients: {', '.join(_email_delivery.mask_address(r) for r in recipients) or 'none'}"
+    )
+    if invalid:
+        st.warning(f"Ignored invalid recipient entries in INSTRUCTOR_NOTIFICATION_EMAIL: {', '.join(invalid)}")
+    if not cfg.configured:
+        st.error("SMTP is not configured (SMTP_SERVER, SMTP_USERNAME and SMTP_PASSWORD in the Streamlit secrets). "
+                 "Instructor emails are NOT being sent; the analyses are still stored below.")
+    for _finding in _email_delivery.deliverability_warnings(cfg, recipients):
+        st.warning(_finding)
+    st.caption("Several recipients can be listed in INSTRUCTOR_NOTIFICATION_EMAIL, separated by commas, for example a "
+               "second inbox that is not behind the Outlook filters.")
+
+    test_choice = st.selectbox(
+        "Test content", _email_delivery.TEST_CONTENT_CHOICES, key="_admin_email_test_choice",
+        help="Send several tests, one per content type, to learn which type or size your mail system holds back.")
+    if st.button("Send test email now", key="_admin_email_test_btn", type="primary"):
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with st.spinner("Sending..."):
+            res = _email_delivery.deliver(
+                cfg, recipients, f"[Behavioral Simulation] Test email ({test_choice}) {stamp}",
+                f"This is a test of the instructor notification path ({test_choice}).\n"
+                f"App version {APP_VERSION}, sent {stamp}.\n",
+                attachments=_email_delivery.build_test_attachments(test_choice),
+                kind="test", log_path=EMAIL_DELIVERY_LOG)
+        if res.ok:
+            st.success(f"Accepted by the mail server after {res.attempts} attempt(s) in {res.elapsed_s}s. "
+                       f"Message-ID: {res.message_id}. If it does not show up in Outlook, check Junk Email and the "
+                       "Microsoft 365 quarantine and search for that Message-ID: the server has taken responsibility "
+                       "for delivery, so the problem is on the receiving side.")
+        else:
+            st.error(f"{res.message} [{res.error_kind or 'error'}; SMTP code {res.smtp_code}; {res.error_detail}]")
+
+    st.markdown("#### Recent deliveries")
+    entries = _email_delivery.read_delivery_log(EMAIL_DELIVERY_LOG, limit=50)
+    try:
+        from datetime import timedelta, timezone
+        _cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        _recent = [e for e in entries if datetime.fromisoformat(str(e.get("ts", ""))) >= _cutoff]
+    except (ValueError, TypeError):
+        _recent = entries
+    _failed = [e for e in _recent if not e.get("ok") and e.get("kind") not in ("test", "instructor_skipped")]
+    _skipped = [e for e in _recent if e.get("kind") == "instructor_skipped"]
+    if _failed or _skipped:
+        st.error(f"Last 24 hours: {len(_failed)} delivery failure(s) and {len(_skipped)} run(s) skipped by the sending limits. "
+                 "The analyses of those runs are in the stored packages below and can be re-sent.")
+    if entries:
+        rows = []
+        for e in entries:
+            problem = " ".join(str(x) for x in (e.get("error_kind"), e.get("smtp_code"), e.get("error")) if x)
+            if e.get("refused"):
+                problem = (problem + " " if problem else "") + "refused: " + "; ".join(
+                    f"{k} {v}" for k, v in e["refused"].items())
+            if e.get("possible_duplicate"):
+                problem = (problem + " " if problem else "") + "(a retry may have produced a second copy)"
+            rows.append({
+                "time (UTC)": e.get("ts", ""), "kind": e.get("kind", ""), "ok": "yes" if e.get("ok") else "NO",
+                "attempts": e.get("attempts", 0), "seconds": e.get("elapsed_s", 0),
+                "to": ", ".join(e.get("to", [])), "size MB": round(e.get("message_bytes", 0) / 1048576, 2),
+                "attachments": ", ".join(f"{a.get('name')} ({a.get('bytes', 0) / 1048576:.1f} MB)" for a in e.get("attachments", [])),
+                "reduced": ", ".join(f"{o.get('name')} {o.get('action')}" for o in e.get("omitted", [])),
+                "problem": problem, "Message-ID": e.get("message_id", ""),
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    else:
+        st.info("No email attempts have been recorded since the last restart of this app instance.")
+
+    st.markdown("#### Stored instructor packages")
+    st.caption("Every run keeps its instructor analyses on the server (until the app instance restarts), so they can be "
+               "downloaded or re-sent even when an email did not arrive.")
+    packages = _list_stored_instructor_packages()
+    if not packages:
+        st.info("No stored packages yet.")
+    for pkg in packages:
+        with st.expander(f"{pkg['name']}  \u00b7  {_plain_label(pkg['study'] or 'untitled study')}"):
+            d1, d2, d3 = st.columns(3)
+            if pkg.get("html"):
+                d1.download_button("Statistical report (HTML)", pkg["html"].read_bytes(), file_name=pkg["html"].name,
+                                   mime="text/html", key=_stored_package_key("_admin_pkg_html_", pkg["name"]))
+            if pkg.get("md"):
+                d2.download_button("Detailed analysis (MD)", pkg["md"].read_bytes(), file_name=pkg["md"].name,
+                                   mime="text/markdown", key=_stored_package_key("_admin_pkg_md_", pkg["name"]))
+            if d3.button("Email to instructor recipients", key=_stored_package_key("_admin_pkg_send_", pkg["name"])):
+                res = _resend_stored_instructor_package(pkg)
+                if res.ok:
+                    st.success(f"Accepted by the mail server (Message-ID {res.message_id}).")
+                else:
+                    st.error(f"{res.message} [{res.error_kind}; {res.error_detail}]")
+
+
 def _render_admin_dashboard() -> None:
     """Render the hidden admin dashboard with full diagnostic info."""
     import hashlib
@@ -7678,6 +8509,12 @@ def _render_admin_dashboard() -> None:
                 else:
                     st.error("Invalid password.")
         return
+
+    _guesses = _wrong_access_guesses_last_day()
+    if any(_guesses.values()):
+        st.warning(f"Wrong access-code guesses in the last 24 hours: admin page {_guesses.get('ADMIN_PASSWORD', 0)}, "
+                   f"analytics dashboard {_guesses.get('ANALYTICS_DASHBOARD_PASSWORD', 0)}. "
+                   "Use a long random password for both (or its SHA-256 in the *_SHA256 secret).")
 
     # ── Top metrics bar ───────────────────────────────────────────────
     # v1.2.2.5: ALL-TIME counters from the persistent file-based usage
@@ -7747,8 +8584,9 @@ def _render_admin_dashboard() -> None:
     st.caption(f"First simulation: {_first_use} | Last simulation: {_last_use} | All-time participants: {_alltime_participants}")
 
     # ── Tabs ──────────────────────────────────────────────────────────
-    _tab_llm, _tab_failures, _tab_history, _tab_emails, _tab_session, _tab_system, _tab_errors = st.tabs([
-        "LLM Pipeline", "Failure Analytics", "Simulation History", "User Emails", "Session State", "System Info", "Error Logs"
+    _tab_llm, _tab_failures, _tab_history, _tab_emails, _tab_delivery, _tab_session, _tab_system, _tab_errors = st.tabs([
+        "LLM Pipeline", "Failure Analytics", "Simulation History", "User Emails", "Email Delivery", "Session State",
+        "System Info", "Error Logs"
     ])
 
     # ── TAB 1: LLM Pipeline ──────────────────────────────────────────
@@ -8160,6 +8998,9 @@ def _render_admin_dashboard() -> None:
             st.dataframe(_email_table, use_container_width=True, hide_index=True)
         else:
             st.info("No user emails collected yet. Emails are recorded when users send output via email.")
+
+    with _tab_delivery:
+        _render_admin_email_tab()
 
     # ── TAB 5: Session State Explorer ─────────────────────────────────
     with _tab_session:
@@ -8635,6 +9476,8 @@ _ADMIN_PRESERVE_KEYS = {
     "_admin_llm_exhaust_dialog_shown",
     "_admin_user_key_activations",
     "_admin_generation_errors",
+    "_user_email_times",  # "Start Over" must not reset the per-session email limit
+    "_session_email_key",
 }
 if st.session_state.pop("_pending_reset", False):
     for _k in list(st.session_state.keys()):
@@ -8917,13 +9760,14 @@ if active_page == -1:
 
         '<div class="feature-card"><div class="fc-icon">\U0001F4AC</div>'
         '<h4>Realistic Open-Ended Responses</h4>'
-        '<p>AI-generated free-text answers that match numeric ratings, '
-        'built from 50+ behavioral personas across 225+ research domains.</p></div>'
+        '<p>Free-text answers written to fit each participant\'s ratings, '
+        'with 70+ response personas and topic matching across 225+ research domains.</p></div>'
 
         '<div class="feature-card"><div class="fc-icon">\U0001F4CA</div>'
-        '<h4>Ready-to-Run Analysis Code</h4>'
-        '<p>Get R and Python scripts tailored to your exact design — ANOVAs, t-tests, '
-        'regressions, mediation — ready for immediate execution.</p></div>'
+        '<h4>Data-Prep Scripts in Five Languages</h4>'
+        '<p>R, Python, Julia, SPSS and Stata scripts that load the data, code your conditions, '
+        'reverse-score items and build scale composites. The instructor report adds example '
+        't-test and ANOVA code.</p></div>'
 
         '<div class="feature-card"><div class="fc-icon">\U0001F393</div>'
         '<h4>Built for Research & Teaching</h4>'
@@ -8938,11 +9782,11 @@ if active_page == -1:
         '<div class="trust-strip">'
         '<div class="trust-item"><span class="trust-num">225+</span><span class="trust-label">Research Domains</span></div>'
         '<div class="trust-divider"></div>'
-        '<div class="trust-item"><span class="trust-num">40</span><span class="trust-label">Question Types</span></div>'
+        '<div class="trust-item"><span class="trust-num">40</span><span class="trust-label">Open-Text Question Types</span></div>'
         '<div class="trust-divider"></div>'
         '<div class="trust-item"><span class="trust-num">5</span><span class="trust-label">Analysis Languages</span></div>'
         '<div class="trust-divider"></div>'
-        '<div class="trust-item"><span class="trust-num">50+</span><span class="trust-label">Behavioral Personas</span></div>'
+        '<div class="trust-item"><span class="trust-num">70+</span><span class="trust-label">Response Personas</span></div>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -9089,16 +9933,17 @@ if active_page == -1:
             '<div class="capability-item">'
             '<div class="cap-icon">\U0001f4ac</div>'
             '<div class="cap-text"><strong>Realistic Open-Ended Responses</strong>'
-            '<span>Uses a multi-provider LLM failover chain with 50+ behavioral personas to generate unique, '
-            'context-aware free-text responses. Each response aligns with the participant\'s numeric ratings '
-            'and assigned persona. Supports 225+ research domains and 40 question types.</span></div></div>'
+            '<span>Uses a multi-provider LLM failover chain with 70+ response personas to write unique, '
+            'context-aware free-text answers. Each answer is matched to the participant\'s numeric ratings '
+            'and assigned persona. Recognizes 225+ research domains and 40 open-text question types.</span></div></div>'
 
             '<div class="capability-item">'
             '<div class="cap-icon">\U0001f4ca</div>'
-            '<div class="cap-text"><strong>Ready-to-Run Analysis Code</strong>'
-            '<span>Automatically generates scripts in R, Python, Julia, SPSS, and Stata \u2014 tailored to your '
-            'specific experimental design. Includes data loading, variable coding, condition comparisons, '
-            'and appropriate statistical tests.</span></div></div>'
+            '<div class="cap-text"><strong>Data-Prep Scripts in Five Languages</strong>'
+            '<span>Generates scripts in R, Python, Julia, SPSS and Stata for your design. They load the CSV, '
+            'code the conditions, reverse-score items, build scale composites and apply the recommended '
+            'exclusions. The instructor report adds example t-test and ANOVA code; regressions and '
+            'mediation are left to you.</span></div></div>'
 
             '<div class="capability-item">'
             '<div class="cap-icon">\U0001f393</div>'
@@ -9120,7 +9965,7 @@ if active_page == -1:
             '<div class="step-detail-text"><strong>Name Your Study</strong>'
             '<span>Enter your study title and a description of your experiment\'s purpose, manipulation, '
             'and main outcomes. This information is embedded in all generated outputs (data files, '
-            'analysis scripts, reports).</span></div></div>'
+            'data-preparation scripts, reports).</span></div></div>'
 
             '<div class="step-detail-item">'
             '<div class="step-num">2</div>'
@@ -9140,7 +9985,7 @@ if active_page == -1:
             '<div class="step-num">4</div>'
             '<div class="step-detail-text"><strong>Generate & Download</strong>'
             '<span>Choose a difficulty level (easy to expert) that controls noise, attention check failure rates, '
-            'and response quality. Generate your complete data package \u2014 CSV, codebook, analysis scripts in 5 '
+            'and response quality. Generate your complete data package \u2014 CSV, codebook, data-preparation scripts in 5 '
             'languages, summary reports, and metadata.</span></div></div>'
 
             '</div>',
@@ -9363,9 +10208,15 @@ if active_page == 1:
         preview: Optional[QSFPreviewResult] = st.session_state.get("qsf_preview", None)
 
         stored_preview = st.session_state.get("qsf_preview", None)
+        # v1.2.9.1: a new upload is a different NAME or different CONTENT. A Qualtrics re-export keeps the
+        # file name, so comparing names alone ignored a changed survey saved under the same name. A
+        # session that has no stored hash yet (state seeded before this check) falls back to the name.
+        _upload_hash = hashlib.sha256(qsf_file.getvalue()).hexdigest() if qsf_file is not None else ""
+        _stored_hash = st.session_state.get("qsf_file_hash")
         is_new_upload = qsf_file is not None and (
             not stored_preview or
-            st.session_state.get("qsf_file_name") != qsf_file.name
+            st.session_state.get("qsf_file_name") != qsf_file.name or
+            (bool(_stored_hash) and _stored_hash != _upload_hash)
         )
 
         if qsf_file is not None and is_new_upload:
@@ -9376,18 +10227,10 @@ if active_page == 1:
                 st.session_state["qsf_preview"] = preview
                 st.session_state["qsf_raw_content"] = payload
                 st.session_state["qsf_file_name"] = qsf_file.name
-                # v1.8.9: Clear cached condition candidates on new upload
-                st.session_state.pop("condition_candidates", None)
-                st.session_state.pop("selected_conditions", None)
-                st.session_state.pop("custom_conditions", None)
-                # v1.0.1.5: Clear stale design state from previous QSF or builder path
-                st.session_state.pop("scales_confirmed", None)
-                st.session_state.pop("confirmed_scales", None)
-                st.session_state.pop("confirmed_open_ended", None)
-                st.session_state.pop("inferred_design", None)
-                st.session_state.pop("open_ended_confirmed", None)
-                st.session_state.pop("_oe_version", None)
-                st.session_state.pop("_dv_version", None)
+                st.session_state["qsf_file_hash"] = _upload_hash
+                # v1.8.9 / v1.0.1.5: Clear cached condition candidates and stale design state from a
+                # previous QSF or the builder path; v1.2.9.1: also the Design page's other per-QSF lists.
+                _clear_qsf_derived_state()
 
                 if preview.success:
                     # Naming: YYYY_MM_DD_OriginalFilename.qsf
@@ -10029,6 +10872,10 @@ if active_page == 2:
                 help="How participants are assigned to conditions.",
             )
 
+        if (not str(design_type).startswith(("Between", "Simple"))
+                or not str(rand_level).startswith("Participant")):
+            st.warning(DESIGN_STRUCTURE_NOTE)
+
         # ── Sample Size & Allocation ────────────────────────────────────
         st.markdown("#### Sample Size")
         default_sample_size = int(st.session_state.get("sample_size", 200))
@@ -10421,6 +11268,7 @@ if active_page == 2:
 
         # Filter out empty scales
         scales = [s for s in scales if s.get("name", "").strip()]
+        _scales_from_design = bool(scales)
         if not scales:
             scales = [{"name": "Main_DV", "num_items": 5, "scale_points": 7}]
 
@@ -10431,7 +11279,13 @@ if active_page == 2:
         dv_version = st.session_state.get("_dv_version", 0)
 
         if "confirmed_scales" not in st.session_state:
-            st.session_state["confirmed_scales"] = scales.copy()
+            # v1.2.9.1: First visit on the QSF path (inferred_design is only written at the END of
+            # this page, so it has no scales yet): start from the survey's own DVs - detected scales
+            # plus recovered slider / numeric-entry DVs - instead of one generic Main_DV. The
+            # generic default remains the fallback when the parser found nothing.
+            st.session_state["confirmed_scales"] = (
+                scales.copy() if _scales_from_design else (_qsf_design_scales(preview) or scales.copy())
+            )
             st.session_state["_dv_version"] = 0
         if "scales_confirmed" not in st.session_state:
             st.session_state["scales_confirmed"] = False
@@ -10477,7 +11331,10 @@ if active_page == 2:
                     _n_items = int(_n_items)
                 except (ValueError, TypeError):
                     _n_items = 1
-                if _n_items == 1 and dv_type in ("likert", "slider", "numeric_input"):
+                # v1.2.9.1: "numeric_input" keeps its type (and its wider Min/Max boxes) with one
+                # item: collapsing it to "single_item" dropped the money/count realism the engine
+                # applies to numeric inputs and capped its range at 100.
+                if _n_items == 1 and dv_type in ("likert", "slider"):
                     dv_type = "single_item"
                 elif _n_items > 1 and dv_type == "single_item":
                     dv_type = "numbered_items"
@@ -10525,7 +11382,8 @@ if active_page == 2:
                         num_items = st.number_input(
                             items_label,
                             min_value=1,
-                            max_value=50,
+                            # v1.2.9.1: a detected battery can hold more than 50 items
+                            max_value=max(50, int(items_val or 1)),
                             value=int(items_val) if items_val else 1,
                             key=f"dv_items_v{dv_version}_{i}",
                             help=items_help
@@ -10546,12 +11404,15 @@ if active_page == 2:
                     with col3a:
                         # Get current min, default to 1
                         current_min = int(scale_min) if scale_min is not None else 1
+                        _seed_min = _design_page_bound(scale.get("_seed_scale_min"), current_min)
                         if dv_type == 'numeric_input':
                             # Numeric inputs can have any range (incl. negative for games with taking)
+                            # v1.2.9.1: bounds widen to hold a seeded value (e.g. a year-of-birth
+                            # range starting at 1900) instead of raising on the first render.
                             new_scale_min = st.number_input(
                                 "Min",
-                                min_value=-1000,
-                                max_value=1000,
+                                min_value=min(-1000, current_min, _seed_min),
+                                max_value=max(1000, current_min, _seed_min),
                                 value=current_min,
                                 key=f"dv_min_v{dv_version}_{i}",
                                 help="Minimum value (e.g., 0 for slider, -10 for games with taking option)"
@@ -10559,8 +11420,8 @@ if active_page == 2:
                         else:
                             new_scale_min = st.number_input(
                                 "Min",
-                                min_value=-1000,
-                                max_value=100,
+                                min_value=min(-1000, current_min, _seed_min),
+                                max_value=max(100, current_min, _seed_min),
                                 value=current_min,
                                 key=f"dv_min_v{dv_version}_{i}",
                                 help="Minimum scale value (e.g., 0 or 1, negative for bipolar scales)"
@@ -10569,23 +11430,26 @@ if active_page == 2:
                     with col3b:
                         # Get current max from scale_max or scale_points
                         current_max = int(scale_max) if scale_max is not None else (int(scale.get("scale_points", 7)) if scale.get("scale_points") else 7)
+                        _seed_max = _design_page_bound(scale.get("_seed_scale_max"), current_max)
                         if dv_type == 'numeric_input':
                             # Numeric inputs can have any range
                             new_scale_max = st.number_input(
                                 "Max",
-                                min_value=1,
-                                max_value=10000,
+                                min_value=min(1, current_max, _seed_max),
+                                max_value=max(10000, current_max, _seed_max),
                                 value=current_max,
                                 key=f"dv_max_v{dv_version}_{i}",
                                 help="Maximum value (e.g., 100 for percentage, 1000 for WTP)"
                             )
                         else:
                             # v1.2.6.1: Allow min_value=1 for binary items (0/1 scales)
+                            # v1.2.9.1: bounds widen to hold the seeded value (a 0-500 slider kept
+                            # its range instead of being cut to 0-100 on first render)
                             new_scale_max = st.number_input(
                                 "Max",
-                                min_value=1,
-                                max_value=100,
-                                value=min(max(1, current_max), 100),  # Cap at 100, floor at 1
+                                min_value=min(1, current_max, _seed_max),
+                                max_value=max(100, current_max, _seed_max),
+                                value=current_max,
                                 key=f"dv_max_v{dv_version}_{i}",
                                 help="Maximum scale value (e.g., 1 for binary, 5, 7, 10, 100)"
                             )
@@ -10596,18 +11460,29 @@ if active_page == 2:
                         new_scale_max = new_scale_min + 1
 
                     # Calculate scale_points from min/max for compatibility
-                    scale_points = new_scale_max  # Used for data generation
+                    # v1.2.9.1: number of response options. A DV the user has not re-ranged keeps the count
+                    # it arrived with (the parser's own scale_points); a re-ranged one gets max - min + 1.
+                    # The old "= max" understated 0-based sliders (0-100 -> 100) and bipolar scales (-3..3 -> 3).
+                    scale_points = max(2, new_scale_max - new_scale_min + 1)  # Used for data generation
+                    if (new_scale_min, new_scale_max) == (current_min, current_max):
+                        _arrived_points = _design_page_bound(scale.get("scale_points"), 0)
+                        if _arrived_points >= 2:  # a missing or non-numeric count keeps max - min + 1
+                            scale_points = _arrived_points
 
                     with col4:
                         # v1.2.5.3: Editable DV type dropdown
                         _dv_type_options = list(type_badges.keys())
+                        if dv_type not in _dv_type_options:
+                            # v1.2.9.1: a detected type the menu does not list (rank_order, best_worst,
+                            # ...) stays selectable instead of silently turning into "matrix".
+                            _dv_type_options.append(dv_type)
                         _dv_type_labels = list(type_badges.values())
                         _current_type_idx = _dv_type_options.index(dv_type) if dv_type in _dv_type_options else 0
                         _type_key = f"dv_type_v{dv_version}_{i}"
                         selected_type = st.selectbox(
                             "Type",
                             options=_dv_type_options,
-                            format_func=lambda x: type_badges.get(x, x),
+                            format_func=lambda x: type_badges.get(x, str(x).replace("_", " ").title()),
                             index=_current_type_idx,
                             key=_type_key,
                             label_visibility="collapsed",
@@ -10707,6 +11582,8 @@ if active_page == 2:
                         # v1.2.0: Save user-specified min/max for accurate simulation
                         "scale_min": new_scale_min,
                         "scale_max": new_scale_max,
+                        "_seed_scale_min": scale.get("_seed_scale_min"),   # v1.2.9.1: range the DV arrived with
+                        "_seed_scale_max": scale.get("_seed_scale_max"),
                         # v1.2.5.3: DV description/context for simulation intelligence
                         "dv_description": scale.get("dv_description", ""),
                     })
@@ -11547,6 +12424,10 @@ if active_page == 2:
                             "context_type": oe.get("context_type", "general"),
                             "min_chars": oe.get("min_chars"),
                             "block_name": oe.get("block_name", ""),
+                            # v1.2.9.1: Qualtrics validation settings (numeric text boxes)
+                            "content_type": oe.get("content_type"),
+                            "number_min": oe.get("number_min"),
+                            "number_max": oe.get("number_max"),
                         })
             else:
                 st.info("No open-ended questions detected. Add any below.")
@@ -12044,7 +12925,7 @@ if active_page == 2:
                                         f"<span style='background:#E8F4FD;padding:2px 8px;border-radius:4px;"
                                         f"font-size:0.78rem;margin-right:4px;display:inline-block;"
                                         f"margin-bottom:4px;'>"
-                                        f"<b>{_sn}</b> → {_ct.replace('_', ' ')}</span>"
+                                        f"<b>{html_escape(str(_sn))}</b> → {html_escape(str(_ct).replace('_', ' '))}</span>"
                                     )
                             if _badge_parts:
                                 st.markdown(
@@ -12308,7 +13189,7 @@ if active_page == 3:
     _study_title_display = st.session_state.get('study_title', 'Untitled')
     _per_cell = _sample_n // max(len(conditions), 1) if _sample_n else 0
     st.markdown(
-        f'<div style="font-size:0.95rem;font-weight:600;color:#1F2937;margin-bottom:4px;">{_study_title_display}</div>'
+        f'<div style="font-size:0.95rem;font-weight:600;color:#1F2937;margin-bottom:4px;">{html_escape(str(_study_title_display))}</div>'
         f'<div style="display:flex;gap:24px;font-size:0.85rem;color:#6B7280;margin-bottom:8px;">'
         f'<span><strong style="color:#374151;">{_sample_n}</strong> participants ({_per_cell}/cell)</span>'
         f'<span><strong style="color:#374151;">{len(conditions)}</strong> conditions</span>'
@@ -12561,8 +13442,21 @@ if active_page == 3:
         st.markdown("#### Expected Effect Sizes *(optional)*")
         st.caption(
             "Specify the expected effect size for your main hypothesis. "
-            "This makes the simulated data reflect a directional hypothesis rather than a null effect."
+            "This makes the simulated data reflect a directional hypothesis rather than a null effect. "
+            "The Cohen's d you enter is calibrated against the scale you are measuring, so the data "
+            "show roughly that d on the scale mean (sampling variation applies)."
         )
+        _auto_effects_on = st.checkbox(
+            "Also infer small differences from the condition names",
+            value=bool(st.session_state.get("_auto_effects", True)),
+            key="_auto_effects_input",
+            help=(
+                "On (default): contrasts you did not specify get a small difference inferred from the "
+                "wording of the condition names (for example gain vs loss). Off: only the effects you "
+                "specify are built in, and every other contrast is a true null."
+            ),
+        )
+        st.session_state["_auto_effects"] = bool(_auto_effects_on)
 
         effect_sizes = []
 
@@ -12646,12 +13540,11 @@ if active_page == 3:
                 else:
                     st.caption("📊 Large effect")
 
-                effect_direction = st.radio(
-                    "Direction",
-                    options=["Higher in treatment", "Lower in treatment"],
-                    key="effect_direction",
-                    horizontal=True
-                )
+                # The direction is set by the two selects below ("Higher-scoring" and
+                # "Lower-scoring" condition). A separate Higher/Lower radio used to sit here:
+                # it flipped the sign of the effect while the confirmation text still said
+                # "higher in <first condition>", so the text and the data disagreed.
+                st.caption("Which condition scores higher is chosen below.")
 
             # Level selection
             if len(factor_levels) >= 2:
@@ -12681,7 +13574,9 @@ if active_page == 3:
                             level_high=level_high,
                             level_low=level_low,
                             cohens_d=effect_d,
-                            direction="positive" if "Higher" in effect_direction else "negative",
+                            # "positive" = the higher-scoring condition scores higher (the engine
+                            # lowers the other level by the same amount).
+                            direction="positive",
                         )
                     )
                     st.success(
@@ -13148,7 +14043,7 @@ if active_page == 3:
         # so the user always sees which method is running.
         _active_method_key = st.session_state.get("generation_method", "")
         _active_card_info = {
-            "template":     {"icon": "&#9881;",  "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)", "title": "Template Engine",              "subtitle": "225+ research domains, 58 personas, instant generation"},
+            "template":     {"icon": "&#9881;",  "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)", "title": "Template Engine",              "subtitle": "225+ research domains, 70+ personas, instant generation"},
             "experimental": {"icon": "&#9889;",  "icon_bg": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)", "title": "Adaptive Behavioral Engine",    "subtitle": "60+ participant archetypes, 30+ research paradigms, literature-calibrated effects"},
             "abe_v2":       {"icon": "&#129504;", "icon_bg": "linear-gradient(135deg, #0EA5E9 0%, #06B6D4 100%)", "title": "Adaptive Behavioral Engine 3.0", "subtitle": "225+ domains, census-weighted demographics, stylometric fingerprinting, 5 consistency layers"},
             "free_llm":     {"icon": "&#129302;", "icon_bg": "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)", "title": "Built-in AI",                   "subtitle": "Free LLM providers for AI-generated open-ended text"},
@@ -13466,7 +14361,7 @@ if active_page == 3:
             '<span style="font-size:1.05em;font-weight:700;color:#991B1B;">'
             'Generation encountered an unexpected error</span></div>'
             '<span style="color:#7F1D1D;font-size:0.88em;line-height:1.5;">'
-            f'The previous generation attempt using <strong>{_stale_method}</strong> '
+            f'The previous generation attempt using <strong>{html_escape(str(_stale_method))}</strong> '
             'crashed during setup. Choose how to proceed:</span></div>',
             unsafe_allow_html=True,
         )
@@ -13686,6 +14581,9 @@ if active_page == 3:
                             "force_response": oe.get("force_response", False),
                             "min_chars": oe.get("min_chars"),
                             "block_name": oe.get("block_name", ""),
+                            "content_type": oe.get("content_type"),
+                            "number_min": oe.get("number_min"),
+                            "number_max": oe.get("number_max"),
                         })
                     elif isinstance(oe, str) and oe.strip():
                         # Handle legacy/fallback case where open-ended is a plain string
@@ -14168,7 +15066,7 @@ if active_page == 3:
                 '<span style="font-size:1.05em;font-weight:700;color:#991B1B;">'
                 f'Setup error while preparing {_method_name}</span></div>'
                 f'<span style="color:#7F1D1D;font-size:0.88em;line-height:1.5;">'
-                f'Error during input preparation: {str(_setup_exc)[:300]}</span>'
+                f'Error during input preparation: {html_escape(str(_setup_exc)[:300])}</span>'
                 '<div style="margin-top:12px;color:#7F1D1D;font-size:0.85em;">'
                 'Try a different generation method, or click Retry.</div>'
                 '</div>',
@@ -14233,6 +15131,7 @@ if active_page == 3:
                 use_socsim_experimental=bool(st.session_state.get("_use_socsim_experimental", False)),
                 use_abe_v2=bool(st.session_state.get("_use_abe_v2", False)),
                 free_llm_oe_cap=_free_llm_oe_cap,
+                auto_effects=bool(st.session_state.get("_auto_effects", True)) if st.session_state.get("advanced_mode", False) else True,
             )
             # v1.2.5.0: ABE 3.0 — always use EnhancedSimulationEngine (HBS merged in)
             engine = EnhancedSimulationEngine(**_engine_kwargs)
@@ -14273,7 +15172,7 @@ if active_page == 3:
                 '<span style="font-size:1.05em;font-weight:700;color:#991B1B;">'
                 f'{_method_name} failed to initialize</span></div>'
                 f'<span style="color:#7F1D1D;font-size:0.88em;line-height:1.5;">'
-                f'Error: {str(_init_exc)[:200]}</span>'
+                f'Error: {html_escape(str(_init_exc)[:200])}</span>'
                 '<div style="margin-top:12px;color:#7F1D1D;font-size:0.85em;">'
                 'Try a different generation method, or click Generate to retry.</div>'
                 '</div>',
@@ -15216,57 +16115,26 @@ if active_page == 3:
             stata_bytes = stata_script.encode("utf-8")
             # v1.2.3: Wrap report generation in try/except to prevent report errors
             # from crashing the entire simulation. Data generation succeeded at this point.
-            try:
-                # User study summary (included in user's download ZIP)
-                instructor_report = InstructorReportGenerator().generate_markdown_report(
-                    df=df,
-                    metadata=metadata,
-                    schema_validation=schema_results,
-                    prereg_text=st.session_state.get("prereg_text_sanitized", ""),
-                    team_info={
-                        "team_name": st.session_state.get("team_name", ""),
-                        "team_members": st.session_state.get("team_members_raw", ""),
-                    },
-                )
-                instructor_bytes = instructor_report.encode("utf-8")
-            except Exception as report_err:
-                instructor_report = f"# Study Summary\n\nReport generation encountered an error: {report_err}\n\nData was generated successfully."
-                instructor_bytes = instructor_report.encode("utf-8")
-
-            try:
-                # COMPREHENSIVE instructor report (for instructor email ONLY - not included in user download)
-                # This includes detailed statistical analysis, hypothesis testing, and recommendations
-                comprehensive_reporter = ComprehensiveInstructorReport()
-                team_info_dict = {
+            # v1.2.9.1: the study summary, the Markdown analysis and the HTML analysis each fail on their
+            # own (see _build_instructor_reports); failures are listed in the instructor email subject/body.
+            _built_reports = _build_instructor_reports(
+                df=df,
+                metadata=metadata,
+                schema_results=schema_results,
+                prereg_text=st.session_state.get("prereg_text_sanitized", ""),
+                team_info={
                     "team_name": st.session_state.get("team_name", ""),
                     "team_members": st.session_state.get("team_members_raw", ""),
-                }
-                prereg_text_report = st.session_state.get("prereg_text_sanitized", "")
-
-                # Markdown version (text-based)
-                comprehensive_report = comprehensive_reporter.generate_comprehensive_report(
-                    df=df,
-                    metadata=metadata,
-                    schema_validation=schema_results,
-                    prereg_text=prereg_text_report,
-                    team_info=team_info_dict,
-                )
-                comprehensive_bytes = comprehensive_report.encode("utf-8")
-
-                # HTML version with visualizations and statistical tests
-                comprehensive_html = comprehensive_reporter.generate_html_report(
-                    df=df,
-                    metadata=metadata,
-                    schema_validation=schema_results,
-                    prereg_text=prereg_text_report,
-                    team_info=team_info_dict,
-                )
-                comprehensive_html_bytes = comprehensive_html.encode("utf-8")
-            except Exception as comp_report_err:
-                comprehensive_report = f"# Comprehensive Report\n\nReport generation encountered an error: {comp_report_err}\n\nData was generated successfully."
-                comprehensive_bytes = comprehensive_report.encode("utf-8")
-                comprehensive_html = f"<html><body><h1>Report Error</h1><p>{comp_report_err}</p></body></html>"
-                comprehensive_html_bytes = comprehensive_html.encode("utf-8")
+                },
+            )
+            _report_problems: List[str] = _built_reports["problems"]
+            instructor_report = _built_reports["student_md"]  # study summary (included in the user's ZIP)
+            instructor_bytes = instructor_report.encode("utf-8")
+            # COMPREHENSIVE instructor analyses (instructor email ONLY - not included in the user download)
+            comprehensive_report = _built_reports["comp_md"]
+            comprehensive_bytes = comprehensive_report.encode("utf-8")
+            comprehensive_html = _built_reports["comp_html"]
+            comprehensive_html_bytes = comprehensive_html.encode("utf-8")
 
             # Generate HTML version of study summary (easy to open and well-formatted)
             try:
@@ -15274,7 +16142,7 @@ if active_page == 3:
                 instructor_html = _markdown_to_html(instructor_report, title=f"User Study Summary: {study_title}")
                 instructor_html_bytes = instructor_html.encode("utf-8")
             except Exception:
-                instructor_html_bytes = f"<html><body><pre>{instructor_report}</pre></body></html>".encode("utf-8")
+                instructor_html_bytes = f"<html><body><pre>{html_escape(str(instructor_report))}</pre></body></html>".encode("utf-8")
 
             files = {
                 "Simulated_Data.csv": csv_bytes,
@@ -15332,6 +16200,37 @@ if active_page == 3:
                 prereg_summary = f"# Preregistration Summary\n\n## Primary Outcomes\n{prereg_outcomes}\n\n## Independent Variables\n{prereg_iv}"
                 files["Source_Files/Preregistration_Summary.txt"] = prereg_summary.encode("utf-8")
 
+            # v1.2.2.1: Wrap zip creation in try/except — if zip fails, still save
+            # the raw DataFrame so the user can at least download the CSV.
+            try:
+                zip_bytes = _bytes_to_zip(files)
+            except Exception as _zip_exc:
+                _log(f"ZIP creation failed: {_zip_exc}", level="warning")
+                # Create minimal ZIP with just the CSV
+                try:
+                    _min_files = {"Simulated_Data.csv": csv_bytes}
+                    if diagnostics_bytes is not None:
+                        _min_files["Simulation_Diagnostics.csv"] = diagnostics_bytes
+                    zip_bytes = _bytes_to_zip(_min_files)
+                except Exception:
+                    zip_bytes = csv_bytes  # Last resort: raw CSV as download
+
+            # v1.2.9.1: package, then hand the instructor notification to a background thread BEFORE
+            # the slower archive/audit work and the remaining Streamlit calls. Streamlit stops a script
+            # run when the browser disconnects or reruns, which used to cancel the send; a thread does
+            # not depend on the session. The outcome lands in the delivery log (admin dashboard).
+            _notify_instructor(
+                title=title,
+                metadata=metadata,
+                files=files,
+                zip_bytes=zip_bytes,
+                html_bytes=comprehensive_html_bytes,
+                md_bytes=comprehensive_bytes,
+                summary_bytes=instructor_bytes,
+                usage_summary=_get_usage_summary(),
+                report_problem="; ".join(_report_problems),
+            )
+
             # v1.0.7.3: Persist each run in its own folder + audit newly created runs.
             run_archive_dir = None
             run_audit_summary: Dict[str, Any] = {}
@@ -15343,6 +16242,10 @@ if active_page == 3:
                     instructor_report_md=instructor_report,
                     engine_log=st.session_state.get("_admin_engine_log", []),
                     validation_results=validation_results,
+                    extra_files={
+                        "INSTRUCTOR_Statistical_Report.html": comprehensive_html_bytes,
+                        "INSTRUCTOR_Detailed_Analysis.md": comprehensive_bytes,
+                    },
                 )
                 run_audit_summary = audit_new_runs(
                     output_root=SIM_RUNS_ROOT,
@@ -15362,21 +16265,6 @@ if active_page == 3:
             metadata["run_audit_summary"] = run_audit_summary
             metadata["run_improvement_log"] = str(SIM_RUN_IMPROVEMENT_LOG)
 
-            # v1.2.2.1: Wrap zip creation in try/except — if zip fails, still save
-            # the raw DataFrame so the user can at least download the CSV.
-            try:
-                zip_bytes = _bytes_to_zip(files)
-            except Exception as _zip_exc:
-                _log(f"ZIP creation failed: {_zip_exc}", level="warning")
-                # Create minimal ZIP with just the CSV
-                try:
-                    _min_files = {"Simulated_Data.csv": csv_bytes}
-                    if diagnostics_bytes is not None:
-                        _min_files["Simulation_Diagnostics.csv"] = diagnostics_bytes
-                    zip_bytes = _bytes_to_zip(_min_files)
-                except Exception:
-                    zip_bytes = csv_bytes  # Last resort: raw CSV as download
-
             st.session_state["last_df"] = df
             st.session_state["last_zip"] = zip_bytes
             st.session_state["last_metadata"] = metadata
@@ -15395,83 +16283,10 @@ if active_page == 3:
                 _existing_qn.append("Schema validation warnings found. Review Schema_Validation.json in the download.")
                 st.session_state["_gen_quality_notes"] = _existing_qn
 
-            # v1.0.0: Enhanced instructor email notification with better diagnostics
-            instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "edimant@sas.upenn.edu")
-            _email_gen_label = metadata.get('generation_method_label', metadata.get('generation_method', 'Unknown'))
-            subject = f"[Behavioral Simulation] Output ({metadata.get('simulation_mode', 'pilot')}) [{_email_gen_label}] - {title}"
-
-            # Get usage stats for internal tracking
-            usage_summary = _get_usage_summary()
-
-            # Check if SMTP email is configured before attempting to send
-            smtp_configured = (
-                st.secrets.get("SMTP_SERVER", "") and
-                st.secrets.get("SMTP_USERNAME", "") and
-                st.secrets.get("SMTP_PASSWORD", "")
-            )
-
-            if not smtp_configured:
-                pass  # SMTP not configured — skip instructor notification silently
-            else:
-                body = (
-                    "COMPREHENSIVE INSTRUCTOR ANALYSIS ATTACHED\n"
-                    "=========================================\n\n"
-                    "This email includes detailed statistical analysis that students do NOT receive.\n"
-                    "Users get User_Study_Summary.md and User_Study_Summary.html (browser-viewable) in their download ZIP.\n\n"
-                    "INSTRUCTOR ATTACHMENTS:\n"
-                    "- INSTRUCTOR_Statistical_Report.html - Full visual report with charts, t-tests,\n"
-                    "  ANOVA, Mann-Whitney, chi-squared, regression analysis, and effect sizes.\n"
-                    "  Open in any web browser for best viewing.\n"
-                    "- INSTRUCTOR_Detailed_Analysis.md - Text-based analysis (Markdown format)\n"
-                    "- User_Study_Summary.md - What users receive (for reference)\n\n"
-                    f"Team: {st.session_state.get('team_name','')}\n"
-                    f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
-                    f"Study: {title}\n"
-                    f"Generation Method: {_email_gen_label}\n"
-                    f"Sample Size: N={metadata.get('sample_size', 'N/A')}\n"
-                    f"Conditions: {len(metadata.get('conditions', []))}\n"
-                    f"Open-Ended Questions: {len(metadata.get('open_ended_questions', []))}\n"
-                    f"Generated: {metadata.get('generation_timestamp','')}\n"
-                    f"Run ID: {metadata.get('run_id','')}\n"
-                    + (f"OE Data Sources: {', '.join(metadata.get('oe_data_sources', []))}\n" if metadata.get('oe_data_sources') else "")
-                    + "\n"
-                    "Files in ZIP (what students see):\n"
-                    "- Simulated_Data.csv (the data, Qualtrics export layout)\n"
-                    "- Simulated_Data_Qualtrics_Raw.csv (same data with the 3-row Qualtrics header)\n"
-                    "- Simulation_Diagnostics.csv (simulator-internal columns, keyed by ResponseId)\n"
-                    "- Data_Codebook_Handbook.txt (variable coding)\n"
-                    "- User_Study_Summary.md (study summary in Markdown)\n"
-                    "- User_Study_Summary.html (same summary - opens in any browser)\n"
-                    "- R_Prepare_Data.R (R script)\n"
-                    "- Python_Prepare_Data.py (Python/pandas script)\n"
-                    "- Julia_Prepare_Data.jl (Julia/DataFrames script)\n"
-                    "- SPSS_Prepare_Data.sps (SPSS syntax)\n"
-                    "- Stata_Prepare_Data.do (Stata do-file)\n"
-                    "- Metadata.json, Schema_Validation.json\n"
-                    f"\n{usage_summary}\n"
-                )
-
-                # Log the email attempt for debugging
-                # Instructor notification sent silently (user should not see this)
-
-                ok, msg = _send_email(
-                    to_email=instructor_email,
-                    subject=subject,
-                    body_text=body,
-                    attachments=[
-                        ("simulation_output.zip", zip_bytes),
-                        ("INSTRUCTOR_Statistical_Report.html", comprehensive_html_bytes),  # HTML report with visualizations
-                        ("INSTRUCTOR_Detailed_Analysis.md", comprehensive_bytes),  # Markdown fallback
-                        ("User_Study_Summary.md", instructor_bytes),  # What users receive (for reference)
-                    ],
-                )
-                if ok:
-                    pass  # Instructor notification sent silently
-                else:
-                    pass  # Instructor notification failed silently — not shown to user
-
             progress_bar.progress(100, text="")
             status_placeholder.success("Simulation complete.")
+            # Remember which design produced this dataset (see the notice in the download section).
+            st.session_state["_generated_design_signature"] = _design_signature(effect_sizes)
             st.session_state["has_generated"] = True
             st.session_state["is_generating"] = False
             st.session_state["_generation_phase"] = 0  # v1.1.1.3: Clean phase state
@@ -15770,6 +16585,16 @@ if active_page == 3:
             unsafe_allow_html=True,
         )
 
+        # The design on screen may have changed since this dataset was generated (sample size,
+        # conditions, DVs, effects, method). The download stays available; only warn.
+        _generated_sig = st.session_state.get("_generated_design_signature", "")
+        if _generated_sig and _generated_sig != _design_signature(effect_sizes):
+            st.warning(
+                "**The design changed after this dataset was generated.** The download below still holds "
+                "the earlier dataset (its sample size, conditions, DVs and effects). Click "
+                "**Reset & Generate New** above to generate again with the current design."
+            )
+
         # v1.0.7.1: Prominent LLM status note — shown before download, not hidden in expander
         # v1.1.1.7: Only display for AI methods — template/experimental intentionally use templates.
         _post_gen_llm_note = st.session_state.get("_gen_llm_exhaustion_note", "")
@@ -15835,7 +16660,7 @@ if active_page == 3:
             st.markdown(
                 f'<div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;'
                 f'padding:8px 14px;margin:6px 0 10px 0;font-size:0.88em;color:#3730A3;">'
-                f'{_method_icon} <strong>Generation Method:</strong> {_gen_method_label}'
+                f'{_method_icon} <strong>Generation Method:</strong> {html_escape(str(_gen_method_label))}'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -15885,7 +16710,7 @@ if active_page == 3:
                     st.caption(f"Top recurring issue codes: {', '.join(_dl_top_issues[:3])}")
 
         st.download_button(
-            "Download ZIP (CSV + metadata + analysis scripts)",
+            "Download ZIP (CSV + metadata + data-preparation scripts)",
             data=zip_bytes,
             file_name=f"behavioral_simulation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
             mime="application/zip",
@@ -15953,21 +16778,31 @@ if active_page == 3:
         colE1, colE2 = st.columns([1, 1])
         with colE1:
             if st.button("Send ZIP via email", key="send_zip_email_btn"):
-                if not to_email or "@" not in to_email:
-                    st.error("Please enter a valid email address.")
+                # One address only: this button must not become a way to mail files to a list.
+                _zip_addrs = (_email_delivery.parse_recipients(to_email)[0] if _email_delivery is not None
+                              else ([to_email.strip()] if to_email and "@" in to_email else []))
+                _zip_allowed, _zip_reason = _user_email_allowed(_zip_addrs[0]) if len(_zip_addrs) == 1 else (True, "")
+                if len(_zip_addrs) != 1:
+                    st.error("Please enter one valid email address.")
+                elif not _zip_allowed:
+                    st.error(_zip_reason)
                 else:
                     # v1.1.0.7: Track user email in admin area
-                    _track_user_email(to_email, source="zip_download")
-                    subject = f"[Behavioral Simulation] Output: {st.session_state.get('study_title','Untitled Study')}"
+                    _track_user_email(_zip_addrs[0], source="zip_download")
+                    # Fixed subject and no uploaded files: this message comes from the owner's mailbox, so a
+                    # visitor must not be able to choose its subject or attach documents of their own.
+                    subject = "[Behavioral Simulation] Your simulation output"
                     body = (
-                        "Attached is the simulation output ZIP (Simulated_Data.csv, Simulation_Diagnostics.csv, metadata, analysis scripts).\n\n"
+                        "Attached is the simulation output ZIP (Simulated_Data.csv, Simulation_Diagnostics.csv, metadata, data-preparation scripts).\n"
+                        "Files you uploaded to the app are not included in the emailed copy; the Download button has the full package.\n\n"
                         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
                     )
                     ok, msg = _send_email(
-                        to_email=to_email,
+                        to_email=_zip_addrs[0],
                         subject=subject,
                         body_text=body,
-                        attachments=[("simulation_output.zip", zip_bytes)],
+                        attachments=[("simulation_output.zip", _zip_without_prefix(zip_bytes, "Source_Files/"))],
+                        kind="user_zip",
                     )
                     if ok:
                         st.success(msg)
@@ -15975,22 +16810,28 @@ if active_page == 3:
                         st.error(msg)
 
         with colE2:
-            instructor_email = st.secrets.get("INSTRUCTOR_NOTIFICATION_EMAIL", "")
+            instructor_email = _secret("INSTRUCTOR_NOTIFICATION_EMAIL", "")
             if instructor_email:
                 if st.button("Send to instructor too", key="send_to_instructor_btn"):
-                    subject = f"[Behavioral Simulation] Output (team: {st.session_state.get('team_name','') or 'N/A'})"
+                    _inst_allowed, _inst_reason = _user_email_allowed()
+                    _clip = (lambda value, n: str(value or "")[:n])  # a pasted wall of text must not make the mail undeliverable
+                    subject = f"[Behavioral Simulation] Output (team: {_clip(st.session_state.get('team_name', ''), 100) or 'N/A'})"
                     body = (
-                        f"Team: {st.session_state.get('team_name','')}\n"
-                        f"Members:\n{st.session_state.get('team_members_raw','')}\n\n"
-                        f"Study: {st.session_state.get('study_title','')}\n"
+                        f"Team: {_clip(st.session_state.get('team_name', ''), 200)}\n"
+                        f"Members:\n{_clip(st.session_state.get('team_members_raw', ''), 1500)}\n\n"
+                        f"Study: {_clip(st.session_state.get('study_title', ''), 200)}\n"
                         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
                     )
-                    ok, msg = _send_email(
-                        to_email=instructor_email,
-                        subject=subject,
-                        body_text=body,
-                        attachments=[("simulation_output.zip", zip_bytes)],
-                    )
+                    if _inst_allowed:
+                        ok, msg = _send_email(
+                            to_email=instructor_email,
+                            subject=subject,
+                            body_text=body,
+                            attachments=[("simulation_output.zip", zip_bytes)],
+                            kind="user_to_instructor",
+                        )
+                    else:
+                        ok, msg = False, _inst_reason
                     if ok:
                         st.success(msg)
                     else:

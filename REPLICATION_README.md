@@ -1,4 +1,4 @@
-# Replication Package — Behavioral Experiment Simulation Tool (v1.2.8.7)
+# Replication Package — Behavioral Experiment Simulation Tool (v1.3.0.4)
 
 This archive contains everything needed to run, inspect, and evaluate the
 behavioral-experiment simulation tool in its entirety.
@@ -38,8 +38,8 @@ streamlit run simulation_app/app.py
 
 ## Reproduce the validation
 ```bash
-# Unit / regression suite (includes the v1.2.6.x–v1.2.7.x bug-fix regressions)
-python3 -m pytest tests/test_bugfixes_v1264.py -q   # 38 tests
+# Unit / regression suite (offline; the slow tests are deselected, run them with -m slow)
+python3 -m pytest tests -m "not slow" -q
 
 # Parse every example QSF — expect 0 crashes
 python3 tests/qsf_robustness.py
@@ -79,8 +79,9 @@ print(df.shape); print(df.head())
   to force the offline (non-LLM) open-ended generator; otherwise the tool tries
   free LLM providers for open-ended text and falls back to templates.
 - **Version sync:** the app checks `REQUIRED_UTILS_VERSION == utils.__version__`
-  at startup; all 10 version locations are kept in sync (currently `1.2.8.7`). The
-  canonical list of those locations is in `CLAUDE.md`.
+  at startup; all 11 version locations are kept in sync (currently `1.3.0.4`). Ten
+  of them are enforced in CI by `scripts/check_version_sync.py`; `BUILD_ID` is the
+  eleventh and is checked by eye. The canonical list is in `CLAUDE.md`.
 - **Known remaining roadmap** (not bugs) is documented in
   `docs/COVERAGE_ROADMAP.md` — e.g. within-subjects repeated-measures done as a
   proper long format, dyadic/per-trial output modes, population-source profiles.

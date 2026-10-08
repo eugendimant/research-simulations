@@ -47,7 +47,7 @@ Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider sta
 | # | File | Location |
 |---|------|----------|
 | 1 | `simulation_app/app.py` | `REQUIRED_UTILS_VERSION = "X.X.X.X"` (line ~57) |
-| 2 | `simulation_app/app.py` | `APP_VERSION = "X.X.X.X"` (line ~149) |
+| 2 | `simulation_app/app.py` | `APP_VERSION = "X.X.X.X"` (line ~192) |
 | 3 | `simulation_app/app.py` | `BUILD_ID = "YYYYMMDD-vXXXXX-description"` (line ~58) |
 | 4 | `simulation_app/utils/__init__.py` | `__version__ = "X.X.X.X"` (line ~68) |
 | 5 | `simulation_app/utils/__init__.py` | `Version: X.X.X.X` in docstring (line ~5) |
@@ -223,7 +223,7 @@ Runs in this order:
 1. **STEP 0 — Relational/Matching Condition Parsing** (fires FIRST): Detects WHO is matched with WHOM. Political identity detection, ingroup (+0.30) vs outgroup (-0.35 to -0.40). Sets `_handled_by_relational = True` to skip Step 1. Economic game DVs amplify by 1.3×.
 2. **STEP 1 — Simple valence keywords** (ONLY if STEP 0 didn't handle): "positive", "negative", "reward", "punishment". Note: 'lover' and 'hater' are EXCLUDED (identity markers, not valence).
 3. **STEP 2 — Domain-specific semantic effects** (43 domains): Each domain has keyword→effect mappings grounded in literature.
-4. **STEP 3 — Stable-hash jitter**: an MD5-derived nudge of ±0.04 so same-meaning condition labels still differ slightly (never positional). Condition trait modifiers — political identity → extremity/consistency, outgroup → negative acquiescence — are a *separate* method, `_get_condition_trait_modifier()` (`enhanced_simulation_engine.py:6415`), applied as STEP 1 of `_generate_scale_response()`.
+4. **STEP 3 — Stable-hash jitter**: an MD5-derived nudge of ±0.04 so same-meaning condition labels still differ slightly (never positional). Condition trait modifiers — political identity → extremity/consistency, outgroup → negative acquiescence — are a *separate* method, `_get_condition_trait_modifier()` (`enhanced_simulation_engine.py:7571`), applied as STEP 1 of `_generate_scale_response()`.
 5. **STEP 4 — Domain-aware effect magnitude scaling**: Political + economic game: 1.6×. Political only: 1.3×. Economic game only: 1.2×.
 
 ### Economic Game DV Calibration
@@ -238,6 +238,19 @@ Runs in this order:
 3. Generic 50% baselines for economic games
 4. Ignoring domain when scaling effects
 5. Treating condition labels literally instead of parsing relational meaning
+
+---
+
+## Effect Fidelity and Text Safety (v1.2.9.1) — DO NOT regress
+
+- **Calibration contract:** a configured Cohen's d is the target on the scale MEAN (single item for one-item scales). `_explicit_effect_scale()` carries the corrections: the composite factor (`_EFFECT_ITEM_RHO = 0.20`), x1.10 for scales of 50+ points, and the v1.2.9.1 empirical terms (divide by `1 + 0.14 ln(min(k, 30) / 3)` for k > 3 items; x1.30 on 2-point and x1.07 on 3-point scales). They were fitted on 12 independent seeds per cell at N = 1,200. With two or more scales the effect is applied to the finished item answers instead (`_apply_user_effect_to_scale`, sized from the scale's realised within-condition SD, randomised rounding, the realised gap between arms is NOT forced), because the cross-scale latent term otherwise cut the realised d to 0.2-0.5 of the request; a lone scale is bit-identical to the old route. **Never calibrate on a single seed**: one seed moves the realised d by about 0.1 at N = 2,400, which looks like a systematic bias. Measured on the merged tree (12 seeds, N = 1,200, 18 scale shapes): 0.88-1.05 of the request, weakest the 4-item 5-point scale, where the alpha-targeting step `_attenuate_inter_item_correlation` adds item noise (1.07 with it switched off). Guards: `tests/test_effect_size_recovery.py`, `tests/test_effect_fidelity_v1291.py`.
+- **`auto_effects=False` is a true null.** `_compute_effect_for_condition` returns 0 for conditions without a user effect, and `_compute_condition_trait_modifier` skips every name-based modifier. Name-based trait modifiers are also skipped for conditions named by a user-specified effect (`_is_explicit_condition`).
+- **Condition-name matching uses `_kw_hit` / `_word_in` (non-word-character boundaries, `(?<!\w)...(?!\w)`), never substring `in`** ("ai" matched "wait", "low" matched "follow-up"; labels such as `80%`, `$10` or `Treatment (high)` must match: a `\b` boundary silently dropped the requested effect for 9% of corpus labels). Spec variables match on whole words ("Trust" must not reach "Distrust"); a spec that reaches nothing is reported in `effect_sizes_applied.specs` and `generation_warnings`.
+- **Game DVs** (SocSim) overwrite item columns. `_reapply_user_effects_after_game_model` restores the user's effect afterwards (randomised rounding, so narrow integer scales are not stuck on whole-point jumps), `_reconcile_composites` keeps every `<Scale>_mean` consistent with its items, and `effect_sizes_observed` / `effect_sizes_applied` are recomputed after that, at the very end of `generate()`.
+- **Straight-line handling:** every pass that edits constant rows needs five response options (`_MIN_OPTIONS_FOR_STRAIGHTLINE_LOGIC`): the audit (CHECK 3), the registry-calibrated identical-answer pass (`_apply_identical_answer_realism`, whose shares were measured on 5- to 9-point instruments) and the HBS validator (it skips items with fewer than five observed response options, and it pools numbered items across scales, so a 3-item 7-point scale can still be repaired above its benchmark rate). On binary/3-point scales these passes randomised honest data and erased the condition effect (a requested d of 0.8 came back as 0.61 on a 3-item binary scale). The audit additionally needs five or more scale items OR a block of three or more items: the identical-answer pass was calibrated on audited data and restores the measured share after it, so on a 3- or 4-item block switching the audit off shifted `P(7) - P(6)` by 3.5 points (+0.025 against -0.010 on main) and failed the ceiling-spike guard. Guard: `tests/test_merge_interplay_v1304.py`.
+- **Generated text is edited only at grammatical positions**, through `utils/text_cleanup.py`. Never insert, drop or swap words at random positions, never substring-replace words without word boundaries, never append counters like "(2)". Applies to `_apply_deep_variation`, the offline tic/filler code, the stylometric engine and the validator. `tests/test_quality_v1291.py` is the guard.
+- **Numeric text boxes** (Qualtrics validation `content_type` / `number_min` / `number_max`, or the question wording) get numbers via `infer_numeric_answer_spec` / `draw_numeric_answer`; a text box that duplicates a numeric DV is dropped (`_drop_oe_duplicating_dvs`).
+- **QSF collection** is opt-in per file (`_collect_qsf_if_consented`). `utils/github_qsf_collector.py` validates the payload, caps size, rate-limits uploads and can target a branch other than the deployed one (`GITHUB_QSF_BRANCH`): every upload is a commit, and a commit to the deployed branch redeploys the app.
 
 ---
 
@@ -317,7 +330,7 @@ Every simulated participant is ONE person. Their numeric responses and open-text
 Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests one provider. If it fails, the user sees 3 choices IMMEDIATELY (retry / own API key / template). The user is NEVER left waiting for a dead API.
 
 ### Progress Callback Architecture
-- `_report_progress("generating", i, n)` fires EVERY participant **during OE generation** (`enhanced_simulation_engine.py:12367`). The scale-generation loop still fires on an interval — `max(1, min(20, n // 20))`, i.e. every ~5% capped at every 20 (`:11808`)
+- `_report_progress("generating", i, n)` fires EVERY participant **during OE generation** (`enhanced_simulation_engine.py:14170`). The scale-generation loop still fires on an interval — `max(1, min(20, n // 20))`, i.e. every ~5% capped at every 20 (`:13420`)
 - `_report_progress("open_ended_question", idx, total)` fires per-OE-question
 - UI shows: elapsed time, participant count, live LLM stats (AI count vs template count)
 - Post-generation: data source breakdown shown when template fallback was used
@@ -326,7 +339,7 @@ Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests 
 
 | Bug | What Happened | Where | Fix |
 |-----|---------------|-------|-----|
-| Auto-recovery cycle | `is_llm_available` re-enabled dead providers every 20s | `llm_response_generator.py` — `is_llm_available` (~:2557) | `_force_disabled` checked first |
+| Auto-recovery cycle | `is_llm_available` re-enabled dead providers every 20s | `llm_response_generator.py` — `is_llm_available` (~:2671) | `_force_disabled` checked first |
 | Quality filter too strict | Topic keyword matching rejected valid LLM responses silently | `_is_low_quality_response()` | 3-char prefix matching + accept-on-full-rejection |
 | Rate limiter timestamp | `wait_if_needed()` returned without appending timestamp when sleep > 15s | `_RateLimiter.wait_if_needed()` | Returns bool; caller checks |
 | Prefill budget too short | 30s filled only 2/15 pool buckets → 500+ on-demand calls | `enhanced_simulation_engine.py` | Increased to 90s |
@@ -393,11 +406,11 @@ Before generation starts, `engine.llm_generator.health_check(timeout=12)` tests 
 
 - Page-based rendering keeps state in `st.session_state` directly. The
   `_save_step_state()` / `_restore_step_state()` snapshot pair was **removed in
-  v1.4.14** (see the note at `app.py:6531`) — do not reintroduce calls to them.
+  v1.4.14** (see the note at `app.py:7022`) — do not reintroduce calls to them.
 - `_navigate_to()` mirrors `_widget_persist_keys` to `_p_<key>` so the values of
   widgets that are no longer rendered survive a page switch. That list currently
   holds four keys: `study_title`, `study_description`, `team_name`,
-  `team_members_raw` (`app.py:6575`).
+  `team_members_raw` (`app.py:7161`).
 - Must persist: conditions, factors, confirmed scales/DVs, factorial config, sample/effect size
 
 ---
@@ -414,6 +427,7 @@ research-simulations/
 │   │   ├── response_library.py            # ComprehensiveResponseGenerator (non-LLM OE)
 │   │   ├── persona_library.py             # TextResponseGenerator (fallback OE)
 │   │   ├── llm_response_generator.py      # LLM-based OE generation
+│   │   ├── text_cleanup.py                # Grammar-safe helpers shared by all OE post-processing
 │   │   ├── qsf_preview.py                # QSF parsing & DV detection
 │   │   ├── survey_builder.py
 │   │   ├── instructor_report.py
@@ -543,10 +557,12 @@ https://claude.ai/code/[session-id]
 3. Authority/NFC persona-level interaction in STEP 3
 
 (Narrative transportation's STEP 2 domain shipped in v1.0.4.9, and matrix
-detection already exists. Note its `narrative_transportation` template set is
-unreachable: template lookup goes through `domain.value`
-(`response_library.py:8622`) and that key is not a `StudyDomain` value — one of
-ten such orphaned keys.)
+detection already exists. Its `narrative_transportation` template set used to be
+unreachable; as of v1.2.8.9 it resolves through `_DOMAIN_TEMPLATE_ALIASES`
+(`response_library.py:4673`, consulted at `:8666`). Three other `DOMAIN_TEMPLATES`
+keys (`ethical_dilemma`, `gratitude_experience`, `gratitude_intervention`) are
+still never selected, because the alias map is consulted only when `domain.value`
+is not itself a key — see `docs/COVERAGE_ROADMAP.md` item 12d.)
 
 ### Business Roadmap
 Phase 1 (Foundation): User accounts + persistent workspaces + billing infrastructure

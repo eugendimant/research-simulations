@@ -27,6 +27,11 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+try:
+    from .text_cleanup import apply_contractions, clause_boundary_indices, has_opener, lower_first, split_sentences
+except ImportError:  # imported as a top-level module (scripts, some test layouts)
+    from text_cleanup import apply_contractions, clause_boundary_indices, has_opener, lower_first, split_sentences  # type: ignore[no-redef]
+
 __all__ = ["StylometricFingerprint", "HBSStylometricEngine"]
 
 # ---------------------------------------------------------------------------
@@ -113,8 +118,14 @@ _FILLER_WORDS = [
 # Hedge words pool
 _HEDGE_WORDS = [
     "I think", "maybe", "probably", "it seems like", "I guess",
-    "in my opinion", "I feel like", "perhaps", "might be",
+    "in my opinion,", "I feel like", "perhaps",
 ]
+
+_DEPENDENT_SENTENCE_RE = re.compile(
+    r"^\W*(?:and|but|so|also|plus|because|which|then|still|however|though|yet|that|this|it|its|they|he|she|these|"
+    r"those|there|overall|anyway|first|second|third|finally|lastly|moreover|additionally|furthermore|therefore|thus|"
+    r"instead|otherwise|nevertheless|nonetheless|meanwhile|similarly|likewise|for example|for instance|in addition|"
+    r"as a result|in conclusion|on the other hand|on the one hand)\b", re.IGNORECASE)
 
 # Simple word substitutions (complex -> simple)
 _SIMPLIFICATIONS = {
@@ -368,35 +379,15 @@ class HBSStylometricEngine:
     def _apply_contractions(
         self, text: str, fp: StylometricFingerprint, rng: random.Random,
     ) -> str:
-        """Apply contraction preferences based on fingerprint."""
-        _expansions = {
-            "do not": "don't", "does not": "doesn't", "did not": "didn't",
-            "is not": "isn't", "are not": "aren't", "was not": "wasn't",
-            "were not": "weren't", "have not": "haven't", "has not": "hasn't",
-            "had not": "hadn't", "will not": "won't", "would not": "wouldn't",
-            "could not": "couldn't", "should not": "shouldn't",
-            "cannot": "can't", "can not": "can't",
-            "I am": "I'm", "I have": "I've", "I will": "I'll",
-            "I would": "I'd", "it is": "it's", "it has": "it's",
-            "that is": "that's", "there is": "there's",
-        }
-        _contractions = {v: k for k, v in _expansions.items()}
+        """Apply the participant's contraction preference.
 
+        v1.2.9.1: delegates to the whole-word helper. The previous version replaced substrings
+        ("a bit is" -> "a bit's") and, because "it is" and "it has" both contract to "it's",
+        expanded every "it's" to "it has" ("it has a great idea").
+        """
         if fp.contraction_rate > 0.5:
-            # Prefer contractions — expand formal forms
-            for expanded, contracted in _expansions.items():
-                if rng.random() < fp.contraction_rate:
-                    text = re.sub(
-                        re.escape(expanded), contracted, text, flags=re.IGNORECASE,
-                    )
-        else:
-            # Prefer formal — expand contractions
-            for contracted, expanded in _contractions.items():
-                if rng.random() < (1.0 - fp.contraction_rate):
-                    text = re.sub(
-                        re.escape(contracted), expanded, text, flags=re.IGNORECASE,
-                    )
-        return text
+            return apply_contractions(text, rng, expand=False, prob=fp.contraction_rate)
+        return apply_contractions(text, rng, expand=True, prob=1.0 - fp.contraction_rate)
 
     def _remove_apostrophes(self, text: str) -> str:
         """Remove apostrophes from contractions: don't -> dont."""
@@ -405,7 +396,8 @@ class HBSStylometricEngine:
     def _inject_fillers(
         self, text: str, fp: StylometricFingerprint, rng: random.Random,
     ) -> str:
-        """Inject filler words at sentence boundaries."""
+        """Inject filler words where a speaker would pause: at sentence starts, after commas
+        and before conjunctions (v1.2.9.1: it also used to insert mid-phrase)."""
         if fp.filler_word_rate <= 0.005:
             return text
 
@@ -414,36 +406,28 @@ class HBSStylometricEngine:
         if word_count < 8:
             return text
 
-        # Calculate how many fillers to inject
         n_fillers = max(0, int(word_count * fp.filler_word_rate))
         if n_fillers == 0 and rng.random() < fp.filler_word_rate * 20:
             n_fillers = 1  # Small chance of at least one filler
-
         if n_fillers == 0:
             return text
 
-        # Find sentence boundaries (after periods, at commas)
-        _insertion_points = []
-        for i, w in enumerate(words):
-            if i > 0 and (words[i - 1].endswith((",", ".", "!", "?", ";")) or i == 0):
-                _insertion_points.append(i)
-        # Also add a few mid-sentence points
-        for i in range(3, len(words) - 2, max(4, len(words) // 4)):
-            if i not in _insertion_points:
-                _insertion_points.append(i)
-
-        if not _insertion_points:
+        sentence_starts = [i for i in range(1, len(words) - 1)
+                           if words[i - 1].endswith((".", "!", "?"))]
+        clause_points = clause_boundary_indices(words)
+        points = sorted(set(sentence_starts) | set(clause_points))
+        if not points:
             return text
 
-        _insertion_points.sort()
-        _chosen = rng.sample(
-            _insertion_points, min(n_fillers, len(_insertion_points)),
-        )
-        _chosen.sort(reverse=True)  # Insert from end to preserve indices
-
-        for idx in _chosen:
+        chosen = sorted(rng.sample(points, min(n_fillers, len(points))), reverse=True)
+        for idx in chosen:  # from the end, so earlier indices stay valid
             filler = rng.choice(_FILLER_WORDS)
-            if idx < len(words):
+            if words[idx - 1].endswith((".", "!", "?")):
+                words[idx] = lower_first(words[idx])
+                words.insert(idx, filler[:1].upper() + filler[1:] + ",")
+            else:
+                if not words[idx - 1].endswith((",", ";", ":")):
+                    words[idx - 1] = words[idx - 1] + ","
                 words.insert(idx, filler + ",")
 
         return " ".join(words)
@@ -456,7 +440,7 @@ class HBSStylometricEngine:
             return text
 
         # Only inject at the start of the text or at sentence starts
-        sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = split_sentences(text)
         if not sentences:
             return text
 
@@ -464,12 +448,14 @@ class HBSStylometricEngine:
         for i, s in enumerate(sentences):
             if s and rng.random() < fp.hedge_word_rate * 10:
                 hedge = rng.choice(_HEDGE_WORDS)
-                # Don't double-hedge
-                if not any(h in s.lower()[:30] for h in [hw.lower() for hw in _HEDGE_WORDS]):
-                    if s[0].isupper():
-                        s = hedge + " " + s[0].lower() + s[1:]
-                    else:
-                        s = hedge + " " + s
+                # Don't double-hedge or stack an opener on an existing one
+                if (not has_opener(s) and not _DEPENDENT_SENTENCE_RE.match(s)
+                        and not any(h in s.lower()[:30] for h in [hw.lower() for hw in _HEDGE_WORDS])):
+                    if fp.capitalization == "all_lower":
+                        hedge = hedge.lower()
+                    elif fp.capitalization == "standard":
+                        hedge = hedge[:1].upper() + hedge[1:]       # a sentence start is capitalised
+                    s = hedge + " " + lower_first(s)
             modified.append(s)
 
         return " ".join(modified)
@@ -524,7 +510,10 @@ class HBSStylometricEngine:
         """Replace complex words with simpler alternatives."""
         result = text
         for complex_word, simple_word in _SIMPLIFICATIONS.items():
-            # Case-insensitive replacement, preserving original case
-            pattern = re.compile(re.escape(complex_word), re.IGNORECASE)
-            result = pattern.sub(simple_word, result)
+            # Whole words only ("implement" must not rewrite "implementation"), keeping a
+            # leading capital.
+            pattern = re.compile(r"\b" + re.escape(complex_word) + r"\b", re.IGNORECASE)
+            result = pattern.sub(
+                lambda m, w=simple_word: w[:1].upper() + w[1:] if m.group(0)[:1].isupper() else w,
+                result)
         return result

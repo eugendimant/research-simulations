@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.3.0.3"
+__version__ = "1.3.0.4"
 
 import random
 import re
@@ -71,6 +71,17 @@ from collections import deque
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
+
+try:
+    from .text_cleanup import (
+        finalize_generated_text, has_opener, insert_adverb_after_subject, insert_filler,
+        lower_first, looks_non_english,
+    )
+except ImportError:  # imported as a top-level module (scripts, some test layouts)
+    from text_cleanup import (  # type: ignore[no-redef]
+        finalize_generated_text, has_opener, insert_adverb_after_subject, insert_filler,
+        lower_first, looks_non_english,
+    )
 
 
 class QuestionType(Enum):
@@ -7144,16 +7155,15 @@ def add_variation(response: str, persona_verbosity: float, persona_formality: fl
     # Hedging for less confident / lower-verbosity personas
     if rng.random() < (1 - persona_verbosity) * 0.35:
         hedge = rng.choice(HEDGING_PHRASES)
-        if not result.startswith(('I ', 'My ', 'i ', 'my ')) and len(result) >= 2:
-            result = hedge + result[0].lower() + result[1:]
+        if not result.startswith(('I ', 'My ', 'i ', 'my ')) and not has_opener(result) and len(result) >= 2:
+            result = hedge + lower_first(result)
 
-    # Casual filler insertion for informal personas (natural position)
+    # Casual adverb for informal personas, placed right after the subject ("I honestly think")
+    # (v1.2.9.1: it used to land at a random position, e.g. "the literally policy")
     if persona_formality < 0.4 and rng.random() < 0.25:
-        modifier = rng.choice(CASUAL_MODIFIERS)
+        modifier = rng.choice([m for m in CASUAL_MODIFIERS if m != "like"])
         words = result.split()
-        if len(words) > 4:
-            insert_pos = rng.randint(1, min(3, len(words) - 1))
-            words.insert(insert_pos, modifier)
+        if len(words) > 4 and insert_adverb_after_subject(words, modifier):
             result = ' '.join(words)
 
     # Verbose personas sometimes add a brief continuation (NOT academic)
@@ -7172,6 +7182,15 @@ def add_variation(response: str, persona_verbosity: float, persona_formality: fl
 # ============================================================================
 # MAIN RESPONSE GENERATOR CLASS
 # ============================================================================
+
+def _as_relative_clause(opinion: str) -> str:
+    """Turn an opinion verb phrase into a relative clause: "am in favor of" -> "I'm in favor
+    of", "support" -> "I support" (so "...is something I'm in favor of", not "something I in
+    favor of")."""
+    if opinion.startswith("am "):
+        return "I'm " + opinion[3:]
+    return "I " + opinion
+
 
 class ComprehensiveResponseGenerator:
     """
@@ -7857,8 +7876,13 @@ class ComprehensiveResponseGenerator:
                            'think', 'way', 'with', 'are', 'was', 'were'}
                 _qw = [w for w in re.findall(r'\b[a-zA-Z]{3,}\b', question_text.lower())
                        if w not in _q_stop][:4]
+                # v1.2.9.1: a bag of keywords reads as grammar only when it is a bare noun
+                # phrase; verbs ("influenced", "completed") and negations make it garbage
+                # ("...influenced decision purchase not"), so those fall to the template path.
+                _bag_ok = (0 < len(_qw) <= 3 and not any(
+                    w.endswith(('ed', 'ing')) or w in ('not', 'nor', 'but', 'than') for w in _qw))
                 _cand = ' '.join(_qw)
-                _adaptive_topic = _cand if (_cand and self._is_topic_intelligible(_cand)) else ""
+                _adaptive_topic = _cand if (_bag_ok and self._is_topic_intelligible(_cand)) else ""
             try:
                 if not _adaptive_topic:
                     raise ValueError("no intelligible topic")  # -> template fallback below
@@ -7979,6 +8003,9 @@ class ComprehensiveResponseGenerator:
         # v1.2.8.0: LAST step — repair mechanical punctuation artifacts (",," etc.)
         # left by the tic/filler/hedge stages. Deterministic; preserves realism.
         response = self._normalize_punctuation(response)
+
+        # v1.2.9.1: and finally spacing, a/an agreement, misplaced fillers and cut-off tails.
+        response = finalize_generated_text(response)
 
         return response
 
@@ -8703,6 +8730,12 @@ class ComprehensiveResponseGenerator:
     )
     _MIN_INTELLIGIBLE_WORDS = 3  # Need at least 3 real words for a usable topic
 
+    _NOT_A_TOPIC_RE = re.compile(
+        r"\b\d+\s*[-\u2013]\s*\d+\b|#\s*\d|\bmturk\b|\bworker id\b|\bqualtrics\b|\bclick\b|"
+        r"\b(?:please|kindly)\s+(?:enter|select|choose|indicate|answer|respond|rate|type|write|click)\b|"
+        r"\benter your\b|\bbelow\b|\babove\b|\bminimum characters?\b|\bitems?\b.*\bnumeric\b|"
+        r"\bin (?:a )?few (?:words|sentences|lines)\b|\b(?:sentences?|lines?|words?)\b.*\bjust completed\b")
+
     def _is_topic_intelligible(self, topic: str) -> bool:
         """Check whether a topic string can be naturally interpolated into a sentence.
 
@@ -8718,6 +8751,10 @@ class ComprehensiveResponseGenerator:
         if not topic or len(topic.strip()) < 4:
             return False
         _t = topic.strip().lower()
+        # v1.2.9.1: instructions, survey chrome and non-English text are not topics
+        # ("in 1-2 lines the task you just completed", "Please enter your MTurk ID below").
+        if self._NOT_A_TOPIC_RE.search(_t) or looks_non_english(_t):
+            return False
         # Pure numbers or codes
         if re.match(r'^[\d_\-\.]+$', _t):
             return False
@@ -12004,10 +12041,8 @@ class ComprehensiveResponseGenerator:
                 _repl = rng.choice(_replacements_start)
             else:
                 _repl = rng.choice(_replacements_mid)
-            # Preserve original case pattern
-            _orig = text[pos:pos + len(topic)]
-            if _orig[0].isupper() and not _at_start:
-                _repl = _repl[0].upper() + _repl[1:]
+            # v1.2.9.1: the replacements are pronouns/generic phrases, so they stay lower-case
+            # mid-sentence (they used to be capitalised after a capitalised topic: "I support That.")
             text = text[:pos] + _repl + text[pos + len(topic):]
 
         return text
@@ -12307,14 +12342,14 @@ class ComprehensiveResponseGenerator:
                     f"I {_pos_opinion} {_t}",
                     f"my take on {_t} is positive",
                     f"when it comes to {_t} I'm on board",
-                    f"{_t} is something I {_pos_opinion.replace('am ', '').replace('feel ', 'feel ')}",
+                    f"{_t} is something {_as_relative_clause(_pos_opinion)}",
                 ]
             elif sentiment in ('very_negative', 'negative'):
                 candidates = [
                     f"I {_neg_opinion} {_t}",
                     f"my take on {_t} is pretty negative",
                     f"when it comes to {_t} I'm not a fan",
-                    f"{_t} is something I {_neg_opinion.replace('am ', '').replace('have ', 'have ')}",
+                    f"{_t} is something {_as_relative_clause(_neg_opinion)}",
                 ]
             else:
                 candidates = [
@@ -13248,17 +13283,25 @@ class ComprehensiveResponseGenerator:
         if len(_words) < 5:
             return text
 
+        # v1.2.9.1: a tic goes where a speaker would pause (after a comma, before a
+        # conjunction) or, for adverb tics, right after the subject. It used to land after
+        # the 2nd-4th word whatever it was ("when it honestly, comes to AI").
+        _tic_word = _tic.strip().lower()
+        _can_open = _tic_word in ("honestly", "basically", "i mean", "you know", "actually", "anyway")
+        _is_adverb = _tic_word in ("just", "literally", "honestly", "basically", "actually")
+        _comma_ok = _tic_word not in ("just", "literally")  # nobody says ", just," or ", literally,"
         for _ in range(_n_insert):
             if len(_words) < 5:
                 break
-            # Insert at a natural position (after 2nd-5th word, or after a comma)
-            _candidates = []
-            for i in range(2, min(len(_words) - 1, max(6, len(_words) // 2))):
-                if _words[i - 1].endswith(',') or _words[i - 1].endswith('.') or i in (2, 3, 4):
-                    _candidates.append(i)
-            if _candidates:
-                _pos = rng.choice(_candidates)
-                _words.insert(_pos, _tic_family[rng.randint(0, len(_tic_family) - 1)].strip() + ',')
+            if _is_adverb and (not _comma_ok or rng.random() < 0.5) \
+                    and insert_adverb_after_subject(_words, _tic.strip()):
+                continue
+            if _comma_ok and insert_filler(_words, _tic.strip(), rng):
+                continue
+            _joined = ' '.join(_words)
+            if _can_open and not has_opener(_joined):
+                _tic_cap = _tic.strip()[:1].upper() + _tic.strip()[1:]
+                _words = (_tic_cap + ", " + lower_first(_joined)).split()
 
         return ' '.join(_words)
 
@@ -13762,10 +13805,14 @@ class ComprehensiveResponseGenerator:
             _filler = rng.choice(_fillers)
             _words = text.split()
             if len(_words) > 6:
-                # Insert filler at a natural position
-                _pos = rng.randint(2, min(5, len(_words) - 2))
-                _words.insert(_pos, _filler + ',')
-                text = ' '.join(_words)
+                # v1.2.9.1: adverbs go after the subject, other fillers at a clause boundary
+                # (they used to land after the 2nd-5th word, inside phrases)
+                if _filler in ('kinda', 'sort of'):
+                    placed = insert_adverb_after_subject(_words, _filler)
+                else:
+                    placed = insert_filler(_words, _filler, rng)
+                if placed:
+                    text = ' '.join(_words)
 
         return text
 
@@ -13798,9 +13845,15 @@ class ComprehensiveResponseGenerator:
         _opinion_verbs = ["think", "feel", "believe", "reckon", "figure", "say"]
         _preferred_verb = _opinion_verbs[_voice_rng.randint(0, len(_opinion_verbs) - 1)]
         _other_verbs = [v for v in ["think", "feel", "believe"] if v != _preferred_verb]
+        # v1.2.9.1: only swap when a clause follows ("I think it is ..."), never before an
+        # adjective/preposition ("I feel positive about", "I believe in"), which turned
+        # "I feel positively about X" into "I say positively about X".
+        _clause_next = (r"(?=(?:it|it's|its|this|that|the|there|they|we|people|most|many|my|our|"
+                        r"if|these|those|some|he|she|you)\b)")
         for _ov in _other_verbs:
-            if f"I {_ov} " in text and _voice_rng.random() < 0.50:
-                text = text.replace(f"I {_ov} ", f"I {_preferred_verb} ", 1)
+            _pat = re.compile(r"\bI " + _ov + r" " + _clause_next)
+            if _pat.search(text) and _voice_rng.random() < 0.50:
+                text = _pat.sub(f"I {_preferred_verb} ", text, count=1)
 
         # ── 2. PUNCTUATION PERSONALITY ──────────────────────────────────
         # Some people overuse exclamation marks, others never use them

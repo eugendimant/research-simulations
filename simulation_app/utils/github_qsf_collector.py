@@ -4,13 +4,28 @@ GitHub QSF File Collector
 Automatically uploads new QSF files to a GitHub repository for collection purposes.
 Runs silently in the background without interrupting user workflow.
 
-Version: 1.2.0
+Version: 1.2.1
+
+v1.2.1 hardening (behavior unchanged for well-formed, consented uploads):
+    * Only genuine Qualtrics survey files are uploaded (JSON with SurveyEntry + SurveyElements).
+    * Files larger than MAX_QSF_BYTES are rejected.
+    * At most MAX_UPLOADS_PER_HOUR uploads per server process. Every upload is a git commit and a
+      commit to the deployed branch triggers a redeploy, so an unbounded stream could keep the app
+      restarting.
+    * The target branch is configurable (GITHUB_QSF_BRANCH, default "main" as before). Pointing it at
+      a dedicated branch keeps collected files out of the branch the app deploys from.
+
+v1.2.9.1: the upload budget is spent only by a file that is actually about to be committed (a
+    duplicate no longer uses it up); a file whose name is taken by DIFFERENT content is collected
+    under a name with a short content hash instead of being dropped; names that lose characters
+    on the way to ASCII keep a short hash so different surveys do not share one file name.
 
 Configuration via Streamlit secrets:
     GITHUB_TOKEN: Personal access token with repo write permissions
     GITHUB_REPO: Repository in format "owner/repo" (e.g., "eugendimant/research-simulations")
     GITHUB_QSF_PATH: Path within repo for QSF files (default: "simulation_app/example_files")
     GITHUB_COLLECTION_ENABLED: Set to "true" to enable (default: disabled)
+    GITHUB_QSF_BRANCH: Branch to commit to (default: "main")
 
 Token Types Supported:
     - Classic tokens (ghp_XXXXXX): Require 'repo' scope
@@ -35,15 +50,34 @@ To generate a GitHub token:
 
 import base64
 import hashlib
+import json
 import logging
 import threading
-from typing import Optional, Tuple
+import time
+import unicodedata
+from collections import deque
+from typing import Deque, Dict, Optional, Tuple
 from functools import lru_cache
 
 # Configure module logger
 logger = logging.getLogger(__name__)
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
+
+# Upper bound for a collected survey file. Real QSF exports are typically 20 KB - 2 MB.
+MAX_QSF_BYTES = 5 * 1024 * 1024
+# Upload budget per server process per hour (see module docstring for why).
+MAX_UPLOADS_PER_HOUR = 20
+# Longest file name (including ".qsf") that will be stored.
+MAX_FILENAME_LENGTH = 120
+
+# Reads of the repository listing are cheaper than commits but still GitHub API calls, so they get
+# their own (larger) budget; a duplicate costs one read and no upload.
+MAX_LOOKUPS_PER_HOUR = 5 * MAX_UPLOADS_PER_HOUR
+
+_upload_times: Deque[float] = deque()
+_lookup_times: Deque[float] = deque()
+_upload_lock = threading.Lock()
 
 
 def _validate_token_format(token: str) -> Tuple[bool, str]:
@@ -87,9 +121,10 @@ def _get_config() -> dict:
             "repo": st.secrets.get("GITHUB_REPO", "eugendimant/research-simulations"),
             "path": st.secrets.get("GITHUB_QSF_PATH", "simulation_app/example_files"),
             "enabled": str(st.secrets.get("GITHUB_COLLECTION_ENABLED", "false")).lower() == "true",
+            "branch": str(st.secrets.get("GITHUB_QSF_BRANCH", "main") or "main"),
         }
     except Exception:
-        return {"token": "", "repo": "", "path": "", "enabled": False}
+        return {"token": "", "repo": "", "path": "", "enabled": False, "branch": "main"}
 
 
 def is_collection_enabled() -> bool:
@@ -126,7 +161,25 @@ def get_collection_status() -> dict:
 
 
 def _sanitize_filename(filename: str) -> str:
-    """Sanitize filename for safe storage."""
+    """Sanitize filename for safe storage.
+
+    Accented letters are folded to their base letter ("Étude" -> "Etude"). A name that still has
+    characters without an ASCII form (CJK, emoji, ...) cannot be kept, so it gets a short hash of the
+    original instead: "調査.qsf" and "实验.qsf" must not both become "qsf.qsf".
+    """
+    filename = str(filename)
+    decomposed = unicodedata.normalize("NFKD", filename)
+    folded = "".join(c for c in decomposed if not unicodedata.combining(c))
+    if not folded.isascii():
+        digest = hashlib.sha256(filename.encode("utf-8")).hexdigest()[:8]
+        base = folded[: -len(".qsf")] if folded.lower().endswith(".qsf") else folded
+        stem = "".join(c if c.isascii() and (c.isalnum() or c in "-_") else "_" for c in base)
+        stem = stem.strip("_-")
+        while "__" in stem:
+            stem = stem.replace("__", "_")
+        stem = (stem or "survey")[: MAX_FILENAME_LENGTH - len(".qsf") - 9].rstrip("_-") or "survey"
+        return f"{stem}_{digest}.qsf"
+    filename = folded
     # Remove or replace problematic characters
     safe_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_. ")
     sanitized = "".join(c if c in safe_chars else "_" for c in filename)
@@ -136,16 +189,81 @@ def _sanitize_filename(filename: str) -> str:
     # Collapse multiple spaces
     while "  " in sanitized:
         sanitized = sanitized.replace("  ", " ")
-    # Trim leading/trailing spaces and underscores
-    sanitized = sanitized.strip(" _")
+    # No dot runs or leading dots: a name can never read as ".." or a hidden file
+    while ".." in sanitized:
+        sanitized = sanitized.replace("..", ".")
+    # Trim leading/trailing spaces, underscores and dots
+    sanitized = sanitized.strip(" _.") or "survey"
     # Ensure .qsf extension
     if not sanitized.lower().endswith(".qsf"):
         sanitized = sanitized.rstrip(".") + ".qsf"
-    return sanitized.strip()
+    sanitized = sanitized.strip()
+    # Cap the length but keep the extension
+    if len(sanitized) > MAX_FILENAME_LENGTH:
+        stem = sanitized[: -len(".qsf")]
+        sanitized = stem[: MAX_FILENAME_LENGTH - len(".qsf")].rstrip(" _.") + ".qsf"
+    return sanitized
 
 
-def _file_exists_in_repo(filename: str, config: dict) -> bool:
-    """Check if a file with this name already exists in the GitHub repo."""
+def validate_qsf_payload(content: bytes) -> Tuple[bool, str]:
+    """Check that ``content`` looks like a Qualtrics survey file and is within the size limit.
+
+    Returns (ok, reason). Never raises.
+    """
+    try:
+        if not isinstance(content, (bytes, bytearray)):
+            return False, "content is not bytes"
+        if len(content) == 0:
+            return False, "empty file"
+        if len(content) > MAX_QSF_BYTES:
+            return False, f"file larger than {MAX_QSF_BYTES // (1024 * 1024)} MB"
+        data = json.loads(bytes(content).decode("utf-8-sig"))
+        if not isinstance(data, dict):
+            return False, "top level is not a JSON object"
+        if "SurveyEntry" not in data or not isinstance(data.get("SurveyElements"), list):
+            return False, "missing SurveyEntry / SurveyElements"
+        return True, "ok"
+    except Exception as exc:  # malformed JSON, bad encoding, etc.
+        return False, f"not a readable QSF ({type(exc).__name__})"
+
+
+def _sliding_window_allow(times: Deque[float], limit: int) -> bool:
+    """One-hour sliding window: True (and the attempt is recorded) while fewer than `limit` are in it."""
+    now = time.time()
+    with _upload_lock:
+        while times and now - times[0] > 3600:
+            times.popleft()
+        if len(times) >= limit:
+            return False
+        times.append(now)
+        return True
+
+
+def _allow_upload_now() -> bool:
+    """Sliding one-hour window limiter for commits. Records the attempt when it returns True.
+
+    Call it only for a file that is about to be committed: a duplicate must not spend this budget.
+    """
+    return _sliding_window_allow(_upload_times, MAX_UPLOADS_PER_HOUR)
+
+
+def _allow_lookup_now() -> bool:
+    """Sliding one-hour window limiter for repository listings (one read per collection attempt)."""
+    return _sliding_window_allow(_lookup_times, MAX_LOOKUPS_PER_HOUR)
+
+
+def _git_blob_sha(content: bytes) -> str:
+    """The id git (and the GitHub contents API) report for a file with exactly this content."""
+    header = b"blob " + str(len(content)).encode("ascii") + b"\0"
+    return hashlib.sha1(header + content, usedforsecurity=False).hexdigest()  # noqa: S324 - git object id
+
+
+def _list_repo_files(config: dict) -> Optional[Dict[str, str]]:
+    """Map lower-case file name -> blob sha for the target directory.
+
+    {} when the directory does not exist yet; None when the listing could not be read (the caller
+    then assumes the file exists, as before).
+    """
     try:
         import requests
 
@@ -153,25 +271,48 @@ def _file_exists_in_repo(filename: str, config: dict) -> bool:
             "Authorization": f"token {config['token']}",
             "Accept": "application/vnd.github.v3+json",
         }
-
-        # GitHub API: Get contents of directory
         url = f"https://api.github.com/repos/{config['repo']}/contents/{config['path']}"
-        response = requests.get(url, headers=headers, timeout=10)
-
+        response = requests.get(
+            url, headers=headers, params={"ref": config.get("branch") or "main"}, timeout=10
+        )
         if response.status_code == 200:
             files = response.json()
-            existing_names = {f["name"].lower() for f in files if isinstance(f, dict)}
-            return filename.lower() in existing_names
-        elif response.status_code == 404:
-            # Directory doesn't exist yet - file definitely doesn't exist
-            return False
-        else:
-            logger.warning(f"GitHub API returned {response.status_code} when checking for file")
-            return True  # Assume exists to avoid duplicates on error
-
+            return {str(f["name"]).lower(): str(f.get("sha", "")) for f in files if isinstance(f, dict) and "name" in f}
+        if response.status_code == 404:
+            return {}
+        logger.warning(f"GitHub API returned {response.status_code} when checking for file")
+        return None
     except Exception as e:
         logger.warning(f"Error checking if file exists in GitHub: {e}")
-        return True  # Assume exists on error to be safe
+        return None
+
+
+def _choose_target_name(safe_filename: str, content: bytes, config: dict) -> Tuple[Optional[str], str]:
+    """Pick the repository file name for `content`: (name, "") or (None, reason) to upload nothing.
+
+    The same name holding the same content is a duplicate. The same name holding DIFFERENT content
+    (two students exporting "Survey.qsf" on one day) is collected under a name with a short content
+    hash instead of being dropped.
+    """
+    listing = _list_repo_files(config)
+    if listing is None:
+        return None, f"File {safe_filename} already exists in repository"  # unknown: assume it does
+    digest = _git_blob_sha(content)
+    stem = safe_filename[: -len(".qsf")] if safe_filename.lower().endswith(".qsf") else safe_filename
+    stem = stem[: MAX_FILENAME_LENGTH - len(".qsf") - 9].rstrip(" _.") or "survey"
+    for candidate in (safe_filename, f"{stem}_{digest[:8]}.qsf"):
+        existing = listing.get(candidate.lower())
+        if existing is None:
+            return candidate, ""
+        if not existing or existing == digest:  # same content, or a listing without ids: a duplicate
+            return None, f"File {candidate} already exists in repository"
+    return None, f"File {safe_filename} already exists in repository"
+
+
+def _file_exists_in_repo(filename: str, config: dict) -> bool:
+    """Check if a file with this name already exists in the GitHub repo."""
+    listing = _list_repo_files(config)
+    return True if listing is None else filename.lower() in listing
 
 
 def _upload_to_github(filename: str, content: bytes, config: dict) -> Tuple[bool, str]:
@@ -205,7 +346,7 @@ def _upload_to_github(filename: str, content: bytes, config: dict) -> Tuple[bool
         payload = {
             "message": commit_message,
             "content": content_b64,
-            "branch": "main",  # Or could be configurable
+            "branch": config.get("branch") or "main",
         }
 
         logger.info(f"Attempting GitHub upload: {filename} to {config['repo']}/{config['path']}")
@@ -262,6 +403,11 @@ def collect_qsf_async(filename: str, content: bytes) -> None:
             if not config["enabled"]:
                 return
 
+            ok, reason = validate_qsf_payload(content)
+            if not ok:
+                logger.info(f"QSF collection skipped: {reason}")
+                return
+
             if not config["token"]:
                 logger.debug("QSF collection enabled but no GitHub token configured")
                 return
@@ -269,13 +415,20 @@ def collect_qsf_async(filename: str, content: bytes) -> None:
             # Sanitize filename
             safe_filename = _sanitize_filename(filename)
 
-            # Check if file already exists
-            if _file_exists_in_repo(safe_filename, config):
-                logger.debug(f"QSF file {safe_filename} already exists in repo, skipping")
+            # Look the file up first: a duplicate must not spend the upload budget
+            if not _allow_lookup_now():
+                logger.info("QSF collection skipped: hourly limit reached")
+                return
+            target_name, skip_reason = _choose_target_name(safe_filename, content, config)
+            if target_name is None:
+                logger.debug(f"QSF collection skipped: {skip_reason}")
+                return
+            if not _allow_upload_now():
+                logger.info("QSF collection skipped: hourly upload limit reached")
                 return
 
             # Upload to GitHub
-            success, message = _upload_to_github(safe_filename, content, config)
+            success, message = _upload_to_github(target_name, content, config)
 
             if success:
                 logger.info(f"QSF collection: {message}")
@@ -312,12 +465,21 @@ def collect_qsf_sync(filename: str, content: bytes) -> Tuple[bool, str]:
     if not config["token"]:
         return False, "GitHub token not configured"
 
+    ok, reason = validate_qsf_payload(content)
+    if not ok:
+        return False, f"Rejected: {reason}"
+
     # Sanitize filename
     safe_filename = _sanitize_filename(filename)
 
-    # Check if file already exists
-    if _file_exists_in_repo(safe_filename, config):
-        return False, f"File {safe_filename} already exists in repository"
+    # Look the file up first: a duplicate must not spend the upload budget
+    if not _allow_lookup_now():
+        return False, "Hourly upload limit reached"
+    target_name, skip_reason = _choose_target_name(safe_filename, content, config)
+    if target_name is None:
+        return False, skip_reason
+    if not _allow_upload_now():
+        return False, "Hourly upload limit reached"
 
     # Upload to GitHub
-    return _upload_to_github(safe_filename, content, config)
+    return _upload_to_github(target_name, content, config)
