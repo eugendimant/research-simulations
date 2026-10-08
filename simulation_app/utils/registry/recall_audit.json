@@ -159,12 +159,30 @@
    "tier": "recall_consistent"
   },
   "game:beauty_contest_standard": {
+   "audited_on": "2026-10-08",
    "checked_fields": [
-    "citation"
+    "citation",
+    "mean_proportion",
+    "sd_proportion",
+    "ci_95"
    ],
    "citation_recognized": true,
-   "note": "Nagel (1995, AER) is correctly cited; the observed first-round mean depends strongly on subject pool, and 33 coincides with the level-1 prediction rather than any reported average. | Nagel's (1995) first-round mean for p=2/3 is ~36; Bosch-Domenech et al.'s newspaper pools averaged lower (~23). A single 0.33 is a level-1 theoretical point, not a pooled mean",
-   "tier": "recall_uncertain"
+   "corrected": {
+    "mean_proportion": 0.36,
+    "mean_proportion_was": 0.33,
+    "sd_proportion": 0.2,
+    "sd_proportion_was": 0.15,
+    "ci_95": [
+     0.32,
+     0.4
+    ],
+    "ci_95_was": [
+     0.28,
+     0.38
+    ]
+   },
+   "note": "Nagel (1995, AER) is correctly cited. 33 is the level-1 point for p = 2/3 (50p), not an observed mean: first-round means in lab pools are ~36-37 for p = 2/3 and ~27 for p = 1/2, i.e. above 50p and increasing in p. First-round SD is roughly 20 points of 100. Newspaper pools (Bosch-Domenech et al. 2002) average lower (~23) and are not what this standard entry describes. Recalled, not source-verified.",
+   "tier": "recall_corrected"
   },
   "game:bertrand_competition_standard": {
    "checked_fields": [
@@ -823,6 +841,7 @@
    "checked_fields": [
     "ci_95",
     "mean_proportion",
+    "sd_proportion",
     "subpopulations"
    ],
    "citation_recognized": true,
@@ -838,15 +857,17 @@
     "mean_proportion": 0.4,
     "mean_proportion_was": 0.42,
     "subpopulations": {
-     "equal_split_50": 0.28,
-     "fair_offer_40_49": 0.3,
-     "hyper_fair_above_50": 0.05,
-     "low_offer_1_24": 0.07,
-     "moderate_offer_25_39": 0.3
+     "equal_split_50": 0.27,
+     "fair_offer_40_49": 0.26,
+     "moderate_offer_25_39": 0.3,
+     "low_offer_1_24": 0.11,
+     "hyper_fair_above_50": 0.06
     },
-    "subpopulations_was": {}
+    "subpopulations_was": {},
+    "sd_proportion": 0.13,
+    "sd_proportion_was": 0.1
    },
-   "note": "Oosterbeek, Sloof & van de Kuilen (2004) meta: mean offer ~40%, modal 40-50%, left-skewed. Shape and modes are right; the level is slightly high. | Oosterbeek et al.'s pooled mean offer is ~0.40; 0.42 is at the upper edge; sd_proportion=0.10 understates offer dispersion once sub-20% offers are included (~0.13-0.15) | SECOND PASS (2026-10-08): with no stored shares the generator fell back to a Beta around 0.40, which put 3% of proposer offers on exactly 50% and 14% above it; the literature has the modal offer at exactly half (~25-35%) and offers above half rare. Shares are recalled approximations of the Camerer (2003) / Oosterbeek et al. (2004) pattern",
+   "note": "Oosterbeek, Sloof & van de Kuilen (2004) meta: mean offer ~40%, modal 40-50%, left-skewed. Shape and modes are right; the level is slightly high. | Oosterbeek et al.'s pooled mean offer is ~0.40; 0.42 is at the upper edge; sd_proportion=0.10 understates offer dispersion once sub-20% offers are included (~0.13-0.15) | SECOND PASS (2026-10-08): with no stored shares the generator fell back to a Beta around 0.40, which put 3% of proposer offers on exactly 50% and 14% above it; the literature has the modal offer at exactly half (~25-35%) and offers above half rare. Shares are recalled approximations of the Camerer (2003) / Oosterbeek et al. (2004) pattern | THIRD PASS (2026-10-08): the stored SD 0.10 and the realised SD of the mixture (0.115) were below the recalled 0.13-0.15 spread of proposer offers; the sub-25% tail share was raised 0.07 -> 0.11 (shares previously 0.28/0.30/0.30/0.07/0.05) so the realised SD is ~0.125 at the stated mean 0.40. Still a recalled approximation.",
    "tier": "recall_corrected"
   },
   "game:ultimatum_third_party": {
@@ -3555,12 +3576,24 @@
    "tier": "recall_uncertain"
   },
   "norm:disgust_sensitivity_dsr": {
+   "audited_on": "2026-10-08",
    "checked_fields": [
-    "citation"
+    "citation",
+    "mean",
+    "sd",
+    "scale_min"
    ],
    "citation_recognized": true,
-   "note": "Olatunji et al. (2007, Psychol Assess) is the correct DS-R revision of Haidt/McCauley/Rozin's Disgust Scale, and the women>men gap is robust, but I cannot pin the published per-item mean. | DS-R per-item means are usually nearer 2.0 on the 0-4 metric; 2.6 looks high; the DS-R has two differently-anchored halves (agreement items and disgust-rating items), which a single scale_points field cannot represent",
-   "tier": "recall_uncertain"
+   "corrected": {
+    "scale_min": 0.0,
+    "scale_min_was": 1.0,
+    "mean": 1.7,
+    "mean_was": 2.6,
+    "sd": 0.62,
+    "sd_was": 0.68
+   },
+   "note": "Olatunji et al. (2007, Psychol Assess) is the DS-R (25 items, each scored 0-4, total 0-100). Stored against the default scale_min 1.0 the old mean 2.6 sat at 40% of the range, which is ~1.6/item on the native 0-4 metric (total ~40); recalled general/student means are ~1.6-2.0/item (total ~40-50), women above men. The entry is now on its native zero-based metric with mean 1.7 (total ~42). The two differently anchored halves of the instrument are still a single scale_points field, so the per-item SD is approximate.",
+   "tier": "recall_corrected"
   },
   "norm:eating_attitudes_eat26": {
    "checked_fields": [
@@ -4797,12 +4830,18 @@
    "tier": "recall_corrected"
   },
   "norm:specific_phobia_fsq": {
+   "audited_on": "2026-10-08",
    "checked_fields": [
-    "citation"
+    "citation",
+    "scale_min"
    ],
    "citation_recognized": true,
-   "note": "Szymanski & O'Donohue (1995, J Behav Ther Exp Psychiatry) is the real FSQ and Muris & Merckelbach (1996) compared spider-fear questionnaires; women>men is correct, but I cannot confirm the response-option count or the mean. | scale_points is probably 7 (0-6), not 8, for the Fear of Spiders Questionnaire; construct 'specific_phobia' is too broad: the FSQ measures spider fear only, so these means cannot stand in for specific phobia generally",
-   "tier": "recall_uncertain"
+   "corrected": {
+    "scale_min": 0.0,
+    "scale_min_was": 1.0
+   },
+   "note": "Szymanski & O'Donohue (1995) is the Fear of Spiders Questionnaire (18 items, strongly-disagree to strongly-agree, recalled as scored 0-7, total 0-126). The entry already said '0-7 per item' with 8 points, but scale_min stayed at the default 1.0, so the mean 1.80 (total ~32, a non-clinical value) was read as 1.80 on a 1-8 range (10% of the range, near the floor) instead of 1.80 on 0-7 (26%). scale_min is now 0.0. The construct label 'specific_phobia' is broader than the spider-only FSQ and the exact option count (0-7 vs 0-6) is recalled, not verified.",
+   "tier": "recall_corrected"
   },
   "norm:state_anxiety_stai": {
    "checked_fields": [
@@ -5139,9 +5178,9 @@
   }
  },
  "tier_histogram": {
-  "recall_consistent": 200,
-  "recall_corrected": 126,
-  "recall_uncertain": 157,
+  "recall_uncertain": 152,
+  "recall_corrected": 155,
+  "recall_consistent": 176,
   "unrecognized": 1
  }
 }

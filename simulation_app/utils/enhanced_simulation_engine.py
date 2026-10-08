@@ -293,6 +293,9 @@ try:
         ORDER_EFFECTS,
         get_meta_analytic_effect,
         get_game_calibration,
+        resolve_game_calibration_key,
+        detect_game_type,
+        looks_like_game_decision,
         get_construct_norm,
         get_cultural_adjustment,
         get_response_time_norm,
@@ -3501,6 +3504,34 @@ _INTERACTION_MULTIPLIER_POP_MEAN = 1.12
 # Latent-shift gain for game DVs (calibrated so recovered d on bounded, zero-inflated
 # allocations tracks the configured d; see tests/test_effect_size_recovery.py).
 _GAME_Z_GAIN = 0.9
+
+# Share of a sample's chance (between-arm) variance that the game model's stratified draw lacks.
+_GAME_MISSING_CHANCE_VAR = 0.7
+
+# v1.3.0.6: games whose stored mean is the SHARE OF PARTICIPANTS choosing the "1" option
+# (cooperate, stag, volunteer, enter, ...), so a two-option column is drawn at that rate.
+_BINARY_RATE_GAME_TYPES = frozenset({
+    "prisoners_dilemma", "stag_hunt", "volunteer_dilemma", "market_entry", "chicken",
+    "battle_of_sexes",
+})
+
+
+def _binary_game_rate(dist: Optional[Dict[str, Any]]) -> Optional[float]:
+    """Published choice rate of a two-option game outcome, or None when the entry is not one.
+
+    A two-option column of a prisoner's dilemma / stag hunt / volunteer's dilemma / market entry /
+    chicken / battle of the sexes game takes the stored mean as P(option 1); the binary trust entry
+    does the same. Allocation games (dictator, ultimatum, ...) have no such reading.
+    """
+    if not dist:
+        return None
+    game, variant = str(dist.get("game")), str(dist.get("variant"))
+    if game in _BINARY_RATE_GAME_TYPES or (game == "trust" and variant == "binary"):
+        try:
+            return float(min(0.98, max(0.02, float(dist.get("mean")))))
+        except (TypeError, ValueError):
+            return None
+    return None
 # Observed scale-score correlation produced by the pipeline for a latent correlation t:
 #   r_obs ~= _XCORR_FLOOR + _XCORR_SLOPE * t
 # The floor is common-method variance between unrelated scales (Podsakoff et al. 2003:
@@ -8478,9 +8509,29 @@ class EnhancedSimulationEngine:
                      'offer', 'share', 'split', 'endow', 'dictator',
                      'trust game', 'ultimatum', 'public good', 'contribution',
                      'transfer', 'payment', 'donate', 'generosity']
-        _is_econ_game = any(kw in var_lower for kw in _econ_kws) or any(
+        # v1.3.0.6: "sent" is a whole word ("Amount_Sent"), not the middle of "consent"/"presentation".
+        _var_tokens = set(re.split(r"[^a-z0-9]+", var_lower))
+        _is_econ_game = any(kw in var_lower for kw in _econ_kws if kw != 'sent') or (
+            'sent' in _var_tokens) or any(
             kw in condition_lower for kw in ['dictator', 'trust game', 'ultimatum',
                                               'public good', 'prisoner'])
+        # v1.3.0.6: games the allocation keywords never matched (stag hunt, common pool, beauty
+        # contest, auctions, centipede, ...). A game must be NAMED as a whole phrase (variable name,
+        # title, description or condition label); a variable named for the game is its outcome, any
+        # other variable counts only when it reads like a decision (choice, bid, guess, harvest ...),
+        # so a Likert "Trust_in_Government" in a study that mentions a trust game stays a scale.
+        _kb_key_resolved = None
+        if HAS_KNOWLEDGE_BASE:
+            try:
+                _kb_key_resolved = resolve_game_calibration_key(
+                    variable_name, self.study_title or "", self.study_description or "", condition_lower)
+                if _kb_key_resolved and not _is_econ_game:
+                    _gsrc = detect_game_type(variable_name, self.study_title or "",
+                                             self.study_description or "", condition_lower)[1]
+                    _is_econ_game = _gsrc == "variable" or looks_like_game_decision(variable_name)
+            except Exception as _gerr:  # never let game resolution take a run down
+                self._log(f"Game resolution skipped: {_gerr}")
+                _kb_key_resolved = None
         if not _is_econ_game and 'prisoner' in (
                 (self.study_title or "") + " " + (self.study_description or "")).lower():
             # v1.3.0.5: a prisoner's-dilemma DV is usually named "cooperate"/"defect",
@@ -8494,7 +8545,7 @@ class EnhancedSimulationEngine:
 
             # v1.0.8.7: Try structured knowledge base FIRST for game calibrations
             if HAS_KNOWLEDGE_BASE:
-                _kb_game = None
+                _kb_game = GAME_CALIBRATIONS.get(_kb_key_resolved) if _kb_key_resolved else None
                 # v1.3.0.5: the loop keys are underscored, but study text says
                 # "public goods game" / "prisoner's dilemma", so those two games never
                 # matched and fell through to the generic branch (a one-shot public
@@ -8505,10 +8556,13 @@ class EnhancedSimulationEngine:
                     'prisoner': ("prisoner's dilemma", 'prisoners dilemma', 'prisoners\' dilemma',
                                  'prisoner dilemma'),
                 }
-                for _gt in ['dictator', 'trust', 'ultimatum', 'public_good',
-                            'prisoner', 'auction', 'bargain', 'gift_exchange',
-                            'stag_hunt', 'common_pool', 'holt_laury',
-                            'beauty_contest', 'die_roll', 'bribery']:
+                # v1.3.0.6: the resolver above names the game by whole phrase; this substring loop
+                # remains the fallback for study text it does not recognise (e.g. "trust" alone).
+                for _gt in ([] if _kb_game else
+                            ['dictator', 'trust', 'ultimatum', 'public_good',
+                             'prisoner', 'auction', 'bargain', 'gift_exchange',
+                             'stag_hunt', 'common_pool', 'holt_laury',
+                             'beauty_contest', 'die_roll', 'bribery']):
                     if _gt in _full_ctx or any(a in _full_ctx for a in _gt_aliases.get(_gt, ())):
                         _variant = 'standard'
                         if _gt == 'dictator' and any(kw in _full_ctx for kw in ['tak', 'steal', 'negative']):
@@ -8527,7 +8581,10 @@ class EnhancedSimulationEngine:
                 if _kb_game:
                     # Use structured calibration: convert mean_proportion to adjustment
                     # mean_proportion is 0-1 scale, default midpoint is 0.5
-                    calibration['mean_adjustment'] = _kb_game.mean_proportion - 0.50
+                    # (a mean above 1, e.g. second-price overbidding at 1.05 of value, is a
+                    # ratio rather than a proportion: clamp it so the tendency stays on the scale)
+                    _kb_mean = min(0.95, max(0.05, float(_kb_game.mean_proportion)))
+                    calibration['mean_adjustment'] = _kb_mean - 0.50
                     calibration['variance_adjustment'] = max(0.08, _kb_game.sd_proportion * 0.8)
                     calibration['positivity_bias'] = -0.05 if _kb_game.mean_proportion < 0.40 else 0.0
                     calibration['_game_variant'] = f"{_kb_game.game_type}_{_kb_game.variant}"
@@ -9745,6 +9802,31 @@ class EnhancedSimulationEngine:
         # allocation-sized, unipolar scales with a recognised KB game.
         # =====================================================================
         _kb_dist = domain_calibration.get('_kb_dist')
+        _bin_rate = _binary_game_rate(_kb_dist) if scale_range == 1 else None
+        if (_bin_rate is not None and not is_reverse and not _scale_geom['is_bipolar']
+                and domain_calibration.get('_game_variant') not in ('dictator_taking', 'dictator_third_party')):
+            # v1.3.0.6: a two-option game outcome is drawn at the published choice rate (prisoner's
+            # dilemma 47%, Sally 1995; Dal Bo & Frechette 2018), not at the Likert tendency (~58%).
+            # The same person latent as the allocation route decides who chooses "1"; the condition
+            # effect moves that latent on the probit scale, sized so a requested Cohen's d on the 0/1
+            # column is recovered: gap_z = d * sqrt(p(1-p)) / phi(Phi^-1(p)).
+            from statistics import NormalDist
+            _nd = NormalDist()
+            _grng = np.random.RandomState((participant_seed * 7919 + 13) % (2**31))
+            _coop = _safe_trait_value(modified_traits.get("cooperation_tendency"), 0.5)
+            _emp = _safe_trait_value(modified_traits.get("empathy"), 0.5)
+            _zt = float(np.clip(((_coop - 0.5) + (_emp - 0.5)) / 2.0 / 0.2, -2.5, 2.5))
+            _w = 0.35
+            _z = _w * _zt + float(np.sqrt(1.0 - _w * _w)) * float(_grng.normal())
+            _zp = _nd.inv_cdf(_bin_rate)
+            _kappa = float(np.sqrt(_bin_rate * (1.0 - _bin_rate)) / _nd.pdf(_zp))
+            _unit = self._EFFECT_D_TO_NORMALIZED * self._explicit_effect_scale(variable_name)
+            # (undo the variance widening applied to every effect above: d is a gap over an SD, and
+            # here the SD is the Bernoulli SD, which the kappa term already accounts for)
+            _va = 1.0 + float(domain_calibration.get('variance_adjustment', 0.0) or 0.0)
+            _side_d = condition_effect / (_va * 2.0 * _unit) if _unit > 0 else 0.0   # +/- d/2 per arm
+            return int(scale_max if (_z + _zp + _side_d * _kappa) > 0.0 else scale_min)
+
         if (_kb_dist and not is_reverse and scale_range >= 10 and not _scale_geom['is_bipolar']
                 and domain_calibration.get('_game_variant') not in ('dictator_taking', 'dictator_third_party')):
             _qfn = _game_quantile_fn(_kb_dist)
@@ -15680,10 +15762,13 @@ class EnhancedSimulationEngine:
             return False
         if not self._variable_has_user_spec(scale_name):
             return False
-        if not has_reverse and (scale_max - scale_min) >= 10:
+        if not has_reverse and (scale_max - scale_min) >= 1:
             geometry = self._detect_scale_geometry(scale_min, scale_max, scale_name)
             calibration = self._get_domain_response_calibration(scale_name, "")
-            if (calibration.get("_kb_dist") and not geometry["is_bipolar"]
+            _kd = calibration.get("_kb_dist")
+            _route = ((scale_max - scale_min) >= 10) or (
+                (scale_max - scale_min) == 1 and _binary_game_rate(_kd) is not None)   # v1.3.0.6: binary route
+            if (_kd and _route and not geometry["is_bipolar"]
                     and calibration.get("_game_variant") not in ("dictator_taking", "dictator_third_party")):
                 return False
         return True
@@ -15857,11 +15942,21 @@ class EnhancedSimulationEngine:
             if sd_w <= 0:
                 continue
             lo, hi = float(entry["scale_min"]), float(entry["scale_max"])
-            grand = float(comp.mean())
-            masks = {cond: (df["CONDITION"] == cond).to_numpy() for cond in targets_d}
-            masks = {cond: m for cond, m in masks.items() if m.any()}
-            if not masks:
+            if not any((df["CONDITION"] == cond).any() for cond in targets_d):
                 continue
+            # Every condition takes part: the requested arms move by their target, and each
+            # condition (reference included) gets the chance error of an independent sample.
+            masks = {cond: (df["CONDITION"] == cond).to_numpy() for cond in df["CONDITION"].dropna().unique()}
+            masks = {cond: m for cond, m in masks.items() if m.sum() > 1}
+            aim_d = {cond: float(targets_d.get(cond, 0.0)) for cond in masks}
+            # The game model draws each condition's participants by stratified latent class, so its
+            # arms differ by chance only ~30% as much as independent samples do (measured on the
+            # null gap: SD 0.044 against sqrt(1/n1 + 1/n2) = 0.082 at N = 600). A real sample
+            # carries the full sampling error, so the missing ~70% of its variance is added as a
+            # seeded draw per condition mean, in within-condition SD units (var = 0.7 / n).
+            _chance = np.random.RandomState((int(self.seed) + _stable_int_hash(prefix + "|chance")) % (2**31))
+            for cond in sorted(masks, key=str):
+                aim_d[cond] += float(_chance.normal(0.0, np.sqrt(_GAME_MISSING_CHANCE_VAR / int(masks[cond].sum()))))
             # One uniform draw per participant, shared by the item columns, drives randomised
             # rounding: the answers are integers, so a shift smaller than half a point would
             # otherwise round away entirely (or jump a whole point), while randomised rounding
@@ -15873,6 +15968,13 @@ class EnhancedSimulationEngine:
             shift = {cond: 0.0 for cond in masks}
             sd_now = sd_w
             result = values.copy()
+            # v1.3.0.6: aim at the MOVE, not at the realised gap. Each arm's mean is moved by its
+            # target (+/- d/2 within-condition SDs) from wherever the generated data put it, so the
+            # chance difference between arms that any real sample has is kept and the observed d
+            # varies around the request (SD ~ sqrt(1/n1 + 1/n2)) instead of landing on it every
+            # time (it used to vary by ~0.01 between seeds, against ~0.08 at N = 600). Averaged over
+            # samples the gap is still the requested one. Same rule as _apply_user_effect_to_scale.
+            base_mean = {cond: float(np.nanmean(np.nanmean(values[m], axis=1))) for cond, m in masks.items()}
             for _ in range(8):  # clipping at the bounds eats part of the shift; re-aim
                 result = values.copy()
                 for cond, m in masks.items():
@@ -15880,7 +15982,7 @@ class EnhancedSimulationEngine:
                 new_comp = np.nanmean(result, axis=1)
                 gaps = {}
                 for cond, m in masks.items():
-                    gaps[cond] = (grand + targets_d[cond] * sd_now) - float(np.nanmean(new_comp[m]))
+                    gaps[cond] = aim_d[cond] * sd_now - (float(np.nanmean(new_comp[m])) - base_mean[cond])
                 var_parts = [(float(np.nanvar(new_comp[m], ddof=1)), int(m.sum()) - 1) for m in groups_idx if m.sum() > 1]
                 if var_parts:
                     sd_now = float(np.sqrt(sum(v * k for v, k in var_parts) / max(1, sum(k for _, k in var_parts)))) or sd_now
