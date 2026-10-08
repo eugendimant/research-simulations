@@ -5010,10 +5010,11 @@ class EnhancedSimulationEngine:
                     _paradigm_coverage is not None and _paradigm_coverage.dv_is_negative(_dv_text)):
                 _lit_d = -_lit_d
         _normalized = _lit_d * self._EFFECT_D_TO_NORMALIZED * self._explicit_effect_scale(variable)
-        if getattr(_lit, "rule", "") == "label_phrase" and _paradigm_coverage is not None:
-            # a curated paradigm contrasts with a zero-point reference arm: apply it in the explicit
-            # currency (gap = 2 x 0.109 x d), as the study-level anchor does, so d is what is realised
-            _normalized *= _paradigm_coverage.CURATED_GAP_FACTOR
+        # v1.3.0.6: EVERY literature route (curated label phrase and content-matched fallback alike)
+        # contrasts one arm with a zero-point reference arm, so it is applied in the explicit currency
+        # (gap = 2 x 0.109 x d), as the study-level anchor does, and d is what is realised. The
+        # fallback used to shift the single arm by 0.109 x d only and delivered about d/2.
+        _normalized *= float(getattr(_paradigm_coverage, "CURATED_GAP_FACTOR", 2.0))
         self._log(
             f"{why}: condition '{condition}' for '{variable}'; "
             f"used literature entry '{_lit.key}' ({_lit.source}, published "
@@ -7679,7 +7680,22 @@ class EnhancedSimulationEngine:
                 return self._meta_anchored_effect(condition, variable, _meta_d)
 
         # Apply Cohen's d scaling with domain-aware multiplier
-        return semantic_effect * default_d * COHENS_D_TO_NORMALIZED * _domain_d_multiplier
+        _value = semantic_effect * default_d * COHENS_D_TO_NORMALIZED * _domain_d_multiplier
+        # v1.3.0.6: the hand-set valence / domain magnitudes (STEP 1-2: a gap of d 0.5-0.7, up to ~0.9
+        # with a domain multiplier) were set from ORIGINAL published effects. Replicated effects of
+        # gain/loss, high/low or positive/negative manipulations on attitudes sit at d ~0.2-0.5
+        # (OSC 2015: replication effects about half the original; Camerer et al. 2018: ~0.5-0.6), so
+        # they take the same recalled replication shrinkage the literature routes take. Not applied
+        # to relational / intergroup effects (STEP 0: replicated, calibrated to Iyengar & Westwood
+        # 2015, Dimant 2024), to economic-game DVs (owned by the game models) or to the raw call
+        # that only ranks the arms.
+        if (not _raw and not _handled_by_relational and not _is_economic_game_dv
+                and HAS_EMPIRICAL_REGISTRY):
+            try:
+                _value *= float(_empirical_registry.policy_factor(self._INFERRED_EFFECT_POLICY))
+            except Exception:
+                pass
+        return _value
 
     # Tokens marking the reference arm of a control-vs-treatment design.
     _CONTROL_ARM_WORDS = ("control", "baseline", "placebo", "waitlist", "wait-list", "wait list",
@@ -13840,7 +13856,7 @@ class EnhancedSimulationEngine:
             # triples the composite's SD, so a shift calibrated for a lone scale reaches only ~0.4 of
             # the requested d. A user effect on such a scale is therefore built into the finished item
             # responses, in units of the realised within-condition SD (_apply_user_effect_to_scale).
-            if self._defer_user_effect_for_scale(scale_name, scale_min, scale_max, bool(reverse_items)):
+            if self._defer_user_effect_for_scale(scale_name, scale_min, scale_max, bool(reverse_items), num_items):
                 self._deferred_effect_vars.add(scale_name)
                 self._reversal_ok_arr = (scale_name, np.ones((n, num_items), dtype=bool))
             else:
@@ -13933,6 +13949,11 @@ class EnhancedSimulationEngine:
                 if target_alpha is None or not (0.3 <= target_alpha <= 0.99):
                     target_alpha = float(np.random.RandomState(
                         _stable_int_hash(f"{scale_name}|target_alpha") & 0x7FFFFFFF).uniform(0.80, 0.90))
+                # v1.3.0.6: a deferred effect is added AFTER the reliability steps below. It moves every
+                # item of a respondent together, so it adds covariance and would lift the finished block
+                # above the alpha the steps aimed at; aim those steps lower by exactly that amount.
+                if scale_name in self._deferred_effect_vars:
+                    target_alpha = self._alpha_before_deferred_effect(scale_name, target_alpha, num_items, conditions)
                 item_col_names = [f"{scale_name}_{j+1}" for j in range(num_items)]
                 try:
                     _rev_idx0 = [r - 1 for r in sorted(reverse_items) if 1 <= r <= num_items]
@@ -15908,18 +15929,34 @@ class EnhancedSimulationEngine:
             self._log(f"Reconciled {fixed} composite value(s) with their final item values")
         return fixed
 
-    def _defer_user_effect_for_scale(self, scale_name: str, scale_min: int, scale_max: int, has_reverse: bool) -> bool:
-        """Whether this scale's user-specified effect is built into the finished item responses.
+    def _defer_user_effect_for_scale(self, scale_name: str, scale_min: int, scale_max: int, has_reverse: bool,
+                                     num_items: int = 0) -> bool:
+        """Whether this scale's effect (requested or inferred) is built into the finished item responses.
 
-        True for a scale that carries the cross-scale latent term (several scales in the design) and
-        has a user effect. Not for knowledge-base economic-game outcomes: their generator shifts a latent
-        quantile of the published outcome distribution (keeping its spikes at zero and at an even
-        split) and never receives the latent term, so the ordinary route is exact for them.
+        True when the scale carries the cross-scale latent term (several scales in the design) OR is a
+        block of three or more items (v1.3.0.6: the reliability steps that follow generation -- alpha
+        injection / attenuation, decoupling, marginal shaping -- change the item noise AFTER a generator
+        shift is built in, which cost a 4-item 5-point block 12% of the requested d), and the scale has an
+        effect: a user spec, or a non-zero effect inferred from the condition names. Not for
+        knowledge-base economic-game outcomes: their generator shifts a latent quantile of the published
+        outcome distribution (keeping its spikes at zero and at an even split) and never receives the
+        latent term, so the ordinary route is exact for them. Inferred effects in an economic-game
+        context stay in the generator too: their calibrations belong to the game models.
         """
-        if scale_name not in getattr(self, "_latent_dv_names", ()) or scale_max <= scale_min:
+        if scale_max <= scale_min:
+            return False
+        in_latent = scale_name in getattr(self, "_latent_dv_names", ())
+        if not (in_latent or int(num_items) >= 3):
             return False
         if not self._variable_has_user_spec(scale_name):
-            return False
+            if not bool(getattr(self, "auto_effects", True)) or self._is_economic_game_context(scale_name):
+                return False
+            # "an effect" means a per-arm shift of at least d = 0.05, the same floor the inference uses to
+            # tell a match from noise: the stable-hash jitter alone (|d| ~ 0.03) must not defer a scale
+            _unit = self._EFFECT_D_TO_NORMALIZED * self._explicit_effect_scale(scale_name)
+            if _unit <= 0 or not any(abs(self._get_effect_for_condition(str(c), scale_name)) >= 0.05 * _unit
+                                     for c in (self.conditions or [])):
+                return False
         if not has_reverse and (scale_max - scale_min) >= 1:
             geometry = self._detect_scale_geometry(scale_min, scale_max, scale_name)
             calibration = self._get_domain_response_calibration(scale_name, "")
@@ -15930,6 +15967,35 @@ class EnhancedSimulationEngine:
                     and calibration.get("_game_variant") not in ("dictator_taking", "dictator_third_party")):
                 return False
         return True
+
+    def _alpha_before_deferred_effect(self, scale_name: str, target_alpha: float, num_items: int,
+                                      conditions: "pd.Series") -> float:
+        """Cronbach's alpha the reliability steps must aim at so the block ends on ``target_alpha`` once its
+        deferred condition effect has been added.
+
+        The effect shifts all items of a respondent by the same amount, so with a per-item between-condition
+        variance B (in units of the item variance) the finished inter-item correlation is
+        (r_pre + B) / (1 + B). Solving for r_pre, with B = Var(t) x (1 + (k-1) r) / k where t is each
+        respondent's applied move in composite-SD units, gives the lower target. Never raises the target.
+        """
+        try:
+            applied = getattr(self, "_applied_effects", None) or {}
+            move: Dict[str, float] = {}
+            for (cond, var), info in applied.items():
+                unit = float(info.get("unit") or 0.0)
+                if var == scale_name and info.get("source") in ("user", "inferred") and unit > 0:
+                    move[str(cond)] = float(info.get("offset", 0.0)) / (2.0 * unit)
+            if not move:
+                return target_alpha
+            t = np.array([move.get(str(c), 0.0) for c in (conditions.tolist() if hasattr(conditions, "tolist") else conditions)])
+            var_t = float(t.var()) if t.size else 0.0
+            k = int(num_items)
+            r = target_alpha / (k - (k - 1) * target_alpha)
+            b = var_t * (1.0 + (k - 1) * r) / k
+            r_pre = max(0.05, r - (1.0 - r) * b)
+            return float(min(target_alpha, k * r_pre / (1.0 + (k - 1) * r_pre)))
+        except Exception:
+            return target_alpha
 
     def _apply_user_effect_to_scale(
         self,
@@ -15967,7 +16033,7 @@ class EnhancedSimulationEngine:
         applied = getattr(self, "_applied_effects", None) or {}
         targets: Dict[str, float] = {}
         for (cond, var), info in applied.items():
-            if var != scale_name or info.get("source") != "user":
+            if var != scale_name or info.get("source") not in ("user", "inferred"):
                 continue
             unit = float(info.get("unit") or 0.0)
             if unit > 0:
@@ -16023,7 +16089,10 @@ class EnhancedSimulationEngine:
         if sd <= 0:
             return skipped("the scale shows no variation within conditions")
         shrink = {c: float((sign * move)[m].mean()) for c, m in arms.items()}   # reverse-item failures
-        u = np.random.RandomState((int(self.seed) + _stable_int_hash(f"{scale_name}|user_effect")) % (2**31)).random_sample((n, k))
+        # One uniform draw per respondent, shared by the item columns (v1.3.0.6): the randomised rounding then
+        # moves a respondent's items together, so the inter-item correlation, Cronbach's alpha and the share
+        # of identical answers the reliability steps just set are not eroded by independent per-item flips.
+        u = np.random.RandomState((int(self.seed) + _stable_int_hash(f"{scale_name}|user_effect")) % (2**31)).random_sample((n, 1))
         mult = {c: 1.0 for c in arms}
         result, moved, iterations = X, {}, 0
         for iterations in range(1, 15):
@@ -16161,7 +16230,7 @@ class EnhancedSimulationEngine:
 
         ``source`` is "user" (an effect you specified; calibrated so the observed Cohen's d on
         the scale mean lands near ``intended_d``), "inferred" (a heuristic difference derived
-        from the condition names; NOT calibrated, so no intended d is given) or "none"
+        from the condition names; built in with the same calibration, but no intended d is given) or "none"
         (inferred effects switched off). ``observed_d`` is the effect actually present in
         this sample.
         """
@@ -16231,7 +16300,8 @@ class EnhancedSimulationEngine:
             "applied_after_generation": list(getattr(self, "_deferred_effect_log", []) or []),
             "note": ("Each contrast is condition_1 minus condition_2, in the order of the conditions. "
                      "intended_d is given only for effects you specified. Inferred effects are a "
-                     "heuristic read of the condition names and are not calibrated to a target d."),
+                     "heuristic read of the condition names, but since v1.3.0.6 they are built in "
+                     "with the same calibration, so the d they name is the d the scale mean shows."),
         }
 
     def _inferred_policy_summary(self) -> Dict[str, Any]:

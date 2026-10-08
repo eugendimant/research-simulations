@@ -121,9 +121,11 @@ def test_literature_fallback_is_shrunk():
     shr = L.lookup(policy=SHRINK_ONLY, **kw)
     assert raw.published_d == shr.published_d
     assert shr.shrinkage == pytest.approx(0.45) and raw.shrinkage == 1.0
-    assert shr.effect_d == pytest.approx(raw.effect_d * 0.45) or \
-        shr.effect_d == pytest.approx(0.35 * shr.published_d)            # at the floor
-    assert abs(shr.effect_d) < abs(raw.effect_d)
+    # v1.3.0.6: one discount -- the stronger of the entry's tier weight (already in `raw`) and the 0.45
+    weight = R.confidence_weight("meta", raw.key)
+    assert shr.effect_d == pytest.approx(shr.published_d * min(weight, 0.45))
+    assert abs(shr.effect_d) <= abs(raw.effect_d) + 1e-12
+    assert abs(shr.effect_d) <= abs(shr.published_d) * 0.45 + 1e-12      # never harder than a verified entry
     assert shr.as_dict()["shrinkage_factor"] == pytest.approx(0.45)
 
 

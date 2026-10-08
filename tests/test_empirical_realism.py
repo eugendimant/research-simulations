@@ -58,11 +58,9 @@ def test_adjust_effect_preserves_sign_and_never_inflates():
     rng = random.Random(0)
     for d in (0.2, 0.8, -0.5):
         out = reg.adjust_effect(d, kind="meta", key="unknown_key", rng=rng, tau=0.0)
-        # tier weight, then the replication shrinkage (0.55 x 0.60 = 0.33), then the
-        # min_retained floor (0.35 x input): the floor binds for an unknown key
-        expected = max(d * reg.TIER_WEIGHT[reg.UNVERIFIED] * reg.shrinkage_factor(),
-                       0.35 * d) if d > 0 else min(d * reg.TIER_WEIGHT[reg.UNVERIFIED]
-                                                   * reg.shrinkage_factor(), 0.35 * d)
+        # v1.3.0.6: the tier weight and the replication shrinkage are one discount, the stronger
+        # (0.55 against 0.60 here); the 0.35 floor no longer binds for an unknown key
+        expected = d * min(reg.TIER_WEIGHT[reg.UNVERIFIED], reg.shrinkage_factor())
         assert out == pytest.approx(expected, rel=1e-6)
         assert (out > 0) == (d > 0)
     assert reg.adjust_effect(0.0) == 0.0

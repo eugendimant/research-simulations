@@ -278,9 +278,9 @@ def test_the_applied_size_is_the_damped_recalled_value():
     e = _engine(["Expressive writing", "Neutral writing"], dv="Well-being")
     d = _shift_in_d(e, "Expressive writing", "Well-being")
     published = skb.META_ANALYTIC_DB["expressive_writing_meta"].effect_d
-    # damped by the recall tier, then by the replication shrinkage that every inferred effect carries
-    damped = (published * reg.confidence_weight("meta", "expressive_writing_meta")
-              * reg.policy_factor(reg.EffectPolicy()))
+    # v1.3.0.6: the recall tier and the replication shrinkage are ONE discount (the stronger), not a product
+    damped = (published * min(reg.confidence_weight("meta", "expressive_writing_meta"),
+                              reg.policy_factor(reg.EffectPolicy())))
     # explicit currency: the reference arm is the zero point and the gap is 2 x 0.109 x d
     # v1.3.0.6: with the factor at 0.45 the recall-tier damping takes this below the
     # EffectPolicy floor (0.35 x published), so the floor is what sets the size.
