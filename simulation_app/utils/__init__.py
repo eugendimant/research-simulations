@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.3.0.5 - All 116 open-ended template banks are now reachable (gratitude and moral_dilemma pool their sibling banks). Before: 1.3.0.4 - Reliable, observable instructor email (split delivery, retries, delivery log, admin tab); exact, honest instructor analysis; the survey's own DVs on the Design page; requested effect sizes that hold next to other scales; hardened HTML, exported scripts and QSF collection (see docs/CHANGELOG.md).
+Version: 1.3.0.6 - All 116 open-ended template banks are now reachable (gratitude and moral_dilemma pool their sibling banks). Before: 1.3.0.4 - Reliable, observable instructor email (split delivery, retries, delivery log, admin tab); exact, honest instructor analysis; the survey's own DVs on the Design page; requested effect sizes that hold next to other scales; hardened HTML, exported scripts and QSF collection (see docs/CHANGELOG.md).
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.3.0.5"
+__version__ = "1.3.0.6"
 
 
 # =============================================================================

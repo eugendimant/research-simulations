@@ -1,3 +1,43 @@
+## 2026-10-08 — v1.3.0.6
+### Defaults closer to published findings: wider paradigm coverage, replication shrinkage, second baseline pass
+
+Everything below applies only to effects the user did NOT specify and to the baselines behind generated
+data. Explicit effect sizes, `auto_effects=False` and the effect-recovery calibration are unchanged (checked
+bit-identical against 1.3.0.5 for several seeds). All new numbers come from recalled literature knowledge,
+are registered in the recall band (`recall_*` tiers) and are never marked verified; none was checked against
+a primary source because this build cannot reach one.
+
+**Paradigm coverage**
+- 19 new paradigms in `utils/paradigm_coverage.py` (nudges, social-norm messages, identifiable victim,
+  expressive writing, gratitude and positive-psychology interventions, reappraisal, mortality salience,
+  ostracism, source credibility, sponsorship disclosure, anthropomorphism, gamification, imagined contact,
+  graphic warnings, tailored health messages, feedback, active learning, illusory truth). Provenance is in
+  `registry/recall_coverage_v1305.json`; k is recorded only where recalled, tau/I2/N are left at 0.
+- "_" and "-" read as spaces in paradigm matching (`loss_frame`, `foot-in-the-door`); about 45 entries gained
+  phrase aliases (11 older ones could not be reached by any title before). Negators and direction-reversing
+  words in a condition label veto a match; the reference arm is exactly 0; polarity flips for symptom-type DVs.
+- Bare "social proof" now resolves to the marketing entry (0.38) instead of the conformity entry (0.9) unless
+  Asch/conformity vocabulary appears.
+- On the 303 example surveys, 21 of 206 multi-condition designs now receive a literature default (16 before);
+  most student labels are idiosyncratic ("Block SS", "T1").
+
+**Replication shrinkage**
+- Inferred effects are multiplied by a recalled publication-bias factor of 0.60 and drawn from the
+  between-study distribution (entry tau, else 0.15), floored at 0.35 x the published d. It applies to paradigm
+  anchoring and to the literature fallback; `effect_sizes_applied` reports published d, factor and applied d,
+  and Metadata gains `inferred_effect_policy`. Evidence recalled: Open Science Collaboration 2015, Camerer 2016
+  and 2018, Many Labs 1 and 2, Kvarven 2020, Mertens 2022. Example: "Anchoring effect" now gives d ~ 0.5
+  instead of ~ 0.77; a gamification contrast gives ~ 0.1.
+
+**Baselines**
+- Public-goods and prisoner's-dilemma studies never reached their calibrations (underscored keys); they do now
+  (public goods mean 64 -> 39, prisoner's dilemma slider mean 70 -> 45). The ultimatum entry gained the modal
+  50% offer (exact-half share 3% -> 29%), the PD gained its two point masses, and 30 zero-based instruments
+  (PSS, CD-RISC, MBI, MFQ, IRI, UWES, LOT-R, ...) now carry `scale_min` 0 so their means sit where the
+  instrument's own metric puts them. Dictator and trust baselines are unchanged.
+- Left alone on purpose: the binary prisoner's-dilemma path (0.57 against 0.47), other games with underscored
+  keys (stag hunt, common pool), the 79% attention-check pass rate and the 5% careless weight.
+
 ## 2026-10-07 — v1.3.0.5
 ### Three open-ended template banks could never be selected
 

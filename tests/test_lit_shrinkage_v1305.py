@@ -138,7 +138,8 @@ def test_fallback_default_draw_uses_a_default_tau_when_the_entry_has_none():
 def test_engine_fallback_logs_published_factor_and_applied():
     eng = _dissonance()
     v = eng._get_effect_for_condition("cognitive_dissonance_induced", "attitude")
-    row = [r for r in eng._inferred_effect_log if r["path"] == "literature_fallback"][0]
+    # since the paradigm vocabulary grew, this label is anchored; either inferred path must log the policy
+    row = [r for r in eng._inferred_effect_log if r["path"] in ("literature_fallback", "paradigm_anchor")][0]
     assert row["shrinkage_factor"] == pytest.approx(0.60)
     assert row["applied_d"] < row["published_d"]
     assert row["applied_d"] >= 0.35 * row["published_d"] - 1e-9

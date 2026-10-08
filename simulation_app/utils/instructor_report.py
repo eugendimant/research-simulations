@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.0.5"  # v1.3.0.4: report describes the effects actually built in (report-facing version stamp)
+__version__ = "1.3.0.6"  # v1.3.0.4: report describes the effects actually built in (report-facing version stamp)
 
 from dataclasses import dataclass
 from types import SimpleNamespace

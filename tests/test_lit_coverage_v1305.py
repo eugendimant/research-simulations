@@ -278,7 +278,9 @@ def test_the_applied_size_is_the_damped_recalled_value():
     e = _engine(["Expressive writing", "Neutral writing"], dv="Well-being")
     d = _shift_in_d(e, "Expressive writing", "Well-being")
     published = skb.META_ANALYTIC_DB["expressive_writing_meta"].effect_d
-    damped = published * reg.confidence_weight("meta", "expressive_writing_meta")
+    # damped by the recall tier, then by the replication shrinkage that every inferred effect carries
+    damped = (published * reg.confidence_weight("meta", "expressive_writing_meta")
+              * reg.policy_factor(reg.EffectPolicy()))
     # explicit currency: the reference arm is the zero point and the gap is 2 x 0.109 x d
     assert d == pytest.approx(damped * PC.CURATED_GAP_FACTOR, rel=1e-6)
     assert 0 < d / PC.CURATED_GAP_FACTOR < published
