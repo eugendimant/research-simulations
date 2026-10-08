@@ -3555,6 +3555,20 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
     ),
 }
 
+# v1.3.0.5: paradigms added for default-effect coverage. Defined as plain data in
+# `paradigm_coverage` (recall band only; see registry/recall_coverage_v1305.json) and
+# merged here. A failed import leaves the table exactly as it was.
+try:
+    from .paradigm_coverage import PARADIGM_ENTRIES as _PARADIGM_ENTRIES
+except Exception:  # pragma: no cover
+    try:
+        from paradigm_coverage import PARADIGM_ENTRIES as _PARADIGM_ENTRIES  # type: ignore
+    except Exception:
+        _PARADIGM_ENTRIES = {}
+for _pk, _pv in _PARADIGM_ENTRIES.items():
+    if _pk not in META_ANALYTIC_DB:
+        META_ANALYTIC_DB[_pk] = MetaAnalyticEffect(**_pv)
+
 
 # =============================================================================
 # GAME CALIBRATIONS DATABASE

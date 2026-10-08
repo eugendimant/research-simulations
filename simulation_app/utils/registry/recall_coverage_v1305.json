@@ -1,0 +1,164 @@
+{
+ "audited_on": "2026-10-08",
+ "method": "Entries added in v1.3.0.5 to widen the set of recognised paradigms. Each value was written from recall of the cited literature; no primary source was read, and none is tiered above the recall band.",
+ "records": {
+  "meta:nudge_general_meta": {
+   "tier": "recall_uncertain",
+   "note": "New entry (v1.3.0.5), written from recall: Raw pooled d about 0.43 (Mertens et al. 2022) and a bias-corrected near-zero reading (Maier et al. 2022) are both recalled; the stored 0.15 is a deliberately small compromise between them, not a published number. No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Mertens et al. (2022, PNAS); Maier et al. (2022, PNAS)",
+   "checked_fields": [
+    "citation"
+   ]
+  },
+  "meta:social_norm_message_meta": {
+   "tier": "recall_uncertain",
+   "note": "New entry (v1.3.0.5), written from recall: Citation recognised; the size of the pooled effect is only loosely recalled (small, larger for intentions than behaviour). No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Rhodes, Shulman & McClaran (2020, Human Communication Research)",
+   "checked_fields": [
+    "citation"
+   ]
+  },
+  "meta:identifiable_victim_effect": {
+   "tier": "recall_consistent",
+   "note": "New entry (v1.3.0.5), written from recall: Lee & Feeley (2016) recalled as k=41 with a pooled r of about .05 (d about 0.10). No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Lee & Feeley (2016, Social Influence)",
+   "checked_fields": [
+    "citation",
+    "effect_d"
+   ]
+  },
+  "meta:anthropomorphism_meta": {
+   "tier": "recall_uncertain",
+   "note": "New entry (v1.3.0.5), written from recall: Citation recognised as a service-robot / chatbot anthropomorphism meta-analysis; the magnitude is not judgeable from memory, so a small value with a wide interval is stored. No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Blut, Wang, Wunderlich & Brock (2021, Journal of the Academy of Marketing Science)",
+   "checked_fields": [
+    "citation"
+   ]
+  },
+  "meta:mortality_salience_meta": {
+   "tier": "recall_uncertain",
+   "note": "New entry (v1.3.0.5), written from recall: Original meta-analysis recalled as moderate; large preregistered replications recalled as near-null. 0.15 sits near the replication end; exact figures not recalled. No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Burke, Martens & Faucher (2010, Personality and Social Psychology Review); Klein et al. (2022, multi-site replication)",
+   "checked_fields": [
+    "citation"
+   ]
+  },
+  "meta:source_credibility_meta": {
+   "tier": "recall_uncertain",
+   "note": "New entry (v1.3.0.5), written from recall: Citation recognised; a small-to-moderate source effect is recalled but the number is not. No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Wilson & Sherrell (1993, Journal of the Academy of Marketing Science)",
+   "checked_fields": [
+    "citation"
+   ]
+  },
+  "meta:sponsorship_disclosure_meta": {
+   "tier": "recall_uncertain",
+   "note": "New entry (v1.3.0.5), written from recall: Citation recognised; disclosure is recalled to lower attitudes only slightly. Magnitude not judgeable. No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Eisend, van Reijmersdal, Boerman & Tarrahi (2020, Journal of the Academy of Marketing Science)",
+   "checked_fields": [
+    "citation"
+   ]
+  },
+  "meta:social_exclusion_ostracism_meta": {
+   "tier": "recall_uncertain",
+   "note": "New entry (v1.3.0.5), written from recall: Rejection and ostracism meta-analyses recalled; the largest reported effects (need satisfaction) are well above the stored -0.45, which is deliberately conservative and not a published figure. No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Gerber & Wheeler (2009, Perspectives on Psychological Science); Hartgerink et al. (2015, PLOS ONE)",
+   "checked_fields": [
+    "citation"
+   ]
+  },
+  "meta:expressive_writing_meta": {
+   "tier": "recall_consistent",
+   "note": "New entry (v1.3.0.5), written from recall: Frattaroli (2006) recalled as k=146 with a pooled r of about .075 (d about 0.15). No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Frattaroli (2006, Psychological Bulletin)",
+   "checked_fields": [
+    "citation",
+    "effect_d"
+   ]
+  },
+  "meta:gratitude_intervention_meta": {
+   "tier": "recall_uncertain",
+   "note": "New entry (v1.3.0.5), written from recall: Citation recognised; k and a modest effect recalled with moderate confidence, exact d not. No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Davis et al. (2016, Journal of Counseling Psychology)",
+   "checked_fields": [
+    "citation"
+   ]
+  },
+  "meta:positive_psychology_intervention_meta": {
+   "tier": "recall_uncertain",
+   "note": "New entry (v1.3.0.5), written from recall: Citation recognised (k about 39; subjective well-being about 0.3, depression about 0.2); stored 0.25 is a conservative blend, not a published figure. No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Bolier et al. (2013, BMC Public Health)",
+   "checked_fields": [
+    "citation"
+   ]
+  },
+  "meta:cognitive_reappraisal_meta": {
+   "tier": "recall_uncertain",
+   "note": "New entry (v1.3.0.5), written from recall: Citation recognised; a small-to-medium reappraisal effect is recalled but the number is not. No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Webb, Miles & Sheeran (2012, Psychological Bulletin)",
+   "checked_fields": [
+    "citation"
+   ]
+  },
+  "meta:active_learning_stem_meta": {
+   "tier": "recall_consistent",
+   "note": "New entry (v1.3.0.5), written from recall: Freeman et al. (2014) recalled as 225 studies and about 0.47 SD on exams. No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Freeman et al. (2014, PNAS)",
+   "checked_fields": [
+    "citation",
+    "effect_d"
+   ]
+  },
+  "meta:feedback_intervention_meta": {
+   "tier": "recall_consistent",
+   "note": "New entry (v1.3.0.5), written from recall: Kluger & DeNisi (1996) recalled as a mean effect of about 0.41 SD with roughly one third of interventions harmful. No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Kluger & DeNisi (1996, Psychological Bulletin)",
+   "checked_fields": [
+    "citation",
+    "effect_d"
+   ]
+  },
+  "meta:tailored_health_messages_meta": {
+   "tier": "recall_consistent",
+   "note": "New entry (v1.3.0.5), written from recall: Noar, Benac & Harris (2007) recalled as k=57 with a pooled r of about .074 (d about 0.15). No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Noar, Benac & Harris (2007, Psychological Bulletin)",
+   "checked_fields": [
+    "citation",
+    "effect_d"
+   ]
+  },
+  "meta:graphic_warning_labels_meta": {
+   "tier": "recall_uncertain",
+   "note": "New entry (v1.3.0.5), written from recall: Citation recognised; effects differ by outcome (larger on fear and attention than on intentions) and a single blended figure is not recalled. No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Noar et al. (2016, Tobacco Control)",
+   "checked_fields": [
+    "citation"
+   ]
+  },
+  "meta:illusory_truth_meta": {
+   "tier": "recall_consistent",
+   "note": "New entry (v1.3.0.5), written from recall: Dechene et al. (2010) recalled as 51 studies and d of about 0.39. No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Dechene, Stahl, Hansen & Wanke (2010, Personality and Social Psychology Review)",
+   "checked_fields": [
+    "citation",
+    "effect_d"
+   ]
+  },
+  "meta:gamification_meta": {
+   "tier": "recall_uncertain",
+   "note": "New entry (v1.3.0.5), written from recall: Gamification meta-analyses recalled as positive and small-to-medium with quality moderators; the stored 0.30 is conservative and not a published figure. No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Sailer & Homner (2020, Educational Psychology Review); Bai, Hew & Huang (2020)",
+   "checked_fields": [
+    "citation"
+   ]
+  },
+  "meta:imagined_contact_meta": {
+   "tier": "recall_uncertain",
+   "note": "New entry (v1.3.0.5), written from recall: Citation recognised; a small-to-moderate attitude effect with k about 71 is recalled, the d is not. No primary source was read; k and N are recorded only where recalled and tau / I-squared are not recorded.",
+   "source": "Miles & Crisp (2014, Group Processes & Intergroup Relations)",
+   "checked_fields": [
+    "citation"
+   ]
+  }
+ }
+}

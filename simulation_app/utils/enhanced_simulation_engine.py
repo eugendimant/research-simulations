@@ -342,6 +342,11 @@ try:
 except Exception:
     HAS_LITERATURE_EFFECTS = False
 
+try:
+    from . import paradigm_coverage as _paradigm_coverage
+except Exception:  # the extra paradigms are optional: without them the older entries work as before
+    _paradigm_coverage = None
+
 # Import comprehensive response library for LLM-quality text generation
 try:
     from .response_library import (
@@ -3565,6 +3570,11 @@ _META_ALIASES: Dict[str, Tuple[str, ...]] = {
                              "gain framing", "loss framing"),
     "testing_effect_meta": ("testing effect", "retrieval practice"),
 }
+if _paradigm_coverage is not None:
+    # v1.3.0.5: phrases for entries a title or condition label could not reach before, and for the
+    # paradigms added in `paradigm_coverage`. Matching is whole-phrase (see _meta_index).
+    for _k, _als in _paradigm_coverage.ENTRY_ALIASES.items():
+        _META_ALIASES[_k] = tuple(dict.fromkeys(_META_ALIASES.get(_k, ()) + tuple(_als)))
 
 
 def _meta_index() -> List[Tuple[str, float, Tuple[Any, ...]]]:
@@ -3577,23 +3587,35 @@ def _meta_index() -> List[Tuple[str, float, Tuple[Any, ...]]]:
     if _META_INDEX_CACHE is not None:
         return _META_INDEX_CACHE
     out: List[Tuple[str, float, Tuple[Any, ...]]] = []
+    # Entries added in v1.3.0.5 are recalled, not source-checked: their magnitude is damped by their
+    # verification tier (as the literature fallback already does), so they push the data less hard
+    # than a sourced value. Older entries keep their published magnitude.
+    _damped = _paradigm_coverage.RULE_ONLY_KEYS if _paradigm_coverage is not None else frozenset()
     if HAS_KNOWLEDGE_BASE:
         for key, entry in META_ANALYTIC_DB.items():
-            d = abs(float(getattr(entry, "effect_d", 0.0) or 0.0))
+            _signed = float(getattr(entry, "effect_d", 0.0) or 0.0)
+            d = abs(_signed)
             if d < 0.05 or "game" in key or "auction" in key or "taking" in key:
                 continue  # baselines/games are handled by GAME_CALIBRATIONS
+            if key in _damped:
+                if _signed < 0:
+                    continue  # a harm-type effect needs its sign from the label rule, not the study text
+                if HAS_EMPIRICAL_REGISTRY:
+                    d *= float(_empirical_registry.confidence_weight("meta", key))
             toks = [t for t in re.split(r"[^a-z]+", key.lower()) if t and t not in _META_GENERIC_TOKENS]
-            if not toks or not any(len(t) >= 5 for t in toks):
+            _als = _META_ALIASES.get(key, ())
+            if not toks or not (any(len(t) >= 5 for t in toks) or _als):
                 continue
             pats: List[Any] = []
             if len(toks) == 1:
                 if toks[0] in _META_SINGLE_TOKEN_OK:
                     pats.append(re.compile(r"\b" + re.escape(toks[0][:max(5, len(toks[0]) - 2)]) + r"\w*"))
-            else:
+            elif any(len(t) >= 5 for t in toks) and key not in _damped:
                 gap = r"[\W_]+(?:\w+[\W_]+){0,2}"
                 pats.append(re.compile(gap.join(r"\b" + re.escape(t[:max(5, len(t) - 2)]) + r"\w*" for t in toks)))
-            for al in _META_ALIASES.get(key, ()):
-                pats.append(re.compile(r"\b" + re.escape(al) + r"\b"))
+            for al in _als:
+                # "-" and "_" read as spaces on both sides: "loss_frame" and "opt-out" match "loss frame"/"opt out"
+                pats.append(re.compile(r"\b" + re.escape(re.sub(r"[_\-]+", " ", al)) + r"\b"))
             if pats:
                 out.append((key, d, tuple(pats)))
     _META_INDEX_CACHE = out
@@ -3606,9 +3628,12 @@ def _match_meta_effect(text: str) -> Optional[float]:
     The paradigm with the most specific (longest) match wins. When several
     different paradigms match equally well and disagree by more than 0.15 the
     text is ambiguous and no anchoring is applied.
+
+    "_" and "-" read as spaces ("loss_frame", "foot-in-the-door"), so snake_case condition
+    labels reach the same phrases as prose does.
     """
-    text = str(text).lower()
-    hits: List[Tuple[int, float]] = []
+    text = re.sub(r"[_\-]+", " ", str(text).lower())
+    hits: List[Tuple[int, float, str]] = []
     for _key, d, pats in _meta_index():
         best = 0
         for pat in pats:
@@ -3616,11 +3641,19 @@ def _match_meta_effect(text: str) -> Optional[float]:
             if m:
                 best = max(best, len(m.group(0)))
         if best:
-            hits.append((best, d))
+            hits.append((best, d, _key))
     if not hits:
         return None
     top = max(h[0] for h in hits)
-    ds = [d for n, d in hits if n >= top * 0.999]
+    group = [(d, k) for n, d, k in hits if n >= top * 0.999]
+    if _paradigm_coverage is not None and len(group) > 1:
+        # a more specific reading of the same words beats the older, broader one unless the
+        # text carries the older paradigm's own vocabulary (see paradigm_coverage.TIE_PREFER)
+        for _pref, _other, _guard in _paradigm_coverage.TIE_PREFER:
+            _gk = {k for _d, k in group}
+            if _pref in _gk and _other in _gk and not re.search(_guard, text):
+                group = [(d, k) for d, k in group if k != _other]
+    ds = [d for d, _k in group]
     if max(ds) - min(ds) > 0.15:
         return None
     return float(sum(ds) / len(ds))
@@ -4796,6 +4829,29 @@ class EnhancedSimulationEngine:
         # +/-0.004 normalized, i.e. Cohen's d near 0.01. Anything below d = 0.05 is
         # indistinguishable from no manipulation at all, so that is the trigger.
         _NEGLIGIBLE = 0.05 * COHENS_D_TO_NORMALIZED
+
+        # v1.3.0.5 — paradigms with a curated label phrase ("Mortality salience", "Ostracized",
+        # "Gamified", "Graphic warning", ...) take their recalled literature magnitude AND sign even
+        # where the keyword rules guessed something: those rules know nothing of these paradigms
+        # beyond a generic valence, and several would have signed an exclusion or a disclosure as a
+        # benefit. Never for the reference arm, and never for economic-game designs, whose
+        # calibrations are owned by the game models.
+        if (HAS_LITERATURE_EFFECTS and _paradigm_coverage is not None
+                and self._is_control_arm(condition) and self._design_has_curated_arm(variable)):
+            # the reference arm of a design built on a curated paradigm is the zero point: it must not
+            # keep a keyword residual that the other arm's label happens to induce
+            return 0.0
+        if (HAS_LITERATURE_EFFECTS and _paradigm_coverage is not None
+                and not self._is_control_arm(condition) and not self._is_economic_game_context(variable)):
+            _curated = None
+            try:
+                _curated = _literature_effects.lookup_curated(
+                    str(condition), rng=self._stable_rng("literature-effect", str(condition), str(variable)))
+            except Exception:
+                _curated = None
+            if _curated is not None:
+                return self._literature_match_to_shift(condition, variable, _curated, "curated paradigm phrase")
+
         if abs(_auto) >= _NEGLIGIBLE or not HAS_LITERATURE_EFFECTS:
             return _auto * _effect_scale
 
@@ -4833,11 +4889,58 @@ class EnhancedSimulationEngine:
             return _auto * _effect_scale
         if _lit is None:
             return _auto * _effect_scale
-        _normalized = float(_lit.effect_d) * COHENS_D_TO_NORMALIZED * _effect_scale
+        return self._literature_match_to_shift(condition, variable, _lit, "no keyword rule matched")
+
+    def _design_has_curated_arm(self, variable: str) -> bool:
+        """Whether some non-reference arm of this design names a curated paradigm (see `lookup_curated`)."""
+        if self._is_economic_game_context(variable):
+            return False
+        cache = getattr(self, "_curated_arm_cache", None)
+        if cache is None:
+            cache = self._curated_arm_cache = {}
+        if "any" not in cache:
+            found = False
+            for c in (self.conditions or []):
+                if self._is_control_arm(str(c)):
+                    continue
+                try:
+                    if _literature_effects.lookup_curated(str(c)) is not None:
+                        found = True
+                        break
+                except Exception:
+                    continue
+            cache["any"] = found
+        return bool(cache["any"])
+
+    def _is_economic_game_context(self, variable: str) -> bool:
+        """Whether the DV, the study text or the condition names look like an economic game."""
+        _ctx = " ".join([
+            " ".join(str(c).lower() for c in (self.conditions or [])),
+            str(self.study_title or "").lower(), str(self.study_description or "").lower(),
+            str(variable).lower(), str(self._dv_descriptions.get(str(variable).lower(), "")).lower(),
+        ])
+        return _paradigm_coverage is None or _paradigm_coverage.is_economic_game_text(_ctx)
+
+    def _literature_match_to_shift(self, condition: str, variable: str, _lit: Any, why: str) -> float:
+        """Normalised shift for one arm from a literature match, with its provenance logged."""
+        _lit_d = float(_lit.effect_d)
+        if getattr(_lit, "polarity_aware", False):
+            # A beneficial (or harmful) manipulation moves a positive construct one way and a
+            # symptom-type construct (distress, prejudice, use, ...) the other.
+            _dv_text = (str(variable).replace("_", " ") + " "
+                        + str(self._dv_descriptions.get(str(variable).lower(), ""))).lower()
+            if self._NEGATIVE_DV_RE.search(_dv_text) or (
+                    _paradigm_coverage is not None and _paradigm_coverage.dv_is_negative(_dv_text)):
+                _lit_d = -_lit_d
+        _normalized = _lit_d * self._EFFECT_D_TO_NORMALIZED * self._explicit_effect_scale(variable)
+        if getattr(_lit, "rule", "") == "label_phrase" and _paradigm_coverage is not None:
+            # a curated paradigm contrasts with a zero-point reference arm: apply it in the explicit
+            # currency (gap = 2 x 0.109 x d), as the study-level anchor does, so d is what is realised
+            _normalized *= _paradigm_coverage.CURATED_GAP_FACTOR
         self._log(
-            f"No keyword rule matched condition '{condition}' for '{variable}'; "
+            f"{why}: condition '{condition}' for '{variable}'; "
             f"used literature entry '{_lit.key}' ({_lit.source}, published "
-            f"d={_lit.published_d}, applied d={_lit.effect_d:.3f}, "
+            f"d={_lit.published_d}, applied d={_lit_d:.3f}, "
             f"verification={_lit.status})"
         )
         if not hasattr(self, "_literature_effect_log"):
