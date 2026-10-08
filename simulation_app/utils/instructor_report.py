@@ -1535,19 +1535,6 @@ def _t_isf(p: float, df: float) -> float:
     return t
 
 
-def _t_ppf(q: float, df: float) -> float:
-    """Quantile function of Student's t distribution."""
-    if q != q or q < 0.0 or q > 1.0:
-        return float("nan")
-    if q == 0.0:
-        return float("-inf")
-    if q == 1.0:
-        return float("inf")
-    if q == 0.5:
-        return 0.0
-    return _t_isf(1.0 - q, df) if q > 0.5 else -_t_isf(q, df)
-
-
 def _f_sf(f: float, df1: float, df2: float) -> float:
     """Upper-tail probability P(F > f) of the F distribution (exact to double precision)."""
     if f != f or df1 != df1 or df2 != df2 or not (df1 > 0.0 and df2 > 0.0):
@@ -1601,16 +1588,6 @@ def _p_f_sf(f: float, df1: float, df2: float) -> float:
         except Exception as exc:  # pragma: no cover
             logger.warning("scipy f.sf failed (%s); using the numpy implementation", exc)
     return _f_sf(f, df1, df2)
-
-
-def _p_chi2_sf(x: float, df: float) -> float:
-    """Upper-tail p-value for a chi-square statistic."""
-    if _use_scipy():
-        try:
-            return float(scipy_stats.chi2.sf(x, df))
-        except Exception as exc:  # pragma: no cover
-            logger.warning("scipy chi2.sf failed (%s); using the numpy implementation", exc)
-    return _chi2_sf(x, df)
 
 
 def _t_crit(df: float, conf: float = 0.95) -> float:

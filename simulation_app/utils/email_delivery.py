@@ -589,10 +589,6 @@ def send_with_retries(
 # --------------------------------------------------------------------------------------
 # Delivery log
 # --------------------------------------------------------------------------------------
-def default_log_path(base_dir: Path) -> Path:
-    return Path(base_dir) / "email_delivery_log.jsonl"
-
-
 def record_delivery(
     log_path: Optional[Path],
     result: DeliveryResult,
