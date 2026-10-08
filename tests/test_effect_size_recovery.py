@@ -420,6 +420,10 @@ def test_meta_anchored_effect_magnitude(title, conds, dv, expected):
     the shrinkage were removed (the published value would sit outside it for the large
     effects, which are also asserted to be clearly below the published d)."""
     d = _auto_d(title, conds, dv)
+    if abs(expected) < 0.3:
+        # v1.3.0.6: a shrunk target of ~0.08 sits inside one run's sampling error (SE ~0.05 at N = 1,600;
+        # the seed-7 run gave -0.007 on the integration head too), so a sign check needs several runs.
+        d = float(np.mean([d] + [_auto_d(title, conds, dv, seed=s) for s in (8, 9, 10, 11)]))
     target = 0.45 * abs(expected)
     assert abs(abs(d) - target) <= max(0.30 * target, 0.12), f"d={d:.2f} vs shrunk {target:.2f}"
     if abs(expected) >= 0.5:

@@ -199,13 +199,55 @@ MIN_SHARED_TOKENS = 2
 REQUIRE_CONDITION_TOKEN = True
 
 
+import re as _re_q
+
+#: v1.3.0.6 -- words that mark a label as the plain / reference form of something ("Generic brand",
+#: "Standard price", "Basic plan"). A label carrying one names the absence of a manipulation, so it
+#: cannot select a paradigm: "Generic brand" used to match brand extension on the word "brand" and
+#: gave the comparison arm of "Premium vs Generic brand" a made-up effect of its own.
+QUALIFIER_WORDS = frozenset({
+    "generic", "standard", "basic", "regular", "plain", "ordinary", "normal", "typical", "common",
+    "usual", "unbranded", "nobrand", "stock", "baseline", "usualcare",
+})
+
+#: "default" is a paradigm word ("Default option", "Opt-out default") but a qualifier next to a thing
+#: ("Default brand", "default plan"): only the second use is vetoed.
+_QUALIFIER_PHRASE = _re_q.compile(r"(?<![a-z0-9])default[\s_-]+(?:brand|product|plan|tier|version|supplier|provider)s?(?![a-z0-9])")
+
+#: Words that occur in many labels without naming a manipulation. A label token from this set (or a
+#: qualifier) does not count as the paradigm's distinctive token.
+GENERIC_LABEL_TOKENS = frozenset({
+    "control", "brand", "consumer", "product", "group", "test", "treatment", "condition", "behavior",
+    "behaviour", "psychology", "social", "website", "original", "effective", "outcome", "attitude",
+    "study", "experiment", "task", "version", "type", "level", "high", "low", "choice", "option",
+    "health", "mental", "ment",
+})
+
+#: A distinctive label token occurs in at most this many paradigms of the table.
+MAX_DISTINCTIVE_DF = 3
+
+
+def _has_qualifier(condition: str) -> bool:
+    """Whether a whole word of the label is a plain / reference qualifier (see QUALIFIER_WORDS)."""
+    words = {w.lower() for w in tokenize(condition)}
+    return bool(words & QUALIFIER_WORDS) or bool(_QUALIFIER_PHRASE.search(str(condition).lower()))
+
+
 def _is_confident(idx: "_EffectIndex", shared: Tuple[str, ...], score: float,
                   thr: float, condition_tokens: Optional[set] = None) -> bool:
     """Whether a match is specific enough to override the caller's own fallback."""
     if len(shared) < MIN_SHARED_TOKENS or score < thr:
         return False
     if REQUIRE_CONDITION_TOKEN and condition_tokens is not None:
-        if not (set(shared) & condition_tokens):
+        from_label = set(shared) & condition_tokens
+        if not from_label:
+            return False
+        # v1.3.0.6: the label must share a DISTINCTIVE token with the paradigm -- rare in the table and
+        # not a generic or qualifier word. "brand" (5 paradigms) or "default" next to "brand" is not
+        # enough to say which paradigm a label belongs to.
+        generic = {_stem(w) for w in GENERIC_LABEL_TOKENS | QUALIFIER_WORDS}
+        distinctive = [t for t in from_label if t not in generic and idx.df.get(t, 99) <= MAX_DISTINCTIVE_DF]
+        if not distinctive:
             return False
     return True
 
@@ -289,6 +331,8 @@ def lookup(
         _hit = _rule_lookup(condition, policy=policy, rng=rng)
     if _hit is not None:
         return _hit
+    if _has_qualifier(condition):
+        return None      # a plain / reference label ("Generic brand") names no manipulation
     thr = MATCH_THRESHOLD if threshold is None else float(threshold)
     cond_tokens = {_stem(t) for t in tokenize(condition)}
     tokens = tokenize(condition) * 2 + tokenize(variable) + tokenize(study_context)

@@ -173,3 +173,34 @@ def test_intergroup_effects_are_not_shrunk():
     for cond, sign in (("Trump lover", 1), ("Trump hater", -1)):
         assert sign * _auto(a, cond) > 0
         assert _auto(a, cond) == pytest.approx(_auto(b, cond))
+
+
+# ---------------------------------------------------------------- literature matcher: no qualifier / generic selection
+
+from utils import literature_effects as _L  # noqa: E402
+
+
+@pytest.mark.parametrize("label, dv, ctx", [
+    ("Generic brand", "Quality Perception", "Brand and perceived quality"),
+    ("Premium brand", "Quality Perception", "Brand and perceived quality"),
+    ("No brand", "Quality Perception", "Brand and perceived quality"),
+    ("Standard price", "Purchase Intention", "Pricing and brand quality"),
+    ("Basic plan", "Satisfaction", "Subscription brand plans"),
+    ("Plain message", "Attitude", "Message framing"),
+    ("Default brand", "Choice", "Brand choice"),
+    ("Control", "Outcome", "Mindfulness study"),
+])
+def test_generic_or_qualifier_words_cannot_select_a_paradigm(label, dv, ctx):
+    assert _L.lookup(condition=label, variable=dv, study_context=ctx) is None
+
+
+@pytest.mark.parametrize("label, key", [
+    ("Scarcity cue", "scarcity_effect_meta"),
+    ("Social proof", "social_proof_marketing_meta"),
+    ("Celebrity endorser", "celebrity_endorsement_meta"),
+    ("Fear appeal", "fear_appeals_meta"),
+    ("Cognitive dissonance induced", "cognitive_dissonance_meta"),
+])
+def test_distinctive_labels_still_match(label, key):
+    hit = _L.lookup(condition=label, variable="Attitude", study_context="A study")
+    assert hit is not None and hit.key == key

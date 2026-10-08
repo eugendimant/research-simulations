@@ -181,7 +181,7 @@ unsourced regardless of tier.
   fallback (`literature_effects.lookup`). Never to a user-specified effect, the
   `auto_effects=False` null, economic-game calibrations or relational / intergroup
   (STEP 0) effects. The generic keyword (STEP 1-2) effects are hand-set, not
-  published d values, and since v1.3.0.6 take the same 0.60 factor directly (no
+  published d values, and since v1.3.0.6 take the same 0.45 factor directly (no
   heterogeneity draw, no tier weight) because their magnitudes were set from original
   rather than replicated findings. `adjust_effect` keeps
   the sign, and in replication-adjusted mode the result never falls below
@@ -193,7 +193,11 @@ unsourced regardless of tier.
   (`min(tier weight, shrinkage)`; the factor is 0.45 since the evidence pass): doubt about the value is two-sided, so it is a reason
   for an unchecked number never to push harder than a checked one (a verified entry gets
   the shrinkage alone, an unverified one at most that), not a second reason to shrink.
-  The anchor path has no tier weighting. A literature-routed arm is applied against the
+  The anchor path has no tier weighting. The content matcher (`literature_effects._is_confident`)
+  also needs, since v1.3.0.6, a DISTINCTIVE token from the condition label (at most three paradigms
+  of the table, not a generic word such as brand/control/product/health), and a label with a plain or
+  reference qualifier (generic, standard, basic, regular, plain, "default brand") never matches: on the
+  example labels this removed 27 spurious matches and corrected one. A literature-routed arm is applied against the
   zero-point reference arm with a gap of `2 x 0.109 x d` on every route, so the applied d
   is what the composite shows (the fallback used to deliver about d/2).
 * The verified distribution shapes in `empirical_marginals.py` are gated on
