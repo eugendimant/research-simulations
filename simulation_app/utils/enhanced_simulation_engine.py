@@ -3735,7 +3735,13 @@ class EnhancedSimulationEngine:
         # effects from condition names. False builds in ONLY the effects you specify, so every
         # other contrast is a true null.
         auto_effects: bool = True,
+        # v1.3.0.6: repeated-measures designs. None (default) keeps the between-subjects behaviour
+        # bit-identical; a dict such as {"type": "within"} / {"type": "mixed", "within_factors": [...]}
+        # is described in utils/within_design.py.
+        design: Optional[Dict[str, Any]] = None,
     ):
+        # the arguments as given, so a repeated-measures run can build its inner single-pass engine
+        self._ctor_kwargs = {k: v for k, v in locals().items() if k not in ("self", "__class__")}
         self.progress_callback = progress_callback
         self.auto_effects = bool(auto_effects)
         self.use_socsim_experimental = bool(use_socsim_experimental)
@@ -3755,6 +3761,11 @@ class EnhancedSimulationEngine:
             logger.warning("No conditions specified — defaulting to single 'Condition A'")
             self.conditions = ["Condition A"]
         self.factors = _normalize_factors(factors, self.conditions)
+        # v1.3.0.6: None for between-subjects designs; a DesignSpec for within / mixed designs
+        self.design_spec = None
+        if design is not None:
+            from .within_design import normalize_design as _normalize_design
+            self.design_spec = _normalize_design(design, self.factors, self.conditions)
         self.scales = _normalize_scales(scales)
         # v1.2.5.3: Build DV description lookup for condition effect intelligence
         # v1.2.5.5: Store BOTH space and underscore variants so lookup always matches
@@ -13272,6 +13283,9 @@ class EnhancedSimulationEngine:
         # concurrent Streamlit sessions therefore run fully in parallel with
         # identical same-seed output and zero cross-session interference. Verified by
         # the cross-process determinism battery + a concurrent-generation test.
+        if getattr(self, "design_spec", None) is not None:
+            from .within_design import generate_repeated as _generate_repeated
+            return _generate_repeated(self)
         return self._generate_body()
 
     def _generate_body(self) -> Tuple[pd.DataFrame, Dict[str, Any]]:
@@ -16379,6 +16393,9 @@ class EnhancedSimulationEngine:
         Composites are computed from the item columns; Simulation_Diagnostics.csv is
         joined on ResponseId for the optional exclusion step.
         """
+        if getattr(self, "_within_result", None):  # v1.3.0.6: repeated-measures layout (wide + long)
+            from .within_scripts import script_for as _within_script
+            return _within_script("r", self, df)
         def _r_quote(x: str) -> str:
             x = _script_text(x).replace("\\", "\\\\").replace('"', '\\"')
             return f'"{x}"'
@@ -16456,6 +16473,9 @@ class EnhancedSimulationEngine:
         Composites are computed from the item columns; Simulation_Diagnostics.csv is
         merged on ResponseId for the optional exclusion step.
         """
+        if getattr(self, "_within_result", None):  # v1.3.0.6: repeated-measures layout (wide + long)
+            from .within_scripts import script_for as _within_script
+            return _within_script("python", self, df)
         def _py_quote(x: str) -> str:
             x = _script_text(x).replace("\\", "\\\\").replace("'", "\\'")
             return f"'{x}'"
@@ -16532,6 +16552,9 @@ class EnhancedSimulationEngine:
         Composites are computed from the item columns; Simulation_Diagnostics.csv is
         joined on ResponseId for the optional exclusion step.
         """
+        if getattr(self, "_within_result", None):  # v1.3.0.6: repeated-measures layout (wide + long)
+            from .within_scripts import script_for as _within_script
+            return _within_script("julia", self, df)
         def _jl_quote(x: str) -> str:
             x = _script_text(x).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
             return f'"{x}"'
@@ -16615,6 +16638,9 @@ class EnhancedSimulationEngine:
         Composites are computed from the item columns; Simulation_Diagnostics.csv is
         matched on ResponseId for the optional exclusion step.
         """
+        if getattr(self, "_within_result", None):  # v1.3.0.6: repeated-measures layout (wide + long)
+            from .within_scripts import script_for as _within_script
+            return _within_script("spss", self, df)
         lines: List[str] = [
             "* ============================================================.",
             f"* SPSS Data Preparation Syntax - {_script_text(self.study_title)}.",
@@ -16689,6 +16715,9 @@ class EnhancedSimulationEngine:
         merged on responseid (Stata lower-cases imported names) for the optional
         exclusion step.
         """
+        if getattr(self, "_within_result", None):  # v1.3.0.6: repeated-measures layout (wide + long)
+            from .within_scripts import script_for as _within_script
+            return _within_script("stata", self, df)
         def _stata_quote(x: str) -> str:
             # Stata expands `macros' and $globals inside double quotes, so neither may survive in a label
             x = _script_text(x).replace('"', "'").replace("`", "'").replace("$", "")
@@ -16799,6 +16828,13 @@ class EnhancedSimulationEngine:
             else:
                 effect_info = f"d = {min(ds):.2f}-{max(ds):.2f}"
 
+        _design_sentence = (
+            f"N = {self.sample_size} synthetic participants were randomly\nassigned to {n_conditions} experimental "
+            f"condition{'s' if n_conditions > 1 else ''}.")
+        if getattr(self, "_within_result", None):  # v1.3.0.6: repeated measures
+            from .within_scripts import methods_sentence as _within_methods_sentence
+            _design_sentence = _within_methods_sentence(self)
+
         methods = f"""
 METHODS: SYNTHETIC DATA GENERATION
 
@@ -16806,8 +16842,7 @@ Data were generated by a persona-based simulation engine whose response-style
 and domain parameters are informed by published survey-methodology research.
 The data are synthetic.
 
-Sample and Design: N = {self.sample_size} synthetic participants were randomly
-assigned to {n_conditions} experimental condition{'s' if n_conditions > 1 else ''}.
+Sample and Design: {_design_sentence}
 Responses were generated for {n_scales} scale{'s' if n_scales > 1 else ''} measuring
 dependent variables relevant to the study context.
 
