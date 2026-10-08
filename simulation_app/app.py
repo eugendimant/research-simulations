@@ -278,14 +278,12 @@ def _decrypt_api_key(ciphertext_hex: str) -> str:
 
 MAX_SIMULATED_N = 10000
 MAX_FREE_LLM_N = 100  # v1.2.1.9: Cap free LLM generation to prevent API exhaustion
-# v1.2.9.1: the generator assigns each simulated participant to ONE condition. The design type
-# chosen on the pages does not change the structure of the data and is not written to Metadata.json
-# (only the randomization level of the QSF path is listed in the design summary), so the note must
-# not say that the choice is recorded.
+# v1.3.0.6: within-subjects and mixed designs are generated for real (utils/within_design.py): the design
+# type chosen on the pages is written to Metadata.json (``design``) and shapes the data. What is still not
+# modelled is clustering, so a clustered / non-randomized assignment keeps a note.
 DESIGN_STRUCTURE_NOTE = (
-    "This version generates one condition per participant (between-subjects, randomized at the "
-    "participant level). The design type you choose here does not change that: the generated data "
-    "will not contain repeated measures, mixed-design columns or clustered observations."
+    "Group/cluster-level assignment and non-randomized designs are not modelled: the generator assigns each "
+    "simulated participant independently, so the data will not contain clustered observations (classrooms, sites, teams)."
 )
 
 # Whole-word cues in condition labels that suggest a repeated-measures ("within") or "mixed" design.
@@ -310,6 +308,229 @@ def _detect_design_from_condition_names(names: Any) -> str:
     if _MIXED_LABEL_RE.search(text):
         return "mixed"
     return "between"
+
+# ---------------------------------------------------------------------------------------------
+# v1.3.0.6: within-subjects / mixed design setup shared by the builder and the QSF Design page
+# ---------------------------------------------------------------------------------------------
+_REPEATED_ORDER_OPTIONS = {
+    "random": "Random order for each participant",
+    "latin_square": "Balanced rotation (Latin square)",
+    "full": "Every possible order (up to 5 conditions)",
+    "fixed": "Same order for everyone (as listed)",
+}
+_QSF_DESIGN_OPTIONS = [
+    "Between-subjects (each participant sees one condition)",
+    "Within-subjects (each participant sees all conditions)",
+    "Mixed design",
+    "Simple comparison (2 groups)",
+]
+
+
+def _design_type_key(value: Any) -> str:
+    """Normalise a design label from either page ("Within-subjects (...)", "mixed", ...) to between/within/mixed."""
+    text = str(value or "").strip().lower()
+    if text.startswith("within"):
+        return "within"
+    if text.startswith("mixed"):
+        return "mixed"
+    return "between"
+
+
+def _parse_level_list(text: Any) -> List[str]:
+    """Levels typed as "Pre, Post" (commas, semicolons or lines), without blanks or duplicates."""
+    out: List[str] = []
+    for part in re.split(r"[,;\n]", str(text or "")):
+        lv = re.sub(r"\s+", " ", part).strip()
+        if lv and lv not in out:
+            out.append(lv)
+    return out
+
+
+def _active_design_type() -> str:
+    """The design type the user chose, from whichever path (builder or QSF) is active."""
+    builder_active = bool(st.session_state.get("conversational_builder_complete")) and not st.session_state.get("qsf_preview")
+    if builder_active:
+        inferred = st.session_state.get("inferred_design") or {}
+        return _design_type_key(st.session_state.get("builder_design_type") or inferred.get("design_type"))
+    return _design_type_key(st.session_state.get("design_type_choice"))
+
+
+def _design_config_for_engine(conditions: List[str]) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    """The ``design`` dict for the engine (None = between-subjects) and the problems that block generation.
+
+    ``conditions`` are the conditions of the study as the pages hold them: for a within design they ARE the
+    conditions every participant experiences, for a mixed design they are the between-subjects groups.
+    """
+    dtype = _active_design_type()
+    if dtype == "between":
+        return None, []
+    cfg = dict(st.session_state.get("design_config") or {})
+    problems: List[str] = []
+    design: Dict[str, Any] = {
+        "type": dtype,
+        "order": cfg.get("order", "random"),
+        "within_correlation": float(cfg.get("within_correlation", 0.5)),
+        "order_effects": bool(cfg.get("order_effects", True)),
+    }
+    if dtype == "mixed":
+        levels = _parse_level_list(cfg.get("within_levels"))
+        name = str(cfg.get("within_name") or "Time").strip() or "Time"
+        if len(levels) < 2:
+            problems.append("Mixed design: name the two or more levels of the within-subject factor (for example Pre, Post).")
+        design["within_factors"] = [{"name": name, "levels": levels}]
+        if len(conditions) < 2:
+            problems.append("Mixed design: define two or more between-subjects groups.")
+    else:
+        levels = _parse_level_list(cfg.get("within_levels")) if cfg.get("levels_from_widget") else list(conditions)
+        if len(levels) < 2:
+            problems.append("Within-subjects design: define two or more conditions that every participant sees.")
+        design["levels"] = levels
+    return design, problems
+
+
+def _repeated_scale_specs(metadata: Dict[str, Any], scales: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The scale list with one copy per within-subject condition when the run is a repeated-measures design
+    (column names ``<Measure>_<Condition>_<i>``); the scales themselves otherwise."""
+    try:
+        from utils.within_design import design_from_metadata as _design_meta
+        design = _design_meta(metadata)
+        if not design:
+            return scales
+        out: List[Dict[str, Any]] = []
+        for sc in scales:
+            base = re.sub(r"[^A-Za-z0-9_]+", "_", str(sc.get("variable_name") or sc.get("name") or "Scale")).strip("_")
+            for cell in design["cells"]:
+                out.append(dict(sc, variable_name=f"{base}_{cell['slug']}", name=f"{base}_{cell['slug']}"))
+        return out
+    except Exception as exc:  # noqa: BLE001 - the checks fall back to the plain scale list
+        _log(f"Repeated-measures scale list failed: {exc}", level="debug")
+        return scales
+
+
+def _generate_repeated_preview(conditions: List[str], scales: List[Any], design: Dict[str, Any], n_rows: int = 5) -> pd.DataFrame:
+    """A few rows of a within / mixed dataset: a small run of the real engine (offline, template text), wide layout."""
+    design = dict(design)
+    levels = design.pop("levels", None)
+    conds = [str(c) for c in (levels or conditions)]
+    factors = [{"name": "Condition", "levels": conds}] if design.get("type") == "within" else [
+        {"name": "Group", "levels": conds}]
+    engine = EnhancedSimulationEngine(
+        study_title="Preview", study_description="Preview of the repeated-measures layout.", sample_size=max(8, int(n_rows)),
+        conditions=conds, factors=factors, scales=_normalize_scale_specs(list(scales or [])), additional_vars=[],
+        demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12}, seed=7, design=design, allow_template_fallback=True)
+    if getattr(engine, "llm_generator", None) is not None:
+        engine.llm_generator.disable_permanently("preview")
+    frame, meta = engine.generate()
+    try:
+        from utils.qualtrics_export import protected_columns, split_columns
+        facing, _internal = split_columns(list(frame.columns), protected_columns(meta))
+        frame = frame[[c for c in frame.columns if c in facing or c == "PARTICIPANT_ID"]]
+    except Exception:  # noqa: BLE001 - show everything rather than nothing
+        pass
+    return frame.head(n_rows)
+
+
+def _render_repeated_setup(design_type: str, *, conditions: List[str], levels_widget: bool,
+                           suggestion: Optional[Dict[str, Any]] = None) -> None:
+    """Controls of a within-subjects or mixed design; stores the choice in ``st.session_state['design_config']``.
+
+    ``levels_widget``: True on the QSF page, where nothing else names the within-subject conditions;
+    False in the builder, where the conditions typed there are the within-subject conditions (within) or
+    the between-subjects groups (mixed).
+    """
+    saved = dict(st.session_state.get("design_config") or {})
+    suggestion = suggestion or {}
+    st.markdown("##### Repeated-measures setup")
+    if design_type == "within":
+        st.caption(
+            "Every simulated participant answers all the conditions below, in one row of the data. "
+            "Each measure appears once per condition (for example `Trust_Pre_1`, `Trust_Post_1`), "
+            "and a long-format file (one row per participant and condition) is added to the download."
+        )
+    else:
+        st.caption(
+            "Mixed design: the groups you defined are between-subjects (each participant is in one group); "
+            "every participant also answers the measures at each level of the within-subject factor below."
+        )
+    needs_levels = design_type == "mixed" or levels_widget
+    cfg: Dict[str, Any] = {"levels_from_widget": bool(levels_widget)}
+    if needs_levels:
+        c_name, c_levels = st.columns([1, 2])
+        with c_name:
+            if design_type == "mixed":
+                name = st.text_input("Within-subject factor", value=str(saved.get("within_name") or suggestion.get("name") or "Time"),
+                                     key="rm_within_name", help="For example Time, Session or Dose.")
+            else:
+                name = "Condition"
+        with c_levels:
+            default_levels = saved.get("within_levels")
+            if not default_levels:
+                default_levels = ", ".join(suggestion.get("levels") or []) or (
+                    ", ".join(conditions) if (levels_widget and design_type == "within" and len(conditions) >= 2) else "Pre, Post")
+            levels_text = st.text_input(
+                "Levels every participant experiences (comma-separated, in presentation order)" if design_type == "within"
+                else "Levels of the within-subject factor (comma-separated)",
+                value=str(default_levels), key="rm_within_levels")
+        cfg["within_name"], cfg["within_levels"] = name, levels_text
+    with st.expander("Order, correlation and fatigue (defaults are sensible)", expanded=False):
+        order_keys = list(_REPEATED_ORDER_OPTIONS)
+        order = st.selectbox(
+            "Presentation order", options=order_keys, format_func=lambda k: _REPEATED_ORDER_OPTIONS[k],
+            index=order_keys.index(saved.get("order", "random")) if saved.get("order", "random") in order_keys else 0,
+            key="rm_order", help="Counterbalancing. The order each participant saw is recorded in the Order column.")
+        corr = st.slider(
+            "Correlation of the same measure across conditions (within-person r)", min_value=0.0, max_value=0.9,
+            value=float(saved.get("within_correlation", 0.5)), step=0.05, key="rm_corr",
+            help="Test-retest and repeated-measures correlations of attitude measures typically fall between 0.4 and 0.7.")
+        fatigue = st.checkbox(
+            "Add small order / fatigue effects", value=bool(saved.get("order_effects", True)), key="rm_order_effects",
+            help="Later conditions score slightly lower (0.05 SD per position). Switch off for a pure condition effect.")
+        st.caption("Effect sizes you set on a within factor are d_av: the mean difference divided by the average SD of the two "
+                   "conditions, comparable to a between-subjects d. The report also gives the paired d_z.")
+    cfg.update(order=order, within_correlation=float(corr), order_effects=bool(fatigue))
+    st.session_state["design_config"] = cfg
+
+
+def _within_effect_levels() -> set:
+    """Levels of the within-subject factor of a mixed design (effects may name them), else an empty set."""
+    if _active_design_type() != "mixed":
+        return set()
+    return set(_parse_level_list((st.session_state.get("design_config") or {}).get("within_levels")))
+
+
+def _render_mixed_effect_choice(groups: List[str], key: str, default_factor: str = "condition") -> Dict[str, Any]:
+    """Which part of a mixed design an expected effect belongs to: groups, the within factor, or their interaction.
+
+    Returns ``factor``, ``level_high``, ``level_low`` and ``at`` (None, or ``{within factor: level}`` for an
+    interaction: the group difference exists at that one within-level).
+    """
+    cfg = st.session_state.get("design_config") or {}
+    wname = str(cfg.get("within_name") or "Time").strip() or "Time"
+    wlevels = _parse_level_list(cfg.get("within_levels"))
+    kinds = {
+        "between": "Difference between groups",
+        "within": f"Change across {wname}",
+        "interaction": f"Group difference at one {wname} level (interaction)",
+    }
+    kind = st.radio("This effect is a", list(kinds), format_func=lambda k: kinds[k], key=f"{key}_kind", horizontal=True,
+                    help="Between: the groups differ after the first level (randomized groups start equal). "
+                         "Change: scores move across the repeated levels. Interaction: the groups differ at one level only.")
+    pool = wlevels if kind == "within" else list(groups)
+    if len(pool) < 2:
+        st.warning("Define at least two levels (groups, or within-subject levels) first.")
+        return {"factor": default_factor, "level_high": "", "level_low": "", "at": None}
+    c1, c2 = st.columns(2)
+    with c1:
+        hi = st.selectbox("Higher-scoring level", pool, key=f"{key}_hi")
+    with c2:
+        rest = [x for x in pool if x != hi]
+        lo = st.selectbox("Lower-scoring level", rest or pool, key=f"{key}_lo")
+    at = None
+    if kind == "interaction":
+        if wlevels:
+            at = {wname: st.selectbox(f"At which {wname} level?", wlevels, index=len(wlevels) - 1, key=f"{key}_at")}
+    return {"factor": wname if kind == "within" else default_factor, "level_high": hi, "level_low": lo, "at": at}
+
 
 STANDARD_DEFAULTS = {
     "demographics": {"gender_quota": 50, "age_mean": 35, "age_sd": 12, "age_min": 18, "age_max": 80, "include_age_column": True, "include_gender_column": True},
@@ -5826,8 +6047,13 @@ def _render_conversational_builder() -> None:
 
     with _cfg_col2:
         st.markdown("#### Design Type")
-        # Auto-detect design type from condition structure
-        _auto_design: str = _detect_design_from_condition_names([c.name for c in parsed_conditions or []])
+        # Suggest the design type from the condition labels. Only an unambiguous pair of time labels
+        # (Pre-test / Post-test, Time 1 / Time 2) is pre-selected; anything else is offered as a hint,
+        # never applied: a wrong repeated-measures design changes the whole structure of the data.
+        _label_names = [c.name for c in parsed_conditions or []]
+        _label_hint: str = _detect_design_from_condition_names(_label_names)
+        _n_time_labels = sum(1 for nm in _label_names if _detect_design_from_condition_names([nm]) == "within")
+        _auto_design: str = "within" if (_label_hint == "within" and _n_time_labels >= 2) else "between"
         if not st.session_state.get("_design_type_manually_set"):
             st.session_state["builder_design_type"] = _auto_design
 
@@ -5853,8 +6079,14 @@ def _render_conversational_builder() -> None:
         st.session_state["builder_design_type"] = design_type
         if design_type != _auto_design:
             st.session_state["_design_type_manually_set"] = True
-        if design_type != "between":
-            st.warning(DESIGN_STRUCTURE_NOTE)
+        if design_type == "between" and _label_hint != "between":
+            st.caption(
+                f"Your condition labels look like a {design_options.get(_label_hint, _label_hint).lower()}. "
+                "Choose it above if every participant takes part in all of them."
+            )
+
+    if design_type != "between":
+        _render_repeated_setup(design_type, conditions=[c.name for c in parsed_conditions or []], levels_widget=False)
 
     # ── Demographics + Participants (collapsible) ─────────────────────
     st.markdown("")
@@ -6879,20 +7111,26 @@ def _render_builder_design_review() -> None:
                     [s.get("name", "Unknown") for s in scales],
                     key="builder_effect_dv",
                 )
-                col_hi, col_lo = st.columns(2)
-                with col_hi:
-                    level_high = st.selectbox(
-                        "Higher-scoring condition",
-                        conditions,
-                        key="builder_effect_high",
-                    )
-                with col_lo:
-                    remaining = [c for c in conditions if c != level_high]
-                    level_low = st.selectbox(
-                        "Lower-scoring condition",
-                        remaining if remaining else conditions,
-                        key="builder_effect_low",
-                    )
+                _fx_factor, _fx_at = "condition", None
+                if _active_design_type() == "mixed":
+                    _mx = _render_mixed_effect_choice(list(conditions), "builder_mixed_fx")
+                    level_high, level_low = _mx["level_high"], _mx["level_low"]
+                    _fx_factor, _fx_at = _mx["factor"], _mx["at"]
+                else:
+                    col_hi, col_lo = st.columns(2)
+                    with col_hi:
+                        level_high = st.selectbox(
+                            "Higher-scoring condition",
+                            conditions,
+                            key="builder_effect_high",
+                        )
+                    with col_lo:
+                        remaining = [c for c in conditions if c != level_high]
+                        level_low = st.selectbox(
+                            "Lower-scoring condition",
+                            remaining if remaining else conditions,
+                            key="builder_effect_low",
+                        )
                 cohens_d = st.slider(
                     "Cohen's d (effect size)",
                     min_value=0.0, max_value=1.5, value=0.5, step=0.1,
@@ -6903,11 +7141,12 @@ def _render_builder_design_review() -> None:
                 st.session_state["builder_effect_sizes"] = [
                     {
                         "variable": effect_dv,
-                        "factor": "condition",
+                        "factor": _fx_factor,
                         "level_high": level_high,
                         "level_low": level_low,
                         "cohens_d": cohens_d,
                         "direction": "positive",
+                        **({"at": _fx_at} if _fx_at else {}),
                     }
                 ]
                 st.caption(
@@ -10913,20 +11152,29 @@ if active_page == 2:
         auto_detected_factors = _infer_factors_from_conditions(all_conditions)
         auto_num_factors = len(auto_detected_factors)
 
+        # The select box key disappears while another page is shown, so the choice lives in a second key and
+        # is restored (or set by the "use the suggestion" button) BEFORE the widget is created.
+        _pending_dt = st.session_state.pop("_pending_design_type_select", None)
+        if _pending_dt:
+            st.session_state["design_type_select"] = _pending_dt
+        elif "design_type_select" not in st.session_state:
+            _saved_dt = st.session_state.get("design_type_choice")
+            if _saved_dt:
+                st.session_state["design_type_select"] = next(
+                    (o for o in _QSF_DESIGN_OPTIONS if _design_type_key(o) == _saved_dt and not o.startswith("Simple")),
+                    _QSF_DESIGN_OPTIONS[0])
+
         with col_design1:
             # Design type selection
             design_type = st.selectbox(
                 "Experimental design type",
-                options=[
-                    "Between-subjects (each participant sees one condition)",
-                    "Within-subjects (each participant sees all conditions)",
-                    "Mixed design",
-                    "Simple comparison (2 groups)",
-                ],
+                options=_QSF_DESIGN_OPTIONS,
                 index=0,
                 key="design_type_select",
-                help="How are conditions assigned to participants? Most experiments use between-subjects designs.",
+                help="How are conditions assigned to participants? Most experiments use between-subjects designs. "
+                     "Within-subjects: every participant answers every condition. Mixed: groups (between) x repeated levels (within).",
             )
+            st.session_state["design_type_choice"] = _design_type_key(design_type)
 
             # Show auto-detected design info
             if auto_num_factors > 1:
@@ -10949,9 +11197,42 @@ if active_page == 2:
                 help="How participants are assigned to conditions.",
             )
 
-        if (not str(design_type).startswith(("Between", "Simple"))
-                or not str(rand_level).startswith("Participant")):
+        if not str(rand_level).startswith("Participant"):
             st.warning(DESIGN_STRUCTURE_NOTE)
+
+        # Repeated measures in the survey itself: SUGGEST, never switch on.
+        _rm_suggestion: Dict[str, Any] = {}
+        try:
+            from utils.within_design import suggest_design_from_qsf as _suggest_design
+            _sug_key = (st.session_state.get("qsf_file_name"), getattr(preview, "total_blocks", 0))
+            if st.session_state.get("_rm_suggestion_key") != _sug_key:
+                st.session_state["_rm_suggestion"] = _suggest_design(preview)
+                st.session_state["_rm_suggestion_key"] = _sug_key
+            _rm_suggestion = st.session_state.get("_rm_suggestion") or {}
+        except Exception as _sug_exc:  # a suggestion must never break the Design page
+            _log(f"Design suggestion failed: {_sug_exc}", level="debug")
+        _chosen_dt = _design_type_key(design_type)
+        if _rm_suggestion.get("suggest") and _chosen_dt == "between":
+            _sug_kind = _rm_suggestion["suggest"]
+            st.info(
+                f"This survey asks the same questions in {len(_rm_suggestion.get('blocks', []))} blocks that every "
+                f"participant sees ({', '.join(str(b) for b in _rm_suggestion.get('blocks', [])[:4])}). "
+                f"That looks like a {'mixed' if _sug_kind == 'mixed' else 'within-subjects'} design: "
+                "the same people are measured more than once."
+            )
+            if st.button(f"Use a {'mixed' if _sug_kind == 'mixed' else 'within-subjects'} design",
+                         key="use_design_suggestion"):
+                st.session_state["_pending_design_type_select"] = (
+                    _QSF_DESIGN_OPTIONS[2] if _sug_kind == "mixed" else _QSF_DESIGN_OPTIONS[1])
+                st.session_state["design_config"] = dict(
+                    st.session_state.get("design_config") or {},
+                    within_levels=", ".join(_rm_suggestion.get("levels", [])),
+                    within_name="Time", levels_from_widget=True)
+                _navigate_to(2)
+        if _chosen_dt != "between":
+            _render_repeated_setup(
+                _chosen_dt, conditions=[str(c) for c in all_conditions], levels_widget=(_chosen_dt == "within"),
+                suggestion={"levels": _rm_suggestion.get("levels", []), "name": "Time"} if _rm_suggestion.get("suggest") else None)
 
         # ── Sample Size & Allocation ────────────────────────────────────
         st.markdown("#### Sample Size")
@@ -13147,6 +13428,10 @@ if active_page == 2:
         ]
         if _b_oe and not _b_oe_ctx_ok:
             _chk_items_final.append((False, "OE context needed"))
+        if _active_design_type() != "between":
+            _, _rm_problems = _design_config_for_engine([str(c.get("name", c)) if isinstance(c, dict) else str(c) for c in _b_conds])
+            _p3_ready = _p3_ready and not _rm_problems
+            _chk_items_final.append((not _rm_problems, "Repeated-measures setup"))
     else:
         # QSF path: readiness based on checkboxes and design state
         _chk_has_conds = bool(
@@ -13156,7 +13441,14 @@ if active_page == 2:
         _chk_design_ok = bool(st.session_state.get("inferred_design"))
         _chk_dvs_ok = bool(st.session_state.get("scales_confirmed", False))
         _chk_oe_ok = bool(st.session_state.get("open_ended_confirmed", True))
-        _p3_ready = _chk_has_conds and _chk_design_ok and _chk_dvs_ok and _chk_oe_ok
+        _rm_problems: List[str] = []
+        if _active_design_type() != "between":
+            _qsf_conds = [str(c) for c in (st.session_state.get("selected_conditions")
+                                           or st.session_state.get("custom_conditions") or [])]
+            _, _rm_problems = _design_config_for_engine(_qsf_conds)
+            # a within design names its own conditions in the setup, so the QSF need not have found any
+            _chk_has_conds = _chk_has_conds or (_active_design_type() == "within" and not _rm_problems)
+        _p3_ready = _chk_has_conds and _chk_design_ok and _chk_dvs_ok and _chk_oe_ok and not _rm_problems
         _chk_items_final = [
             (_chk_has_conds, "Conditions defined"),
             (_chk_design_ok, "Design configured"),
@@ -13164,6 +13456,8 @@ if active_page == 2:
         ]
         if not _chk_oe_ok:
             _chk_items_final.append((False, "Open-ended confirmed"))
+        if _active_design_type() != "between":
+            _chk_items_final.append((not _rm_problems, "Repeated-measures setup"))
 
     with _nav_placeholder:
         _nav2_left, _nav2_right = st.columns([1, 1])
@@ -13259,6 +13553,13 @@ if active_page == 3:
     conditions = inferred.get('conditions', [])
     scales = st.session_state.get('confirmed_scales', []) or inferred.get('scales', [])
     factors = inferred.get('factors', [])
+    # v1.3.0.6: a within design set up on the QSF Design page names its own conditions
+    _gen_rm_cfg = st.session_state.get("design_config") or {}
+    if _active_design_type() == "within" and _gen_rm_cfg.get("levels_from_widget"):
+        _gen_within_levels = _parse_level_list(_gen_rm_cfg.get("within_levels"))
+        if len(_gen_within_levels) >= 2:
+            conditions = _gen_within_levels
+            factors = [{"name": "Condition", "levels": list(_gen_within_levels)}]
     scale_names = [s.get('name', 'Unknown') for s in scales if s.get('name')]
     _sample_n = st.session_state.get('sample_size', 0)
 
@@ -13382,15 +13683,23 @@ if active_page == 3:
         # v1.0.3.8: Pass study context for context-aware open-text preview
         _preview_study_title = st.session_state.get('study_title', '') or st.session_state.get('_p_study_title', '')
         _preview_study_desc = st.session_state.get('study_description', '') or st.session_state.get('_p_study_description', '')
-        preview_df = _generate_preview_data(
-            conditions=conditions,
-            scales=scales,
-            open_ended=open_ended_for_preview,
-            n_rows=5,
-            difficulty=difficulty_level,
-            study_title=_preview_study_title,
-            study_description=_preview_study_desc,
-        )
+        preview_df = None
+        _pv_design, _pv_problems = _design_config_for_engine([str(c) for c in conditions])
+        if _pv_design is not None and not _pv_problems:
+            try:
+                preview_df = _generate_repeated_preview(conditions, scales, _pv_design, n_rows=5)
+            except Exception as _pv_exc:
+                _log(f"Repeated-measures preview failed: {_pv_exc}", level="warning")
+        if preview_df is None:
+            preview_df = _generate_preview_data(
+                conditions=conditions,
+                scales=scales,
+                open_ended=open_ended_for_preview,
+                n_rows=5,
+                difficulty=difficulty_level,
+                study_title=_preview_study_title,
+                study_description=_preview_study_desc,
+            )
         st.session_state['preview_df'] = preview_df
 
     if 'preview_df' in st.session_state and st.session_state['preview_df'] is not None:
@@ -13429,7 +13738,8 @@ if active_page == 3:
         # Use builder effect sizes if available, validating against current conditions
         builder_effects = st.session_state.get("builder_effect_sizes", [])
         effect_sizes: List[EffectSizeSpec] = []
-        _current_conds = set(conditions)
+        scoped_effects: List[Dict[str, Any]] = []  # v1.3.0.6: mixed-design effects tied to one within-level / within factor
+        _current_conds = set(conditions) | _within_effect_levels()
         _invalid_effects = []
         for be in builder_effects:
             try:
@@ -13438,6 +13748,9 @@ if active_page == 3:
                 # Check that referenced conditions still exist
                 if _hi not in _current_conds or _lo not in _current_conds:
                     _invalid_effects.append(f"{be.get('variable','?')}: '{_hi}' vs '{_lo}'")
+                    continue
+                if be.get("at"):
+                    scoped_effects.append(dict(be))
                     continue
                 effect_sizes.append(EffectSizeSpec(
                     variable=be["variable"],
@@ -13536,16 +13849,20 @@ if active_page == 3:
         st.session_state["_auto_effects"] = bool(_auto_effects_on)
 
         effect_sizes = []
+        scoped_effects = []  # v1.3.0.6: mixed-design effects tied to one within-level / within factor
 
         # Pre-populate from builder if available, validating conditions
         builder_effects = st.session_state.get("builder_effect_sizes", [])
-        _adv_conds = set(conditions)
+        _adv_conds = set(conditions) | _within_effect_levels()
         for be in builder_effects:
             try:
                 _hi = be["level_high"]
                 _lo = be["level_low"]
                 if _hi not in _adv_conds or _lo not in _adv_conds:
                     continue  # Skip stale effect sizes
+                if be.get("at"):
+                    scoped_effects.append(dict(be))
+                    continue
                 effect_sizes.append(EffectSizeSpec(
                     variable=be["variable"],
                     factor=be.get("factor", "condition"),
@@ -13634,28 +13951,45 @@ if active_page == 3:
                 st.caption("Which condition scores higher is chosen below.")
 
             # Level selection
-            if len(factor_levels) >= 2:
-                lev_col1, lev_col2 = st.columns(2)
-                with lev_col1:
-                    level_high = st.selectbox(
-                        "Higher-scoring condition",
-                        options=factor_levels,
-                        key="effect_level_high",
-                        help="Which condition should have higher scores?"
-                    )
-                with lev_col2:
-                    other_levels = [l for l in factor_levels if l != level_high]
-                    if st.session_state.get("effect_level_low") not in (other_levels or factor_levels):
-                        st.session_state.pop("effect_level_low", None)
-                    level_low = st.selectbox(
-                        "Lower-scoring condition",
-                        options=other_levels if other_levels else factor_levels,
-                        key="effect_level_low",
-                        help="Which condition should have lower scores?"
-                    )
+            _mixed_at = None
+            if _active_design_type() == "mixed":
+                _mx = _render_mixed_effect_choice(list(conditions), "adv_mixed_fx", default_factor=effect_factor)
+                level_high, level_low, effect_factor, _mixed_at = (
+                    _mx["level_high"], _mx["level_low"], _mx["factor"], _mx["at"])
+                _levels_ok = bool(level_high and level_low)
+            else:
+                _levels_ok = len(factor_levels) >= 2
+            if _levels_ok:
+                if _active_design_type() != "mixed":
+                    lev_col1, lev_col2 = st.columns(2)
+                    with lev_col1:
+                        level_high = st.selectbox(
+                            "Higher-scoring condition",
+                            options=factor_levels,
+                            key="effect_level_high",
+                            help="Which condition should have higher scores?"
+                        )
+                    with lev_col2:
+                        other_levels = [l for l in factor_levels if l != level_high]
+                        if st.session_state.get("effect_level_low") not in (other_levels or factor_levels):
+                            st.session_state.pop("effect_level_low", None)
+                        level_low = st.selectbox(
+                            "Lower-scoring condition",
+                            options=other_levels if other_levels else factor_levels,
+                            key="effect_level_low",
+                            help="Which condition should have lower scores?"
+                        )
 
                 # Build effect spec
-                if effect_variable and effect_factor and level_high and level_low:
+                if effect_variable and effect_factor and level_high and level_low and _mixed_at:
+                    scoped_effects.append({
+                        "variable": effect_variable, "factor": effect_factor, "level_high": level_high,
+                        "level_low": level_low, "cohens_d": effect_d, "direction": "positive", "at": _mixed_at})
+                    st.success(
+                        f"Effect configured: **{effect_variable}** will be {effect_d:.2f}d higher "
+                        f"in '{level_high}' vs '{level_low}' at {', '.join(str(v) for v in _mixed_at.values())}"
+                    )
+                elif effect_variable and effect_factor and level_high and level_low:
                     effect_sizes.append(
                         EffectSizeSpec(
                             variable=effect_variable,
@@ -15107,6 +15441,23 @@ if active_page == 3:
                     "If your study has multiple conditions, go back to **Design** and configure them."
                 )
 
+            # v1.3.0.6: within-subjects / mixed designs. For a within design the conditions ARE what every
+            # participant experiences; for a mixed design they are the between-subjects groups and the
+            # within-subject factor comes from the repeated-measures setup.
+            _design_cfg, _design_problems = _design_config_for_engine([str(c) for c in _engine_conditions])
+            if _design_cfg is not None:
+                if _design_problems:
+                    raise ValueError(" ".join(_design_problems))
+                if _design_cfg["type"] == "within":
+                    _within_levels = list(_design_cfg.pop("levels"))
+                    if _within_levels != [str(c) for c in _engine_conditions]:
+                        _engine_conditions = _within_levels
+                        clean_factors = [{"name": "Condition", "levels": list(_within_levels)}]
+                    condition_allocation = None
+                if scoped_effects:
+                    _design_cfg["simple_effects"] = [dict(e) for e in scoped_effects]
+                _design_cfg.pop("levels", None)
+
             # v1.2.0.1: Show initialization progress so user doesn't stare at stale text
             _progress_counter_placeholder.markdown(
                 '<div style="text-align:center;padding:10px;background:#f0f9ff;border-radius:8px;margin:8px 0;">'
@@ -15221,6 +15572,7 @@ if active_page == 3:
                 use_abe_v2=bool(st.session_state.get("_use_abe_v2", False)),
                 free_llm_oe_cap=_free_llm_oe_cap,
                 auto_effects=bool(st.session_state.get("_auto_effects", True)) if st.session_state.get("advanced_mode", False) else True,
+                design=_design_cfg,
             )
             # v1.2.5.0: ABE 3.0 — always use EnhancedSimulationEngine (HBS merged in)
             engine = EnhancedSimulationEngine(**_engine_kwargs)
@@ -16079,7 +16431,7 @@ if active_page == 3:
             status_placeholder.info("🔍 Validating generated data...")
             quality_checks = []
             # Check scale ranges
-            for scale in clean_scales:
+            for scale in _repeated_scale_specs(metadata, clean_scales):
                 sname = str(scale.get("name", "")).strip().replace(" ", "_")
                 s_min = int(scale.get("scale_min", 1))
                 s_max = int(scale.get("scale_max", 7))
@@ -16124,6 +16476,11 @@ if active_page == 3:
             except Exception as _e:
                 _log(f"Explainer generation failed: {_e}", level="warning")
                 explainer = f"# Explainer generation failed: {_e}\n# See metadata for study details"
+            try:  # v1.3.0.6: how to read the wide / long layout of a repeated-measures run
+                from utils.within_scripts import codebook_addendum as _codebook_addendum
+                explainer += _codebook_addendum(metadata)
+            except Exception as _e:
+                _log(f"Repeated-measures codebook section failed: {_e}", level="warning")
             try:
                 r_script = engine.generate_r_export(df)
             except Exception as _e:
@@ -16160,13 +16517,19 @@ if active_page == 3:
             metadata["design_review"] = {
                 "variable_roles": st.session_state.get("variable_review_rows", []),
                 "randomization_level": st.session_state.get("randomization_level", ""),
+                "design_type": str(metadata.get("design_type") or _active_design_type()),
             }
 
             try:
+                _schema_conditions, _schema_scales = inferred.get("conditions", []), clean_scales
+                _schema_design = (metadata.get("design") or {}) if isinstance(metadata, dict) else {}
+                if _schema_design.get("type") in ("within", "mixed"):  # repeated measures: groups in CONDITION, one column set per condition
+                    _schema_conditions = list(_schema_design.get("group_labels") or [])
+                    _schema_scales = _repeated_scale_specs(metadata, clean_scales)
                 schema_results = validate_schema(
                     df=df,
-                    expected_conditions=inferred.get("conditions", []),
-                    expected_scales=clean_scales,
+                    expected_conditions=_schema_conditions,
+                    expected_scales=_schema_scales,
                     expected_n=N,
                 )
             except Exception as _schema_err:
@@ -16249,6 +16612,22 @@ if active_page == 3:
 
             if diagnostics_bytes is not None:
                 files["Simulation_Diagnostics.csv"] = diagnostics_bytes
+            # v1.3.0.6: repeated-measures data also come as one row per participant and condition
+            try:
+                from utils.within_design import build_long_format as _build_long, design_from_metadata as _design_meta
+                _rm_design = _design_meta(metadata)
+                if _rm_design and _rm_design.get("long_format_file"):
+                    _long_df = _build_long(df, metadata)
+                    try:  # the wide file is keyed by ResponseId: give the long file the same key
+                        # the Qualtrics-style export is sorted by StartDate: map PARTICIPANT_ID -> ResponseId through
+                        # the diagnostics sidecar, which carries both
+                        _rid = dict(zip(_qx_diag_df["PARTICIPANT_ID"].tolist(), _qx_diag_df["ResponseId"].tolist()))
+                        _long_df.insert(1, "ResponseId", [_rid.get(i) for i in _long_df["PARTICIPANT_ID"]])
+                    except Exception as _rid_err:
+                        _log(f"Long-format ResponseId not added: {_rid_err}", level="debug")
+                    files[str(_rm_design["long_format_file"])] = _long_df.to_csv(index=False).encode("utf-8")
+            except Exception as _long_err:
+                _log(f"Long-format export failed: {_long_err}", level="warning")
             if qualtrics_raw_bytes is not None:
                 files["Simulated_Data_Qualtrics_Raw.csv"] = qualtrics_raw_bytes
 

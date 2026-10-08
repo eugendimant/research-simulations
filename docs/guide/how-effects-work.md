@@ -66,6 +66,42 @@ Every run writes the following into `Metadata.json`:
 
 `User_Study_Summary.md` shows the same information as tables.
 
+## Within-subjects and mixed designs
+
+When every participant answers every condition (a within-subjects design) or answers several conditions inside a between-subjects group (a mixed design, such as treatment/control x Pre/Post), "the effect" needs a definition that fits the repeated structure.
+
+**What the requested d means: d_av.** An effect you set on a within factor is the mean difference between two conditions divided by the **average of the two conditions' SDs** (d_av; Lakens 2013). That is the quantity that is comparable to a between-subjects d: the same d = 0.5 describes the same shift of the scores in standard-deviation units, whichever design measures it. The paired effect size d_z (mean difference divided by the SD of the differences) is reported next to it. They are linked by `d_z = d_av / sqrt(2 (1 - r))`, where r is the correlation between the two conditions, so the same d_av gives a larger d_z, and a more powerful paired test, when the conditions are more strongly correlated: at r = 0.5 they are equal, at r = 0.7 d_z is 1.29 times d_av.
+
+**The within-person correlation.** The same measure is correlated across conditions through a person-level latent: by default r = 0.5 (attitude measures typically show test-retest and repeated-measures correlations between 0.4 and 0.7; the default is a round value inside that range, recalled from the literature rather than fitted to data). You can set r between 0 and 0.9 on the Design page, or choose an AR(1) structure (`r ** lag`) for time points. r is the correlation of the scores as you will see them in the whole sample. The engine reaches it in three steps: the cross-condition coupling of the generator, a top-up that adds a shared person-level component when the sample falls short, and, when the sample comes out above r because careless responders repeat the same answer, a lowering step that adds condition-specific noise. For single-item measures the measurement error that real single items carry already lowers the correlation, and the same calibration applies.
+
+**How your effects map onto the design.** Each effect names a factor and the two levels to contrast (which one scores higher), exactly as in a between-subjects design:
+
+- On a within factor the contrast is built into the same people: their score in one condition is shifted relative to the other, in units of the measure's own SD, on top of their person-level intercept. A lone contrast splits symmetrically (+d/2 for the higher level, -d/2 for the lower), as in the between-subjects route. Several effects on one factor are combined by least squares (A - B = 0.4 and B - C = 0.4 give A - C = 0.8); effects on different factors add, so both main effects of a 2 x 2 within design are recovered.
+- In a mixed design an effect on the between-subjects factor is present at every level of the within factor *except the first, baseline level* (Pre, T1, Baseline, Wave 1), where randomized groups do not differ. To say exactly where it applies, give the effect an `at` (for example `at={"Time": "Post"}`).
+- A group x time **interaction** is written as a group effect restricted to one within level (`at`), combined with, or without, a main effect of time. In the app: choose "Group difference at one Time level (interaction)" when you add an expected effect. Through the engine API the same effect goes into `design["simple_effects"]`.
+- Effects inferred from the condition names work in within designs too. The reference level (a control, baseline or "pre" label) is the zero point, exactly as for a between-subjects control arm; inferred effects are not added to a variable that has an effect you specified.
+
+**Order, fatigue and attrition.** The order in which each participant saw the conditions (random, a balanced Latin square, every permutation up to five conditions, or one fixed order) is recorded in `Order` and `Position_<Condition>`. A small drift of -0.05 SD per later position (mild fatigue) is added by default; it is recalled from the literature on repeated ratings (practice and fatigue effects are usually small relative to a manipulation), is not fitted to data, and can be switched off or changed. With a fixed order the drift is confounded with the conditions, as it would be in a real study. A participant who drops out loses the conditions presented *after* the last one they finished, so the missing data of a within design have the usual attrition pattern.
+
+**Careless responders.** A person who straight-lines does so in every condition and receives neither the effect nor the correlation shift. Because the effect is a statement about the sample, it is scaled up by the careless share (capped at 1.25) so that the sample-level d_av still lands on your request; careless respondents therefore dilute nothing on average, and the individual-level effect among attentive respondents is a little larger than d.
+
+### How close the within-subjects calibration gets
+
+Observed d_av divided by the requested d_av, averaged over 12 independent runs of 300 participants each (requested d_av = 0.5, requested r = 0.5, counterbalanced with a Latin square, 7-point scales; seeds 101-112 for all cells). The effect was built into the contrast between the first and the last condition.
+
+| Measure | 2 conditions | 4 conditions |
+|---|---|---|
+| 4 items, alpha 0.80-0.90 | 0.96 | 0.96 |
+| 1 item | 0.96 | 0.99 |
+
+One run on its own varies by about 0.04 to 0.06 in d_av at N = 300 (the standard deviation across the 12 seeds), because the contrast is estimated on 300 people. The correlation between conditions came out at 0.49 to 0.51 across the four cells (target 0.5).
+
+### What `Metadata.json` records for a repeated-measures run
+
+- `design`: the type, the within factors and the conditions (label and the suffix used in column names), the order scheme, the within-person correlation requested and how it was reached (`coupling`: the engine's own correlation, the final one, the weights of the top-up and the lowering), the attrition that was applied, the number of straight-liners, and `wide_columns` (for each measure and condition, the item columns and the composite).
+- `effect_sizes_applied.specs`: one row per effect you specified, with its scope (`at`), whether it is a `within` or a `between` effect, and `status`; `cell_offsets_d` lists the offset, in SD units, built into every cell.
+- `effect_sizes_observed`: for every measure and pair of conditions, the observed d_av, d_z, the paired correlation r and the number of complete pairs. The instructor report checks each effect you requested against the sample, in d_av.
+
 ## Study context versus condition names
 
 Study-level context (for example "this is a political study") nudges every condition's response style in the same way and does not create differences between conditions. Only condition names create differences, and only where you have not specified an effect.
