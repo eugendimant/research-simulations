@@ -33,6 +33,9 @@ except ImportError:  # imported as a top-level module (scripts) or a partial dep
             return document
 logger = logging.getLogger(__name__)
 
+from .within_design import design_from_metadata  # noqa: E402
+from .within_report import WithinReportMixin, is_repeated_design  # noqa: E402  (repeated-measures report sections)
+
 # Try multiple import strategies for scipy
 SCIPY_AVAILABLE = False
 scipy_stats = None
@@ -1053,6 +1056,11 @@ def _configured_effect_summary(df: Optional["pd.DataFrame"], metadata: Dict[str,
     matching DV or no computable d keep ``observed = None``.
     """
     metadata = metadata or {}
+    if is_repeated_design(metadata):  # v1.3.0.6: within contrasts are checked in d_av (see within_report)
+        from .within_report import effect_check_rows
+        return [{"variable": r["variable"], "high": str(r["contrast"]).split(" - ")[0], "low": str(r["contrast"]).split(" - ")[-1],
+                 "intended": r["intended_d"], "scale": r["variable"], "prefix": r["variable"], "observed": r["observed_d_av"],
+                 "n_1": None, "n_2": None, "basis": "contrast"} for r in effect_check_rows(df, metadata)] if df is not None else []
     effects = [e for e in (metadata.get("effect_sizes_configured") or metadata.get("effect_sizes") or [])
                if isinstance(e, dict)]
     if not effects:
@@ -1105,6 +1113,22 @@ def _configured_effect_summary(df: Optional["pd.DataFrame"], metadata: Dict[str,
                             row["observed"], row["n_1"], row["n_2"], row["basis"] = d_value + 0.0, n1, n2, "groups"
             rows.append(row)
     return rows
+
+
+def _within_observed_effect_lines(metadata: Dict[str, Any]) -> List[str]:
+    """Observed within-person contrasts (d_av and d_z) for the student summary."""
+    rows = [o for o in (metadata.get("effect_sizes_observed") or []) if isinstance(o, dict) and o.get("kind") == "within"]
+    if not rows:
+        return []
+    out = ["### Observed Effects in Generated Data (within-person contrasts)", "",
+           "| Variable | Condition 1 | Condition 2 | N pairs | M₁ | M₂ | d_av | d_z | r |",
+           "|---|---|---|---|---|---|---|---|---|"]
+    for o in rows[:18]:
+        out.append(f"| {o['variable']} | {o['condition_1']} | {o['condition_2']} | {o['n']} | {_fmt(o['mean_1'], 2)} | "
+                   f"{_fmt(o['mean_2'], 2)} | {_fmt(o['d_av'], 2, signed=True)} | {_fmt(o['d_z'], 2, signed=True)} | {_fmt(o['r'], 2)} |")
+    out += ["", "d_av = mean difference / average SD of the two conditions (comparable to a between-subjects d); d_z = mean difference / "
+                "SD of the differences. Both are condition 1 minus condition 2, so a negative value means condition 2 scored higher.", ""]
+    return out
 
 
 def _recorded_rate(value: Any) -> Optional[str]:
@@ -2408,7 +2432,19 @@ class InstructorReportGenerator:
         # Describe the approach
         approach_points = []
 
-        if len(conditions) > 1:
+        _rm_info = design_from_metadata(metadata)  # v1.3.0.6: repeated-measures runs
+        if _rm_info:
+            _rm_k = len(_rm_info.get("cells") or [])
+            approach_points.append(
+                f"Had **every participant answer all {_rm_k} conditions** (correlated within person, r about "
+                f"{_rm_info.get('within_correlation', 0.5):.2f})" if _rm_info.get("type") == "within" else
+                f"Assigned participants to **between-subjects groups** and had every participant answer all {_rm_k} "
+                f"within-subject conditions (correlated within person, r about {_rm_info.get('within_correlation', 0.5):.2f})")
+            _rm_order = _rm_info.get('order_effective') or _rm_info.get('order')
+            approach_points.append("Presented the conditions in the same fixed order to everyone (order effects are confounded with the conditions)"
+                                   if _rm_order == "fixed" else
+                                   f"Counterbalanced the presentation order ({_rm_order}); the order each participant saw is in the Order column")
+        elif len(conditions) > 1:
             approach_points.append(f"Assigned **{len(conditions)} experimental conditions** with balanced allocation")
 
         _inferred_on = (metadata.get('effect_sizes_applied') or {}).get('inferred_effects_enabled', True)
@@ -2438,7 +2474,9 @@ class InstructorReportGenerator:
         inferred_on = _inferred_effects_enabled(metadata)
 
         if effect_sizes:
-            lines.append("**Effects you specified** (the Cohen's d on the scale mean is calibrated to land "
+            lines.append("**Effects you specified** (a within-subject effect is d_av, the mean difference over the average SD of the "
+                         "two conditions; the observed value varies with sampling):" if _rm_info else
+                         "**Effects you specified** (the Cohen's d on the scale mean is calibrated to land "
                          "near the intended value; the observed value varies with sampling):")
             lines.append("")
             lines.append("| Variable | High level | Low level | Intended d (high - low) | Observed d (high - low) |")
@@ -2468,7 +2506,9 @@ class InstructorReportGenerator:
 
         # --- OBSERVED EFFECTS ---
         contrast_rows, dropped_items = _effect_contrast_rows(metadata)
-        if contrast_rows:
+        if _rm_info:
+            lines.extend(_within_observed_effect_lines(metadata))
+        elif contrast_rows:
             shown_contrasts = _cap_by_effect(contrast_rows, 12)
             lines.append("### Observed Effects in Generated Data")
             lines.append("")
@@ -2717,14 +2757,21 @@ class InstructorReportGenerator:
         lines.append("|--------|-------|--------|")
         lines.append(f"| Sample Size | N = {n_total} | {'Adequate' if n_total >= 30 else 'Small'} |")
         lines.append(f"| Exclusion Rate | {exclusion_rate:.1f}% ({n_excluded}/{n_total}) | {'Normal' if exclusion_rate < 20 else 'High'} |")
-        lines.append(f"| Condition Balance | {balance_status} | - |")
+        if is_repeated_design(metadata):
+            _rm_done = int((pd.to_numeric(df.get("Conditions_Completed"), errors="coerce") >= len(design_from_metadata(metadata)["cells"])).sum()) \
+                if "Conditions_Completed" in df.columns else n_total
+            lines.append(f"| Completed all conditions | {_rm_done} of {n_total} | {'Complete' if _rm_done == n_total else 'Some attrition'} |")
+        else:
+            lines.append(f"| Condition Balance | {balance_status} | - |")
         lines.append(f"| Missing Data | {int(df.isna().sum().sum())} cells | {'Clean' if df.isna().sum().sum() == 0 else 'Some missing'} |")
         lines.append("")
 
         lines.append("### Interpretation Guide")
         lines.append("")
         lines.append("- **Exclusion Rate**: Simulated exclusion rates typically range 5-15%. Higher rates may indicate stricter criteria or more careless responders.")
-        lines.append("- **Condition Balance**: Slight imbalances (<10%) are normal and won't affect most analyses.")
+        lines.append("- **Completed all conditions**: participants who dropped out miss the conditions presented last; paired tests use only participants with both conditions."
+                     if is_repeated_design(metadata) else
+                     "- **Condition Balance**: Slight imbalances (<10%) are normal and won't affect most analyses.")
         lines.append("- **This is simulated data**: Results demonstrate what your analysis pipeline will produce with realistic-looking data structures.")
         lines.append("")
 
@@ -2763,7 +2810,13 @@ class InstructorReportGenerator:
             # Randomization level
             design_review = metadata.get("design_review", {})
             rand_level = design_review.get("randomization_level", "Participant-level")
-            lines.append(f"| **Randomization** | {rand_level} |")
+            if is_repeated_design(metadata):
+                _d_rm = design_from_metadata(metadata)
+                lines.append(f"| **Design type** | {_d_rm['type']}-subjects ({len(_d_rm['cells'])} conditions per participant) |")
+                lines.append(f"| **Order of conditions** | {_d_rm.get('order_effective') or _d_rm.get('order')} |")
+                lines.append(f"| **Within-person correlation (requested)** | {_d_rm.get('within_correlation')} |")
+            else:
+                lines.append(f"| **Randomization** | {rand_level} |")
 
             domains = metadata.get("detected_domains", []) or []
             if domains:
@@ -2780,7 +2833,7 @@ class InstructorReportGenerator:
 
             if "CONDITION" in df.columns:
                 vc = df["CONDITION"].value_counts(dropna=False)
-                lines.append("### Condition counts")
+                lines.append("### Group counts (between-subjects groups)" if is_repeated_design(metadata) else "### Condition counts")
                 lines.append("")
                 lines.append(_safe_to_markdown(vc.to_frame("n")))
                 lines.append("")
@@ -3031,12 +3084,14 @@ class InstructorReportGenerator:
         lines.append("1. **Load the CSV** into your preferred statistical analysis tool")
         lines.append("2. **Check the codebook** (Data_Codebook_Handbook.txt) for variable definitions")
         lines.append("3. **Examine exclusion flags** — filter out flagged participants before analysis")
-        lines.append("4. **Verify your conditions** — check that CONDITION matches your expected groups")
+        lines.append("4. **Verify the design columns** — check `Order`, `Position_*` and `Conditions_Completed`"
+                     if is_repeated_design(metadata) else
+                     "4. **Verify your conditions** — check that CONDITION matches your expected groups")
         lines.append("5. **Run descriptive statistics** before hypothesis testing")
         lines.append("")
 
         conditions = metadata.get("conditions", [])
-        if conditions and len(conditions) >= 2:
+        if conditions and len(conditions) >= 2 and not is_repeated_design(metadata):  # repeated measures: see the guidance above
             lines.append("### Suggested Analysis Approach")
             lines.append("")
             if len(conditions) == 2:
@@ -3111,14 +3166,17 @@ class InstructorReportGenerator:
         lines.append("   - Check `Attention_Pass_Rate` (< 50% warrants exclusion)")
         lines.append("")
         lines.append("2. **Descriptive Statistics**")
-        lines.append("   - Calculate means and SDs by condition")
+        _rm_design = is_repeated_design(metadata)  # v1.3.0.6: within / mixed runs get paired and repeated-measures guidance
+        lines.append("   - Calculate means and SDs " + ("for each measure in each condition" if _rm_design else "by condition"))
         lines.append("   - Check for outliers (beyond 3 SD from mean)")
-        lines.append("   - Verify condition balance (N per group)")
+        lines.append("   - Check how many participants finished every condition (`Conditions_Completed`) and whether the presentation orders are balanced (`Order`)"
+                     if _rm_design else "   - Verify condition balance (N per group)")
         lines.append("   - Assess normality (Shapiro-Wilk test)")
         lines.append("")
 
         # Statistical Test Recommendations
         # v1.4.3.1: Enhanced Statistical Test Recommendations with design-specific detail
+        _rm_mark = len(lines)  # v1.3.0.6: replaced below for within / mixed runs
         lines.append("### Statistical Test Recommendations")
         lines.append("")
         has_ordinal = any(s.get('scale_points', 7) <= 5 for s in scales)
@@ -3313,6 +3371,11 @@ class InstructorReportGenerator:
         lines.append("")
         lines.append("*80% power is generally considered adequate. If power < 80% for your expected effect, consider increasing sample size.*")
         lines.append("")
+
+        if _rm_design:  # v1.3.0.6: the between-subjects tests, code and power above do not apply to repeated measures
+            from .within_report import summary_sections as _rm_summary_sections
+            del lines[_rm_mark:]
+            lines.extend(_rm_summary_sections(metadata, df))
 
         # Effect Size Guide
         lines.append("### Effect Size Interpretation")
@@ -3800,7 +3863,7 @@ class InstructorReportGenerator:
         return "\n".join(stata_lines)
 
 
-class ComprehensiveInstructorReport:
+class ComprehensiveInstructorReport(WithinReportMixin):
     """
     Generates a detailed, comprehensive report for instructors ONLY.
 
@@ -3880,6 +3943,8 @@ class ComprehensiveInstructorReport:
         """
         self.section_errors = []
         ctx = _report_context(df, metadata, prereg_text, team_info, html=False)
+        if is_repeated_design(metadata):  # within/mixed data: paired and repeated-measures methods only
+            return self._within_markdown(ctx)
         for title, build in (
             ("Study overview", self._md_overview),
             ("Data quality assurance", self._md_quality_assurance),
@@ -6917,6 +6982,8 @@ class ComprehensiveInstructorReport:
         """
         self.section_errors = []
         ctx = _report_context(df, metadata, prereg_text, team_info, html=True)
+        if is_repeated_design(metadata):  # within/mixed data: paired and repeated-measures methods only
+            return self._within_html(ctx)
         ctx.out = self._html_document_head(metadata)
         self._run_section(ctx, "Study overview", self._html_overview)
         self._run_section(ctx, "1. Sample overview", self._html_sample_overview)
