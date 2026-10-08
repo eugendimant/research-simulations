@@ -2390,11 +2390,11 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
     ),
 
     "loyalty_program_meta": MetaAnalyticEffect(
-        source="Dorotic et al. (2012); Breugelmans et al. (2015)",
+        source="NOT a meta-analysis - judgement informed by a literature review (Dorotic et al., 2012) and a research agenda (Breugelmans et al., 2015); no pooled estimate",
         effect_d=0.20,
         ci_95=(0.10, 0.30),
-        n_studies=35,
-        n_participants=100000,
+        n_studies=0,
+        n_participants=0,
         domain="consumer_psychology",
         construct="purchase_frequency",
         paradigm="loyalty_program",
@@ -2405,15 +2405,15 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
             "program_type": {"points": 0.22, "tiered": 0.28, "cashback": 0.15},
             "industry": {"airline": 0.25, "retail": 0.18, "hospitality": 0.22},
         },
-        notes="Modest effects on purchase behavior. Tiered programs most effective."
+        notes="Modest effects on purchase behavior. Tiered programs most effective. v1.3.0.6: neither cited work is a meta-analysis, so the d, interval, k (was 35) and N (was 100,000) have no pooled source; a real meta-analysis exists (Belli et al., 2022, 429 effect sizes) and was not read. Treat 0.20 as a judgement."
     ),
 
     "personalization_meta": MetaAnalyticEffect(
-        source="Aguirre et al. (2015); Tam & Ho (2006)",
+        source="NOT a meta-analysis - judgement informed by two primary experiments (Aguirre et al., 2015; Tam & Ho, 2006); no pooled estimate",
         effect_d=0.32,
         ci_95=(0.20, 0.44),
-        n_studies=40,
-        n_participants=35000,
+        n_studies=0,
+        n_participants=0,
         domain="consumer_psychology",
         construct="response_rate",
         paradigm="personalization",
@@ -2424,7 +2424,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
             "type": {"content": 0.38, "name_only": 0.15, "recommendation": 0.35},
             "privacy_concern": {"low": 0.40, "high": 0.15},
         },
-        notes="Content-based personalization effective but privacy concerns moderate effects."
+        notes="Content-based personalization effective but privacy concerns moderate effects. v1.3.0.6: both cited works are single-paper experiments, so the d, interval, k (was 40) and N (was 35,000) have no pooled source; a personalization meta-analysis of about 53 studies is described as showing a relatively small effect and was not read. Treat 0.32 as a judgement."
     ),
 
     "user_review_meta": MetaAnalyticEffect(
@@ -3555,6 +3555,20 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
     ),
 }
 
+# v1.3.0.5: paradigms added for default-effect coverage. Defined as plain data in
+# `paradigm_coverage` (recall band only; see registry/recall_coverage_v1305.json) and
+# merged here. A failed import leaves the table exactly as it was.
+try:
+    from .paradigm_coverage import PARADIGM_ENTRIES as _PARADIGM_ENTRIES
+except Exception:  # pragma: no cover
+    try:
+        from paradigm_coverage import PARADIGM_ENTRIES as _PARADIGM_ENTRIES  # type: ignore
+    except Exception:
+        _PARADIGM_ENTRIES = {}
+for _pk, _pv in _PARADIGM_ENTRIES.items():
+    if _pk not in META_ANALYTIC_DB:
+        META_ANALYTIC_DB[_pk] = MetaAnalyticEffect(**_pv)
+
 
 # =============================================================================
 # GAME CALIBRATIONS DATABASE
@@ -3641,12 +3655,23 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         game_type="ultimatum",
         variant="standard",
         mean_proportion=0.4,
-        sd_proportion=0.10,
+        sd_proportion=0.13,  # v1.3.0.6: was 0.10; offers incl. the sub-25% tail disperse ~0.13
         ci_95=(0.38, 0.42),
         distribution_shape="left_skew",
         modes=[0.50],
         n_studies=37,
         n_participants=7500,
+        # v1.3.0.5: shares of the proposer offer distribution (Camerer 2003, ch. 2;
+        # Oosterbeek et al. 2004): the modal offer is exactly half, most others sit in
+        # 40-49% or 25-39%, offers under 25% and over 50% are both rare. Without them a
+        # Beta around 0.40 put 3% of offers on 50% and 14% above it.
+        subpopulations={
+            "equal_split_50": 0.27,
+            "fair_offer_40_49": 0.26,
+            "moderate_offer_25_39": 0.30,
+            "low_offer_1_24": 0.11,
+            "hyper_fair_above_50": 0.06,
+        },
         notes="Modal offer 40-50%. Below 20% rejected ~50%."
     ),
 
@@ -3655,7 +3680,7 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         game_type="public_goods",
         variant="standard",
         mean_proportion=0.4,
-        sd_proportion=0.18,
+        sd_proportion=0.30,  # v1.3.0.5: was 0.18; contributions span the whole range (SD ~ 0.30)
         ci_95=(0.35, 0.45),
         distribution_shape="right_skew",
         modes=[0.50],
@@ -3692,6 +3717,10 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         modes=[0.0, 1.0],
         n_studies=130,
         n_participants=26000,
+        # v1.3.0.5: a Bernoulli(0.47) has SD 0.5, which no Beta can match, so on a
+        # 0-100 slider the entry silently fell back to a generic tendency (63-70%).
+        # The two point masses make the bimodality explicit.
+        subpopulations={"defect_zero": 0.53, "cooperate_100": 0.47},
     ),
 
     # ── NEW GAME CALIBRATIONS (v1.0.8.7) ──
@@ -3811,14 +3840,17 @@ GAME_CALIBRATIONS: Dict[str, GameCalibration] = {
         source="Nagel (1995)",
         game_type="beauty_contest",
         variant="standard",
-        mean_proportion=0.33,
-        sd_proportion=0.15,
-        ci_95=(0.28, 0.38),
+        mean_proportion=0.36,  # v1.3.0.6: was 0.33 (the level-1 point, not an observed mean)
+        sd_proportion=0.20,    # v1.3.0.6: was 0.15; first-round guesses spread ~20 points of 100
+        ci_95=(0.32, 0.40),
         distribution_shape="right_skew",
         modes=[0.33],
         n_studies=20,
         n_participants=4000,
-        notes="Mean guess ≈ 33 (of 0-100 with target 2/3 of average)."
+        moderators={"p_target": {"1/2": 0.27, "2/3": 0.36, "4/3": 0.68}},
+        notes=("Mean first-round guess ~36 of 0-100 for p = 2/3 (Nagel 1995; lab pools), ~27 for "
+               "p = 1/2: observed means sit above the level-1 value 50p (33 / 25) and scale with p. "
+               "Newspaper pools (Bosch-Domenech et al. 2002) average lower (~23). Recall band.")
     ),
 
     "die_roll_honesty": GameCalibration(
@@ -4954,6 +4986,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="emotional_exhaustion",
         scale_name="MBI",
         scale_points=7,
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=2.3,
         sd=1.2,
         skewness=0.3,
@@ -4978,6 +5011,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="resilience",
         scale_name="CD-RISC",
         scale_points=5,
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=3.2,
         sd=0.62,
         sample_type="general",
@@ -5061,13 +5095,14 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         source="Olatunji et al. (2007)",
         construct="disgust_sensitivity",
         scale_name="DS-R",
-        scale_points=5,
-        mean=2.6,
-        sd=0.68,
+        scale_points=5,  # 0-4 per item (v1.3.0.6: scored from zero)
+        scale_min=0.0,
+        mean=1.7,        # v1.3.0.6: total ~42 of 100; was 2.6 stored against scale_min 1
+        sd=0.62,
         sample_type="general",
         n_participants=3000,
         moderators={
-            "gender": {"male": 2.3, "female": 2.9},
+            "gender": {"male": 1.5, "female": 1.9},
         },
     ),
 
@@ -5105,6 +5140,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="perceived_stress",
         scale_name="PSS-10",
         scale_points=5,
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=1.4,
         sd=0.65,
         sample_type="general",
@@ -5389,6 +5425,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="specific_phobia",
         scale_name="FSQ",
         scale_points=8,  # 0-7 per item
+        scale_min=0.0,   # v1.3.0.6: scored from zero, as the comment above always said
         mean=1.80,
         sd=1.60,
         skewness=1.4,
@@ -5420,6 +5457,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="fatigue",
         scale_name="CFQ",
         scale_points=4,  # 0-3 per item
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=1.15,
         sd=0.65,
         skewness=0.5,
@@ -5440,6 +5478,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="flourishing",
         scale_name="PERMA-Profiler",
         scale_points=11,  # 0-10
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=7.2,
         sd=1.50,
         skewness=-0.5,
@@ -5543,6 +5582,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="optimism",
         scale_name="LOT-R",
         scale_points=5,  # 0-4
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=2.7,
         sd=0.70,
         skewness=-0.2,
@@ -5805,6 +5845,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="moral_foundations_care",
         scale_name="MFQ-30 Care",
         scale_points=6,  # 0-5
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=3.7,
         sd=0.82,
         sample_type="general",
@@ -5820,6 +5861,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="moral_foundations_fairness",
         scale_name="MFQ-30 Fairness",
         scale_points=6,  # 0-5
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=3.6,
         sd=0.80,
         sample_type="general",
@@ -5834,6 +5876,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="moral_foundations_loyalty",
         scale_name="MFQ-30 Loyalty",
         scale_points=6,  # 0-5
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=2.9,
         sd=0.90,
         sample_type="general",
@@ -5848,6 +5891,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="moral_foundations_authority",
         scale_name="MFQ-30 Authority",
         scale_points=6,  # 0-5
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=2.8,
         sd=0.92,
         sample_type="general",
@@ -5862,6 +5906,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="moral_foundations_purity",
         scale_name="MFQ-30 Purity",
         scale_points=6,  # 0-5
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=2.5,
         sd=1.05,
         skewness=0.3,
@@ -5948,6 +5993,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="empathic_concern",
         scale_name="IRI-EC",
         scale_points=5,  # 0-4
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=2.8,
         sd=0.68,
         sample_type="general",
@@ -5962,6 +6008,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="perspective_taking",
         scale_name="IRI-PT",
         scale_points=5,  # 0-4
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=2.6,
         sd=0.65,
         sample_type="general",
@@ -5976,6 +6023,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="personal_distress",
         scale_name="IRI-PD",
         scale_points=5,  # 0-4
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=2.0,
         sd=0.70,
         sample_type="general",
@@ -5990,6 +6038,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="fantasy",
         scale_name="IRI-FS",
         scale_points=5,  # 0-4
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=2.4,
         sd=0.75,
         sample_type="general",
@@ -6141,7 +6190,8 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         source="Frederick (2005); Campitelli & Gerrans (2014 expanded)",
         construct="cognitive_reflection",
         scale_name="CRT",
-        scale_points=3,  # 0-3 (proportion correct)
+        scale_points=4,  # 0-3 (proportion correct)
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=1.24,
         sd=1.08,
         skewness=0.4,
@@ -6355,6 +6405,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="work_engagement",
         scale_name="UWES-9",
         scale_points=7,  # 0-6 (never to always)
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=3.8,
         sd=1.10,
         sample_type="general",
@@ -6563,6 +6614,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="empathy",
         scale_name="TEQ",
         scale_points=5,  # 0-4
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=2.9,
         sd=0.55,
         sample_type="general",
@@ -6760,6 +6812,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="eating_pathology",
         scale_name="EDE-Q",
         scale_points=7,  # 0-6
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=1.55,
         sd=1.30,
         skewness=1.0,
@@ -6776,6 +6829,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="exercise_self_efficacy",
         scale_name="ESES",
         scale_points=11,  # 0-10 (confidence percentage / 10)
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=5.5,
         sd=2.20,
         sample_type="general",
@@ -6798,6 +6852,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="illness_threat_perception",
         scale_name="B-IPQ",
         scale_points=11,  # 0-10
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=4.5,
         sd=2.20,
         sample_type="general",
@@ -6809,6 +6864,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="pain_catastrophizing",
         scale_name="PCS",
         scale_points=5,  # 0-4
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=1.30,
         sd=0.85,
         skewness=0.6,
@@ -7217,6 +7273,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="academic_engagement",
         scale_name="UWES-S",
         scale_points=7,  # 0-6
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=3.4,
         sd=1.10,
         sample_type="student",
@@ -7516,6 +7573,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="post_traumatic_growth",
         scale_name="PTGI",
         scale_points=6,  # 0-5
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=2.8,
         sd=1.20,
         sample_type="general",
@@ -7527,6 +7585,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="psychological_hardiness",
         scale_name="DRS-15",
         scale_points=4,  # 0-3
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=2.0,
         sd=0.50,
         sample_type="general",
@@ -7538,6 +7597,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="emotion_focused_coping",
         scale_name="WCQ-EF",
         scale_points=4,  # 0-3
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=1.5,
         sd=0.55,
         sample_type="general",
@@ -7552,6 +7612,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="social_support_seeking",
         scale_name="WCQ-SS",
         scale_points=4,  # 0-3
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=1.6,
         sd=0.60,
         sample_type="general",
@@ -7566,6 +7627,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="depersonalization",
         scale_name="MBI-DP",
         scale_points=7,  # 0-6
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=2.0,
         sd=1.40,
         skewness=0.6,
@@ -7581,6 +7643,7 @@ CONSTRUCT_NORMS: Dict[str, ConstructNorm] = {
         construct="personal_accomplishment",
         scale_name="MBI-PA",
         scale_points=7,  # 0-6
+        scale_min=0.0,  # v1.3.0.5: instrument is scored from zero; the stored mean is on that metric
         mean=4.4,
         sd=1.10,
         skewness=-0.3,
@@ -7954,6 +8017,209 @@ def get_game_calibration(
         # Try just the game type with standard
         cal = GAME_CALIBRATIONS.get(f"{game_type}_standard")
     return cal
+
+
+# ---------------------------------------------------------------------------
+# Game resolution from study text (v1.3.0.6)
+# ---------------------------------------------------------------------------
+# Study text says "public goods game" or "prisoner's dilemma"; the calibration keys are
+# underscored ("public_goods_standard"), and several games (auctions, bargaining, stag
+# hunt, common pool, beauty contest, ...) were never matched by the engine's own word
+# list. This resolver maps phrases to a game type with whole-phrase matching only: a
+# survey that merely mentions "trust" or "game" does not name a game.
+import re as _re_games
+from functools import lru_cache as _lru_games
+
+#: (game_type, phrase regex over text normalised to lowercase words). Order is the tie-break
+#: only when two phrases start at the same position; otherwise the earliest mention wins.
+_GAME_PHRASES: List[Tuple[str, str]] = [
+    ("second_price_auction", r"second price|vickrey"),
+    ("all_pay_auction", r"all pay auction|all pay"),
+    ("first_price_auction", r"first price|sealed bid|auction game|auction experiment|auction task"),
+    ("beauty_contest", r"beauty contest|p beauty|guessing game|two thirds of the average|"
+                       r"2 3 of the average|keynesian"),
+    ("volunteer_dilemma", r"volunteers dilemma|volunteer dilemma"),
+    ("prisoners_dilemma", r"prisoners dilemma|prisoner dilemma|pd game"),
+    ("stag_hunt", r"stag hunt|stag and hare"),
+    ("chicken", r"game of chicken|chicken game|hawk dove|hawk and dove"),
+    ("battle_of_sexes", r"battle of the sexes|battle of sexes"),
+    ("tragedy_of_commons", r"tragedy of the commons|tragedy of commons|commons dilemma"),
+    ("common_pool_resource", r"common pool|cpr game"),
+    ("centipede", r"centipede"),
+    ("market_entry", r"market entry"),
+    ("bertrand_competition", r"bertrand"),
+    ("cournot_competition", r"cournot"),
+    ("holt_laury", r"holt laury|multiple price list"),
+    ("gift_exchange", r"gift exchange"),
+    ("nash_bargaining", r"nash bargaining|bargaining game|unstructured bargaining|"
+                        r"alternating offers? bargaining"),
+    ("die_roll", r"die roll|dice roll|die rolling|die under the cup|dice game|die task|"
+                 r"dishonesty game"),
+    ("ultimatum", r"ultimatum"),
+    ("public_goods", r"public goods?|voluntary contribution|pgg|vcm|linear public"),
+    ("trust", r"trust game|investment game|trust investment|trustor|trustee"),
+    ("dictator", r"dictator"),
+]
+
+#: Variant keywords per game type, first match wins; fall back to "standard". Each entry is
+#: (variant, regex, variable_name_only). Negations ("no punishment") are stripped first.
+_GAME_VARIANT_PHRASES: Dict[str, List[Tuple[str, str, bool]]] = {
+    "dictator": [
+        ("taking", r"taking game|taking option|take option|steal|stealing|take (?:\w+ )?from|can take|may take|"
+         r"allowed to take|option to take", False),
+        ("third_party_punishment", r"third party|3rd party", False),
+        ("earned_money", r"earned money|earned endowment|earned income|real effort", False),
+        ("deserving_receiver", r"deserving", False),
+        ("ingroup_receiver", r"ingroup|in group", True),
+        ("outgroup_receiver", r"outgroup|out group", True),
+        ("charity_option", r"charit", False),
+        ("social_distance", r"social distance", False),
+        ("multiple_recipients", r"multiple recipients|several recipients|many recipients", False),
+        ("uncertainty", r"uncertain|unknown recipient|hidden payoff", False),
+    ],
+    "trust": [
+        ("communication", r"communicat|cheap talk|chat", False),
+        ("reputation", r"reputation", False),
+        ("punishment", r"punish", False),
+        ("cross_cultural", r"cross cultural|cross national", False),
+        ("binary", r"binary trust|all or nothing", False),
+        ("risk_information", r"risk information|risk info", False),
+        ("repeated", r"repeated|iterated|multi period|multiple rounds", False),
+        ("inequality", r"inequalit", False),
+    ],
+    "ultimatum": [
+        ("mini", r"mini ultimatum", False),
+        ("third_party_allocation", r"third party", False),
+        ("alternative_offers", r"alternative offer|outside option", False),
+        ("costly_rejection", r"costly rejection|cost of rejection", False),
+        ("information_asymmetry", r"asymmetric information|information asymmetry|private information", False),
+        ("delay", r"delay", False),
+        ("communication", r"communicat|cheap talk", False),
+        ("multi_round", r"repeated|iterated|multiple rounds|multi round", False),
+    ],
+    "public_goods": [
+        ("peer_punishment", r"peer punish|costly punish|decentrali[sz]ed punish", False),
+        ("punishment", r"punish", False),
+        ("reward", r"reward", False),
+        ("threshold", r"threshold|provision point", False),
+        ("step_level", r"step level", False),
+        ("communication", r"communicat|cheap talk", False),
+        ("leadership", r"leader", False),
+        ("repeated_decay", r"repeated|iterated|multiple rounds|decay", False),
+        ("inequality", r"inequalit|heterogeneous endowment", False),
+    ],
+    "prisoners_dilemma": [
+        ("punishment", r"punish", False),
+        ("iterated", r"iterated|repeated|axelrod|tit for tat", False),
+        ("reputation", r"reputation", False),
+        ("exit_option", r"exit option|opt out", False),
+        ("multiplayer", r"multiplayer|n person|multi person", False),
+        ("asymmetric_payoffs", r"asymmetric", False),
+        ("costly_signaling", r"costly signal", False),
+    ],
+    "stag_hunt": [("communication", r"communicat|cheap talk", False)],
+    "common_pool_resource": [("communication", r"communicat|cheap talk", False)],
+    "beauty_contest": [("iterated", r"iterated|repeated|multiple rounds", False)],
+}
+
+#: Variants that describe repetition; a one-shot design never selects them.
+_REPEATED_VARIANTS = {"repeated", "multi_round", "repeated_decay", "iterated"}
+
+_NEGATION = _re_games.compile(r"\b(?:no|without|non|not|absence of|absent)\s+(?:\w+\s+)?\w+")
+_ONE_SHOT = _re_games.compile(r"\bone shot\b|\bsingle round\b|\bsingle shot\b|\bone round\b")
+_GAME_RX = [(g, _re_games.compile(r"(?<![a-z0-9])(?:" + pat + r")(?![a-z0-9])"))
+            for g, pat in _GAME_PHRASES]
+
+
+def _norm_game_text(text: str) -> str:
+    """Lowercase words separated by single spaces; apostrophes dropped, other punctuation a space."""
+    t = str(text or "").lower().replace("\u2019", "").replace("'", "")
+    return " " + _re_games.sub(r"[^a-z0-9]+", " ", t).strip() + " "
+
+
+def _first_game_in(norm: str) -> Optional[str]:
+    best: Optional[Tuple[int, int, str]] = None
+    for order, (g, rx) in enumerate(_GAME_RX):
+        m = rx.search(norm)
+        if m and (best is None or (m.start(), order) < best[:2]):
+            best = (m.start(), order, g)
+    return best[2] if best else None
+
+
+@_lru_games(maxsize=2048)
+def detect_game_type(var_text: str = "", title: str = "", description: str = "",
+                     conditions: str = "") -> Tuple[Optional[str], str]:
+    """Name the economic game a design describes, with the text it came from.
+
+    Looks at the variable name first, then the study title, then the description, then the
+    condition labels, and returns ``(game_type, source)`` with source in
+    ``{"variable", "title", "description", "conditions"}`` (``(None, "")`` when no game is
+    named). Only whole game phrases count ("public goods game", "prisoner's dilemma",
+    "stag hunt"); "trust" or "game" alone never does.
+    """
+    for source, text in (("variable", var_text), ("title", title),
+                         ("description", description), ("conditions", conditions)):
+        g = _first_game_in(_norm_game_text(text))
+        if g:
+            return g, source
+    return None, ""
+
+
+@_lru_games(maxsize=1)
+def _game_key_index() -> Dict[Tuple[str, str], str]:
+    return {(c.game_type, c.variant): k for k, c in GAME_CALIBRATIONS.items()}
+
+
+@_lru_games(maxsize=2048)
+def resolve_game_calibration_key(var_text: str = "", title: str = "", description: str = "",
+                                 conditions: str = "") -> Optional[str]:
+    """Key of the GAME_CALIBRATIONS entry that describes this design, or None.
+
+    The game comes from :func:`detect_game_type`. The variant (punishment, communication,
+    repeated, ...) is read from the variable name, title and description only, never from the
+    condition labels, so a condition called "Punishment" does not move the baseline of every
+    arm (the condition effect is a separate mechanism and must stay switchable). Negated phrases
+    ("no punishment") and one-shot designs do not select a variant.
+    """
+    game, _src = detect_game_type(var_text, title, description, conditions)
+    if not game:
+        return None
+    index = _game_key_index()
+    own = _norm_game_text(" ".join((title, description)))
+    var_norm = _norm_game_text(var_text)
+    own_clean = _NEGATION.sub(" ", own)
+    var_clean = _NEGATION.sub(" ", var_norm)
+    one_shot = bool(_ONE_SHOT.search(own))
+    for variant, pat, var_only in _GAME_VARIANT_PHRASES.get(game, []):
+        if one_shot and variant in _REPEATED_VARIANTS:
+            continue
+        rx = _re_games.compile(r"(?<![a-z0-9])(?:" + pat + r")")  # stems: leading boundary only
+        hay = var_clean if var_only else var_clean + own_clean
+        if rx.search(hay) and (game, variant) in index:
+            return index[(game, variant)]
+    return index.get((game, "standard"))
+
+
+_DECISION_TOKENS = frozenset({
+    "choice", "decision", "decide", "action", "move", "cooperate", "cooperation", "coop",
+    "defect", "defection", "bid", "guess", "effort", "wage", "harvest", "extraction", "extract",
+    "entry", "enter", "volunteer", "stag", "hare", "report", "reported", "claim", "offer",
+    "contribution", "contribute", "invest", "investment", "invested", "return", "returned",
+    "sent", "send", "pass", "stop", "take", "price", "quantity", "output", "safe", "give",
+    "giving", "share", "allocation", "amount", "payoff", "number", "pick", "selection", "rejection",
+    "accept", "acceptance", "punishment", "reward", "demand", "proposal", "split", "ask",
+    "request", "concession", "agreement", "allocate",
+})
+
+
+def looks_like_game_decision(var_text: str) -> bool:
+    """Whether a variable name reads like a game decision (a choice, bid, offer, report, ...).
+
+    Used with a game named in the study text: a Likert "Trust_in_Government" scale in a study
+    that mentions a trust game is not a game outcome, a column called "Choice" or "Bid" is.
+    """
+    tokens = set(_norm_game_text(var_text).split())
+    return bool(tokens & _DECISION_TOKENS)
 
 
 def get_construct_norm(

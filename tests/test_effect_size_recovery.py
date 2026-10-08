@@ -204,18 +204,29 @@ def test_condition_names_do_not_create_effects(hi, lo):
 def test_control_sits_between_levels_of_configured_effect():
     """A condition matching neither level of a configured effect is the reference
     level: it must sit near the midpoint, not receive keyword effects."""
-    df = _named_run("Version A", "Version B", 0.6, extra_conds=("Control",))
-    ac, cb = _pair_d(df, "Version A", "Control"), _pair_d(df, "Control", "Version B")
+    # v1.3.0.6: averaged over three seeds. A single run's |A-C minus C-B| has SD ~0.15 at
+    # n = 400 per arm (8 seeds), so the 0.22 bound failed ~13% of seeds by sampling noise alone;
+    # any change to the random stream (e.g. the careless-persona share) moved seed 3 across it.
+    runs = [_named_run("Version A", "Version B", 0.6, extra_conds=("Control",), seed=s)
+            for s in (3, 7, 13)]
+    ac = float(np.mean([_pair_d(df, "Version A", "Control") for df in runs]))
+    cb = float(np.mean([_pair_d(df, "Control", "Version B") for df in runs]))
     assert abs(ac - cb) < 0.22, f"control not centred: A-C={ac:.2f}, C-B={cb:.2f}"
     assert ac > 0.1 and cb > 0.1
 
 
 def test_automatic_valence_effect_is_literature_sized():
     """With no d configured, a positive-vs-negative valence manipulation should give
-    a moderate effect (~0.6; Balliet/valence literature), not the old ~1.3."""
+    a moderate effect (~0.6; Balliet/valence literature), not the old ~1.3.
+
+    v1.3.0.5: this study's title names "framing", so the effect is the framing
+    meta-analysis (published d 0.31) and, like every inferred paradigm effect, it is
+    shrunk toward the replication effect (x0.45 since v1.3.0.6, with a between-study draw, never
+    below 0.35 x published). The lower bound drops from 0.3 to 0.1 for that reason
+    alone; the upper bound still catches a return to the old inflated magnitude."""
     df = _named_run("Positive feedback", "Negative feedback", 0.0, with_spec=False)
     d = _pair_d(df, "Positive feedback", "Negative feedback")
-    assert 0.3 <= d <= 0.9, f"automatic valence effect d={d:.2f}"
+    assert 0.1 <= d <= 0.9, f"automatic valence effect d={d:.2f}"
 
 
 @pytest.mark.parametrize("target", [0.5, 0.8])
@@ -401,9 +412,22 @@ def _auto_d(title, conds, dv, n=1600, seed=7):
     ("Mindfulness-based intervention and distress", ["Mindfulness", "Waitlist control"], "Distress", -0.55),
 ])
 def test_meta_anchored_effect_magnitude(title, conds, dv, expected):
-    """A named paradigm gets its published magnitude (and the right sign)."""
+    """A named paradigm gets its published magnitude, replication-shrunk (and the right sign).
+
+    v1.3.0.5: ``expected`` stays the PUBLISHED d. An inferred effect is multiplied by 0.45
+    and given a between-study draw (SD about 0.1-0.15 d), so the target is 0.45 x published
+    with a band of max(30%, 0.12) -- wide enough for the draw, narrow enough to fail if
+    the shrinkage were removed (the published value would sit outside it for the large
+    effects, which are also asserted to be clearly below the published d)."""
     d = _auto_d(title, conds, dv)
-    assert 0.7 * abs(expected) <= abs(d) <= 1.3 * abs(expected), f"d={d:.2f} vs meta {expected}"
+    if abs(expected) < 0.3:
+        # v1.3.0.6: a shrunk target of ~0.08 sits inside one run's sampling error (SE ~0.05 at N = 1,600;
+        # the seed-7 run gave -0.007 on the integration head too), so a sign check needs several runs.
+        d = float(np.mean([d] + [_auto_d(title, conds, dv, seed=s) for s in (8, 9, 10, 11)]))
+    target = 0.45 * abs(expected)
+    assert abs(abs(d) - target) <= max(0.30 * target, 0.12), f"d={d:.2f} vs shrunk {target:.2f}"
+    if abs(expected) >= 0.5:
+        assert abs(d) < 0.85 * abs(expected), f"d={d:.2f} is not below the published {expected}"
     assert np.sign(d) == np.sign(expected)
 
 

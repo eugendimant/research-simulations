@@ -28,7 +28,7 @@ caller's own fallback is explicit and inspectable.
 """
 from __future__ import annotations
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 import math
 import random
@@ -52,12 +52,12 @@ except Exception:  # pragma: no cover
 
 try:
     from .empirical_registry import (  # type: ignore
-        EffectPolicy, adjust_effect, status_of, provenance_of,
+        EffectPolicy, adjust_effect, status_of, provenance_of, policy_factor,
     )
 except Exception:  # pragma: no cover
     try:
         from empirical_registry import (  # type: ignore
-            EffectPolicy, adjust_effect, status_of, provenance_of,
+            EffectPolicy, adjust_effect, status_of, provenance_of, policy_factor,
         )
     except Exception:
         EffectPolicy = None  # type: ignore
@@ -70,6 +70,18 @@ except Exception:  # pragma: no cover
 
         def provenance_of(kind: str, key: str):  # type: ignore
             return None
+
+        def policy_factor(policy: Any = None) -> float:  # type: ignore
+            return 1.0
+
+
+try:
+    from . import paradigm_coverage as _pcov  # type: ignore
+except Exception:  # pragma: no cover
+    try:
+        import paradigm_coverage as _pcov  # type: ignore
+    except Exception:
+        _pcov = None  # type: ignore
 
 
 @dataclass
@@ -84,6 +96,11 @@ class EffectMatch:
     paradigm: str
     status: str
     matched_tokens: Tuple[str, ...]
+    #: Set when the match came from a curated condition-label rule (not a content match).
+    rule: str = ""
+    #: The engine flips the sign of a polarity-aware match for symptom-type DVs.
+    polarity_aware: bool = False
+    shrinkage: float = 1.0       # publication-bias factor the policy applied
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -95,7 +112,9 @@ class EffectMatch:
             "construct": self.construct,
             "paradigm": self.paradigm,
             "verification": self.status,
+            "shrinkage_factor": round(self.shrinkage, 4),
             "matched_tokens": list(self.matched_tokens),
+            **({"rule": self.rule} if self.rule else {}),
         }
 
 
@@ -106,7 +125,13 @@ class _EffectIndex:
         self.entries = db
         self.doc_tokens: Dict[str, set] = {}
         df: Dict[str, int] = {}
+        # Entries added by `paradigm_coverage` are reached only through its curated label
+        # rules: a content match on their wording would let them join (and shift the
+        # document frequencies of) the open-ended ranking that the older entries rely on.
+        _rule_only = getattr(_pcov, "RULE_ONLY_KEYS", frozenset()) if _pcov is not None else frozenset()
         for key, e in db.items():
+            if key in _rule_only:
+                continue
             toks = set()
             for src in (key,
                         getattr(e, "construct", "") or "",
@@ -174,15 +199,111 @@ MIN_SHARED_TOKENS = 2
 REQUIRE_CONDITION_TOKEN = True
 
 
+import re as _re_q
+
+#: v1.3.0.6 -- words that mark a label as the plain / reference form of something ("Generic brand",
+#: "Standard price", "Basic plan"). A label carrying one names the absence of a manipulation, so it
+#: cannot select a paradigm: "Generic brand" used to match brand extension on the word "brand" and
+#: gave the comparison arm of "Premium vs Generic brand" a made-up effect of its own.
+QUALIFIER_WORDS = frozenset({
+    "generic", "standard", "basic", "regular", "plain", "ordinary", "normal", "typical", "common",
+    "usual", "unbranded", "nobrand", "stock", "baseline", "usualcare",
+})
+
+#: "default" is a paradigm word ("Default option", "Opt-out default") but a qualifier next to a thing
+#: ("Default brand", "default plan"): only the second use is vetoed.
+_QUALIFIER_PHRASE = _re_q.compile(r"(?<![a-z0-9])default[\s_-]+(?:brand|product|plan|tier|version|supplier|provider)s?(?![a-z0-9])")
+
+#: Words that occur in many labels without naming a manipulation. A label token from this set (or a
+#: qualifier) does not count as the paradigm's distinctive token.
+GENERIC_LABEL_TOKENS = frozenset({
+    "control", "brand", "consumer", "product", "group", "test", "treatment", "condition", "behavior",
+    "behaviour", "psychology", "social", "website", "original", "effective", "outcome", "attitude",
+    "study", "experiment", "task", "version", "type", "level", "high", "low", "choice", "option",
+    "health", "mental", "ment",
+})
+
+#: A distinctive label token occurs in at most this many paradigms of the table.
+MAX_DISTINCTIVE_DF = 3
+
+
+def _has_qualifier(condition: str) -> bool:
+    """Whether a whole word of the label is a plain / reference qualifier (see QUALIFIER_WORDS)."""
+    words = {w.lower() for w in tokenize(condition)}
+    return bool(words & QUALIFIER_WORDS) or bool(_QUALIFIER_PHRASE.search(str(condition).lower()))
+
+
 def _is_confident(idx: "_EffectIndex", shared: Tuple[str, ...], score: float,
                   thr: float, condition_tokens: Optional[set] = None) -> bool:
     """Whether a match is specific enough to override the caller's own fallback."""
     if len(shared) < MIN_SHARED_TOKENS or score < thr:
         return False
     if REQUIRE_CONDITION_TOKEN and condition_tokens is not None:
-        if not (set(shared) & condition_tokens):
+        from_label = set(shared) & condition_tokens
+        if not from_label:
+            return False
+        # v1.3.0.6: the label must share a DISTINCTIVE token with the paradigm -- rare in the table and
+        # not a generic or qualifier word. "brand" (5 paradigms) or "default" next to "brand" is not
+        # enough to say which paradigm a label belongs to.
+        generic = {_stem(w) for w in GENERIC_LABEL_TOKENS | QUALIFIER_WORDS}
+        distinctive = [t for t in from_label if t not in generic and idx.df.get(t, 99) <= MAX_DISTINCTIVE_DF]
+        if not distinctive:
             return False
     return True
+
+
+def _rule_lookup(condition: str, policy: Optional[Any] = None,
+                 rng: Optional[random.Random] = None) -> Optional[EffectMatch]:
+    """Match a condition LABEL against the curated paradigm phrases, or None.
+
+    Stricter than the content ranking: a whole-word phrase from the label, no
+    negator or direction-reversing word, and one unambiguous entry.
+    """
+    if _pcov is None:
+        return None
+    try:
+        rule = _pcov.match_label_rule(condition)
+    except Exception:
+        return None
+    if rule is None:
+        return None
+    try:
+        from . import scientific_knowledge_base as skb  # type: ignore
+    except Exception:  # pragma: no cover
+        try:
+            import scientific_knowledge_base as skb  # type: ignore
+        except Exception:
+            return None
+    entry = (getattr(skb, "META_ANALYTIC_DB", {}) or {}).get(rule.key)
+    if entry is None:
+        return None
+    published = float(getattr(entry, "effect_d", 0.0) or 0.0) * rule.sign
+    if abs(published) < 0.02:
+        return None
+    tau = float(getattr(entry, "heterogeneity_tau", 0.0) or 0.0)
+    adjusted = adjust_effect(published, kind="meta", key=rule.key, policy=policy, rng=rng, tau=tau)
+    return EffectMatch(
+        key=rule.key, effect_d=adjusted, published_d=published, score=0.0,
+        source=getattr(entry, "source", "") or "",
+        construct=getattr(entry, "construct", "") or "",
+        paradigm=getattr(entry, "paradigm", "") or "",
+        status=status_of("meta", rule.key), matched_tokens=(),
+        rule="label_phrase", polarity_aware=bool(rule.polarity_aware),
+    )
+
+
+def lookup_curated(condition: str, policy: Optional[Any] = None,
+                   rng: Optional[random.Random] = None) -> Optional[EffectMatch]:
+    """Match for a paradigm ADDED by `paradigm_coverage`, from the condition label alone.
+
+    The engine consults this before its keyword rules, because the keyword rules know no
+    more about these paradigms than a generic valence. Older entries are not eligible here:
+    for them the keyword rules stay first, exactly as before.
+    """
+    _hit = _rule_lookup(condition, policy=policy, rng=rng)
+    if _hit is None or _pcov is None or _hit.key not in getattr(_pcov, "RULE_ONLY_KEYS", ()):
+        return None
+    return _hit
 
 
 def lookup(
@@ -203,6 +324,15 @@ def lookup(
     idx = _index()
     if idx is None:
         return None
+    # Curated label phrases first -- except in economic-game designs, whose effects belong to the
+    # game models; there the older content ranking runs alone, exactly as before.
+    _hit = None
+    if not (_pcov is not None and _pcov.is_economic_game_text(f"{condition} {variable} {study_context}")):
+        _hit = _rule_lookup(condition, policy=policy, rng=rng)
+    if _hit is not None:
+        return _hit
+    if _has_qualifier(condition):
+        return None      # a plain / reference label ("Generic brand") names no manipulation
     thr = MATCH_THRESHOLD if threshold is None else float(threshold)
     cond_tokens = {_stem(t) for t in tokenize(condition)}
     tokens = tokenize(condition) * 2 + tokenize(variable) + tokenize(study_context)
@@ -219,7 +349,8 @@ def lookup(
         if abs(published) < 0.02:
             continue           # a marginal, not a contrast
         status = status_of("meta", key)
-        tau = float(getattr(entry, "heterogeneity_tau", 0.0) or 0.0)
+        # An entry that reports no tau gets the policy's default, not "no draw".
+        tau = float(getattr(entry, "heterogeneity_tau", 0.0) or 0.0) or None
         adjusted = adjust_effect(published, kind="meta", key=key,
                                  policy=policy, rng=rng, tau=tau)
         return EffectMatch(
@@ -228,6 +359,7 @@ def lookup(
             construct=getattr(entry, "construct", "") or "",
             paradigm=getattr(entry, "paradigm", "") or "",
             status=status, matched_tokens=shared,
+            shrinkage=policy_factor(policy),
         )
     return None
 

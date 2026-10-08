@@ -95,10 +95,11 @@ Ordered by (frequency of need × value ÷ risk). These are larger, mostly
 **structural** additions that need their own design + validation passes.
 
 ### Tier A — High value, medium risk (next)
-1. **Within-subjects done properly** — `design_type="within"/"mixed"` is currently
-   structurally simulated as between-subjects. Needs repeated DV columns
-   (`DV_T1/T2…`) from a shared per-participant latent + level shift, giving
-   realistic test-retest r≈0.5–0.7. *(Highest-value remaining design gap.)*
+1. ~~**Within-subjects done properly**~~ — **Done (v1.3.0.6)**: `design_type="within"/"mixed"`
+   generates repeated measures in wide and long layouts (`utils/within_design.py`), with a
+   shared person-level latent (default r = 0.5), d_av effects, counterbalancing, attrition and a
+   repeated-measures report, condition-bound open-ended text, and a Type III mixed ANOVA with the
+   between factors as full factors. Still open: person-specific growth slopes.
 2. **Slider continuous realism** — sliders generate as bounded integers;
    feeling-thermometers/VAS could use finer granularity + endpoint heaping.
    Low risk. **Re-prioritized 2026-10-06:** this was ranked "modest value" on a

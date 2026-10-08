@@ -1,0 +1,1221 @@
+{
+ "schema_version": 1,
+ "generated_by": "tools/derive_evidence_benchmarks.py",
+ "generated_on": "2026-10-08",
+ "note": "7-point straight-lining rates by block width and keying, measured on HEXACO-IPIP facets. Scoped to seven response options, so 5- and 9-point blocks keep the entries in item_process.json.",
+ "entries": [
+  {
+   "entry_id": "item.likert.same.k3.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.11190336410837583,
+   "dispersion": 0.025146269154533375,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     3,
+     3
+    ],
+    "keying": "same",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: EDepe (n=22783, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  },
+  {
+   "entry_id": "item.likert.mixed.k3.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.03900939162900468,
+   "dispersion": 0.014167039920741949,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     3,
+     3
+    ],
+    "keying": "mixed",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  },
+  {
+   "entry_id": "item.likert.same.k4.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.05449814251561325,
+   "dispersion": 0.01868662833264069,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     4,
+     4
+    ],
+    "keying": "same",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: EDepe (n=22783, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  },
+  {
+   "entry_id": "item.likert.mixed.k4.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.013742947124030293,
+   "dispersion": 0.006229076703721258,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     4,
+     4
+    ],
+    "keying": "mixed",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  },
+  {
+   "entry_id": "item.likert.same.k5.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.030929667291633406,
+   "dispersion": 0.01332811259205696,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     5,
+     5
+    ],
+    "keying": "same",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: EDepe (n=22783, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  },
+  {
+   "entry_id": "item.likert.mixed.k5.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.0056667353573621486,
+   "dispersion": 0.0027873222193238495,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     5,
+     5
+    ],
+    "keying": "mixed",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  },
+  {
+   "entry_id": "item.likert.same.k6.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.01748537746111112,
+   "dispersion": 0.010001700289198364,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     6,
+     6
+    ],
+    "keying": "same",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EDepe (n=22783, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  },
+  {
+   "entry_id": "item.likert.mixed.k6.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.002839892503682551,
+   "dispersion": 0.0013400357788849173,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     6,
+     6
+    ],
+    "keying": "mixed",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  },
+  {
+   "entry_id": "item.likert.same.k7.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.009821401108119568,
+   "dispersion": 0.006230093914561992,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     7,
+     7
+    ],
+    "keying": "same",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: EDepe (n=22783, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  },
+  {
+   "entry_id": "item.likert.mixed.k7.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.001601695459100633,
+   "dispersion": 0.00073265464680628,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     7,
+     7
+    ],
+    "keying": "mixed",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  },
+  {
+   "entry_id": "item.likert.same.k8.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.007183999553911483,
+   "dispersion": 0.005122388543120337,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     8,
+     8
+    ],
+    "keying": "same",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: EDepe (n=22783, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  },
+  {
+   "entry_id": "item.likert.mixed.k8.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.00108592391904757,
+   "dispersion": 0.000427356441039119,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     8,
+     8
+    ],
+    "keying": "mixed",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  },
+  {
+   "entry_id": "item.likert.same.k9.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.0037972397235825936,
+   "dispersion": 0.0005283988412608133,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     9,
+     9
+    ],
+    "keying": "same",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: EDepe (n=22783, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  },
+  {
+   "entry_id": "item.likert.mixed.k9.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.0009036631745029716,
+   "dispersion": 0.0002990329436356166,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     9,
+     9
+    ],
+    "keying": "mixed",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  },
+  {
+   "entry_id": "item.likert.same.k10.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.002765219681341351,
+   "dispersion": null,
+   "dispersion_kind": "none",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     10,
+     10
+    ],
+    "keying": "same",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: EDepe (n=22783, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Derived from a single contributing block or study, so the value is an order of magnitude rather than a precise rate",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  },
+  {
+   "entry_id": "item.likert.mixed.k10.sp7.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.000740486936989134,
+   "dispersion": 0.00018017873213496438,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     10,
+     10
+    ],
+    "keying": "mixed",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": true
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a third as often as a 5-point one, so the 5-point rate must not be reused"
+   ]
+  }
+ ]
+}

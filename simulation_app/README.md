@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.3.0.5** — a Streamlit app that turns a Qualtrics survey export into a realistic synthetic pilot dataset.
+**Version 1.3.0.6** — a Streamlit app that turns a Qualtrics survey export into a realistic synthetic pilot dataset.
 
 ## What it does
 
@@ -31,7 +31,7 @@ Note which engine covers the remainder: picking Built-in AI or Your API Key sets
 
 Built-in provider chain, tried in order until one responds: Google Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Gemini 2.5 Flash Lite → Groq GPT-OSS 120B → Groq Qwen3.6 27B → SambaNova Llama 3.3 70B → OpenRouter Mistral Small 3.1.
 
-## The behavioral engine (v1.3.0.5)
+## The behavioral engine (v1.3.0.6)
 
 **Numeric responses.** Each participant is one person with a persistent identity: eight response-style traits and a latent attitude vector, which together drive their answers. Condition effects are applied as deterministic mean shifts; individual variance is applied separately.
 
@@ -83,6 +83,7 @@ Everything detected is editable before generation, and a "Generate Preview (5 ro
 | `Simulated_Data.csv` | The dataset, laid out like a Qualtrics download: 17 survey-metadata columns (`StartDate`, `ResponseId`, `Duration (in seconds)`, …) then condition, demographics, attention checks and the raw scale items |
 | `Simulation_Diagnostics.csv` | Everything a real Qualtrics export would not have, keyed by `ResponseId`: participant and run IDs, the seed, scale composites (`<Scale>_mean`), timing, the quality flags and `Exclude_Recommended`, and the seven `ABE3_*` columns |
 | `Simulated_Data_Qualtrics_Raw.csv` | The same data with Qualtrics' three-row header (names / question text / ImportId) |
+| `Simulated_Data_Long.csv` | Within-subjects and mixed designs only: one row per participant and condition, keyed by `ResponseId` |
 | `Data_Codebook_Handbook.txt` | Variable and coding descriptions |
 | `R_Prepare_Data.R` | R loading/prep script |
 | `Python_Prepare_Data.py` | pandas |
@@ -115,6 +116,19 @@ Optional dependencies (scipy, matplotlib, pdfplumber, PyMuPDF, requests, openpyx
 4. **Generate** — pick a method, generate, download the ZIP
 
 Export both files from Qualtrics under Survey → Tools → Import/Export (Export Survey for the QSF, Print Survey for the PDF).
+
+### Within-subjects and mixed designs
+
+Choose **Within-subjects** (every participant answers every condition) or **Mixed design** (between-subjects groups x within-subject conditions such as Pre/Post or Time 1-3) on the study-description page or the Design page. The data come out in the layout of a repeated-measures survey export: one row per participant, one column per measure and condition (`Trust_Pre_1`, `Trust_Post_1`), plus `Order`, `Position_<Condition>` and `Conditions_Completed`, and `Simulated_Data_Long.csv` with one row per participant and condition.
+
+- The same measure is correlated across conditions through a person-level latent (default r = 0.5, adjustable; attitude measures typically fall at 0.4-0.7). Scale reliability is kept in every block, a careless responder is careless in every condition, there is one attention check per participant, and a participant who drops out loses the *later* conditions.
+- Presentation order can be random, a balanced Latin square, every permutation or fixed; a small, switchable order/fatigue drift lets `Order` serve as a covariate.
+- A requested Cohen's d on a within factor is **d_av** (mean difference over the average SD of the two conditions, comparable to a between-subjects d); the paired d_z is reported next to it. Effects on several within factors add per factor; in a mixed design a group effect and a group x time interaction can both be requested. Effects inferred from condition names work too, with the reference level as the zero point.
+- A QSF whose blocks repeat the same questions for everyone (Pre/Post, T1/T2, waves) gets a *suggestion* to use a within design; nothing is switched on by itself.
+- Open-ended questions that sit in a block named after one condition (or are marked as asked in every condition) are written once per condition (`Question_Condition`), for that condition; others are answered once. A fixed presentation order adds no drift by default and says that order is confounded with the conditions.
+- The instructor report uses paired t-tests (d_z and d_av with CIs, Holm-adjusted for several pairs), repeated-measures ANOVA with Mauchly's test and Greenhouse-Geisser / Huynh-Feldt corrections, a mixed ANOVA (between factors as full factors, Type III), and Wilcoxon / Friedman checks, all implemented with numpy only. Between-subjects tests are never run on these data. The data-preparation scripts understand the wide layout (they still only prepare the data).
+
+See `docs/guide/how-effects-work.md` (within effects) and `docs/guide/limitations.md`.
 
 ### Factorial designs
 
@@ -149,6 +163,7 @@ research-simulations/
 │   │   ├── enhanced_simulation_engine.py   # the simulation pipeline
 │   │   ├── adaptive_behavioral_engine_v2.py
 │   │   ├── qsf_preview.py                  # QSF parsing, DV/condition detection
+│   │   ├── within_design.py, within_stats.py, within_report.py, within_scripts.py   # within / mixed designs
 │   │   ├── scientific_knowledge_base.py    # meta-analytic effects, game calibrations
 │   │   ├── persona_library.py              # 78 personas
 │   │   ├── response_library.py             # offline open-ended generation
@@ -184,6 +199,6 @@ Every run sends the instructor notification (the statistical report, the detaile
 Created by Dr. Eugen Dimant. Licensed under the [PolyForm Noncommercial License 1.0.0](../LICENSE): noncommercial use, including research and teaching, is free; commercial use needs the author's permission.
 
 ```
-Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 1.3.0.5) [Computer software].
+Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 1.3.0.6) [Computer software].
 https://github.com/eugendimant/research-simulations
 ```

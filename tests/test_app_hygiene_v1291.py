@@ -522,26 +522,33 @@ def test_builder_radio_preselects_the_design_from_the_condition_labels(apptest_e
     assert not at.exception, [str(e.value) for e in at.exception]
     radio = next(r for r in at.radio if r.key == "builder_design_type_input")
     assert radio.value == expected
-    note = [w for w in at.warning if "one condition per participant" in w.value]
-    assert bool(note) == (expected != "between")
+    # v1.3.0.6: within-subjects is generated for real, so no "not modelled" warning; the setup appears instead
+    assert not [w for w in at.warning if "one condition per participant" in w.value]
+    assert any("Repeated-measures setup" in m.value for m in at.markdown) == (expected == "within")
 
 
-# ---- 6. the design-structure note says only what is true -----------------------------------------
-def test_design_structure_note_does_not_claim_the_design_type_is_recorded(apptest_env):
+# ---- 6. the design type is real: it is recorded and it changes the data (v1.3.0.6) -----------------
+def test_choosing_within_subjects_is_recorded_and_shapes_the_data(apptest_env):
     at = _qsf_generate_page(n=40)
     _goto(at, 2)
     next(s for s in at.selectbox if s.key == "design_type_select").select("Within-subjects (each participant sees all conditions)")
     at.run()
-    notes = [w.value for w in at.warning if "one condition per participant" in w.value]
-    assert len(notes) == 1, notes
-    note = notes[0]
+    assert not [w for w in at.warning if "one condition per participant" in w.value]   # the old "not modelled" note is gone
     _goto(at, 3)
-    metadata = json.loads(_click_generate(at)["Metadata.json"])
-    # A note may only promise that the choice is recorded when Metadata.json really holds it.
-    if "recorded" in note.lower() or "design summary" in note.lower():
-        assert "design_type" in metadata.get("design_review", {}), "the note claims a record that does not exist"
-    assert "repeated measures" in note and "does not change" in note
+    files = _click_generate(at)
+    metadata = json.loads(files["Metadata.json"])
+    assert metadata["design_review"]["design_type"] == "within"
+    assert metadata["design"]["type"] == "within" and len(metadata["design"]["cells"]) >= 2
+    assert "Simulated_Data_Long.csv" in files
     assert str(metadata["design_review"].get("randomization_level")).startswith("Participant-level")
+
+
+def test_cluster_level_randomization_keeps_its_note(apptest_env):
+    at = _qsf_generate_page(n=40)
+    _goto(at, 2)
+    next(s for s in at.selectbox if s.key == "rand_level_select").select("Group/Cluster-level")
+    at.run()
+    assert [w for w in at.warning if "not modelled" in w.value and "clustered" in w.value]
 
 
 # ---- 7. QSF collector: duplicates do not spend the upload budget, names stay distinct ------------

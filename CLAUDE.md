@@ -254,6 +254,36 @@ Runs in this order:
 
 ---
 
+## Within-subjects and mixed designs (v1.3.0.6) — DO NOT regress
+
+- **Between-subjects output is bit-identical.** `design=None` (the default) never touches the new code. `generate()` dispatches to
+  `utils/within_design.generate_repeated` only when `engine.design_spec` is set. Guard: `BASELINE_HASHES` in
+  `tests/test_within_design_v1306.py` (df and metadata hashes recorded on commit 6d97a95). Never "improve" the between path while
+  working on repeated measures.
+- **One inner pass, not k runs.** A repeated-measures run builds an inner single-pass engine whose scales are replicated once per
+  within-condition (`<DV>_occ<j>`) with a Kronecker correlation matrix; that gives one persona / demographics / attention check /
+  careless style per person for free. Columns are renamed to `<DV>_<condition>_<i>` / `_mean`; never generate the conditions with
+  independent engine runs (the same person would not exist across conditions). The inner engine shares the outer engine's
+  `llm_generator` (the pre-flight check and the watchdog talk to the outer one).
+- **A within `cohens_d` is d_av** (mean difference / average SD of the two conditions); d_z is reported beside it
+  (`d_z = d_av / sqrt(2(1 - r))`). Specs on one factor combine by least squares, on different factors add; a mixed design's group
+  effect is present after the baseline first level unless the spec carries `at` (the minimal interaction route).
+  Guards: `test_recovery_of_d_av_*`, `test_chained_specs_*`, `test_factorial_within_effects_add_per_factor`,
+  `test_interaction_can_be_requested_at_one_within_level`.
+- **Careless is a property of the person.** Straight-liners (flagged, or constant in half or more of the blocks) are constant in every
+  block and receive no effect or correlation shift (the effect is scaled up by the careless share so the sample-level d_av holds).
+  Attrition removes the LATER presentation positions. Guards: `test_a_careless_person_is_careless_in_every_condition`,
+  `test_attrition_removes_the_later_conditions`.
+- **Text follows the condition.** An open-ended question bound to a within-condition (block name contains one condition label, `within_condition`, or `per_condition`) is replicated per condition with `_condition_override` / `_condition_suffix` / `_response_slice` (three small hooks in the OE loop); the LLM/anti-hang rules are untouched because it is the same loop. Fixed order adds no drift by default and records a note. Guards: `test_open_ended_questions_are_bound_*`, `test_fixed_order_adds_no_drift_*`.
+- **Reports never run between-subjects tests on repeated data.** `instructor_report.is_repeated_design(metadata)` routes the Markdown/HTML
+  instructor reports to `within_report` (paired t, RM-ANOVA with Mauchly/GG/HF, mixed ANOVA with the between factors as full factors and Type III SS, Wilcoxon/Friedman; numpy only through
+  `within_stats`), and the student summary to `within_report.summary_sections`. Guards: `tests/test_within_report_v1306.py`.
+- **The selector is real on both paths.** QSF: `design_type_select` (mirrored in `design_type_choice`); builder: `builder_design_type_input`;
+  both feed `design_config` and `_design_config_for_engine`. A QSF with repeated, unrandomized blocks only gets a *suggestion*
+  (`within_design.suggest_design_from_qsf`); nothing is switched on by itself. Guard: `tests/test_within_app_v1306.py`.
+
+---
+
 ## Open-Text Response Generation Architecture
 
 ### Two Separate Systems:
@@ -428,6 +458,8 @@ research-simulations/
 │   │   ├── persona_library.py             # TextResponseGenerator (fallback OE)
 │   │   ├── llm_response_generator.py      # LLM-based OE generation
 │   │   ├── text_cleanup.py                # Grammar-safe helpers shared by all OE post-processing
+│   │   ├── within_design.py               # within / mixed designs: engine side (wide + long, effects, order, attrition)
+│   │   ├── within_stats.py, within_report.py, within_scripts.py   # paired / RM / mixed statistics, report sections, scripts
 │   │   ├── qsf_preview.py                # QSF parsing & DV detection
 │   │   ├── survey_builder.py
 │   │   ├── instructor_report.py

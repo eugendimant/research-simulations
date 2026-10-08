@@ -293,6 +293,9 @@ try:
         ORDER_EFFECTS,
         get_meta_analytic_effect,
         get_game_calibration,
+        resolve_game_calibration_key,
+        detect_game_type,
+        looks_like_game_decision,
         get_construct_norm,
         get_cultural_adjustment,
         get_response_time_norm,
@@ -341,6 +344,11 @@ try:
     HAS_LITERATURE_EFFECTS = True
 except Exception:
     HAS_LITERATURE_EFFECTS = False
+
+try:
+    from . import paradigm_coverage as _paradigm_coverage
+except Exception:  # the extra paradigms are optional: without them the older entries work as before
+    _paradigm_coverage = None
 
 # Import comprehensive response library for LLM-quality text generation
 try:
@@ -960,7 +968,9 @@ def _clean_question_text(text: Any) -> str:
 
 _NUMERIC_EXCLUDE_RE = re.compile(
     r"\b(why|explain|describe|reasons?|in your own words|comments?|feedback|opinions?|thoughts?|"
-    r"elaborate|tell us|suggestions?|what do you think|how do you feel|justify|briefly)\b",
+    r"elaborate|tell us|suggestions?|what do you think|how do you feel|justify|briefly|"
+    r"strateg\w+|approach|rationale|reasoning|"
+    r"e-?mail|phone number|telephone|mailing address|contact (?:you|information|details))\b",
     re.IGNORECASE,
 )
 _YEAR_OF_BIRTH_RE = re.compile(
@@ -1051,6 +1061,12 @@ def _infer_numeric_answer_spec(
     if ctype == "validzip":
         return {"kind": "zip"}
     declared_number = ctype in ("validnumber", "validdecimal", "validinteger")
+    # The survey's own validation outranks wording: a box validated as an e-mail address, phone number,
+    # date, URL, ... is not a numeric box however much money or counting its prompt mentions ("enter your
+    # e-mail to win $50" is an e-mail box). Boxes with no ContentType (or the plain "None") fall through
+    # to the wording cues below.
+    if ctype and ctype not in ("none", "validnumber", "validdecimal", "validinteger", "validzip"):
+        return None
     t = _PIPED_TEXT_RE.sub(" ", text).lower()  # "${e://Field/Random%20ID}" must not read as "%"
     # Crowd-worker / participant ID boxes hold an ID, not prose. Only short prompts that do not
     # ask for an explanation count ("Did you do this on MTurk? Please explain" stays free text).
@@ -3488,6 +3504,34 @@ _INTERACTION_MULTIPLIER_POP_MEAN = 1.12
 # Latent-shift gain for game DVs (calibrated so recovered d on bounded, zero-inflated
 # allocations tracks the configured d; see tests/test_effect_size_recovery.py).
 _GAME_Z_GAIN = 0.9
+
+# Share of a sample's chance (between-arm) variance that the game model's stratified draw lacks.
+_GAME_MISSING_CHANCE_VAR = 0.7
+
+# v1.3.0.6: games whose stored mean is the SHARE OF PARTICIPANTS choosing the "1" option
+# (cooperate, stag, volunteer, enter, ...), so a two-option column is drawn at that rate.
+_BINARY_RATE_GAME_TYPES = frozenset({
+    "prisoners_dilemma", "stag_hunt", "volunteer_dilemma", "market_entry", "chicken",
+    "battle_of_sexes",
+})
+
+
+def _binary_game_rate(dist: Optional[Dict[str, Any]]) -> Optional[float]:
+    """Published choice rate of a two-option game outcome, or None when the entry is not one.
+
+    A two-option column of a prisoner's dilemma / stag hunt / volunteer's dilemma / market entry /
+    chicken / battle of the sexes game takes the stored mean as P(option 1); the binary trust entry
+    does the same. Allocation games (dictator, ultimatum, ...) have no such reading.
+    """
+    if not dist:
+        return None
+    game, variant = str(dist.get("game")), str(dist.get("variant"))
+    if game in _BINARY_RATE_GAME_TYPES or (game == "trust" and variant == "binary"):
+        try:
+            return float(min(0.98, max(0.02, float(dist.get("mean")))))
+        except (TypeError, ValueError):
+            return None
+    return None
 # Observed scale-score correlation produced by the pipeline for a latent correlation t:
 #   r_obs ~= _XCORR_FLOOR + _XCORR_SLOPE * t
 # The floor is common-method variance between unrelated scales (Podsakoff et al. 2003:
@@ -3565,6 +3609,11 @@ _META_ALIASES: Dict[str, Tuple[str, ...]] = {
                              "gain framing", "loss framing"),
     "testing_effect_meta": ("testing effect", "retrieval practice"),
 }
+if _paradigm_coverage is not None:
+    # v1.3.0.5: phrases for entries a title or condition label could not reach before, and for the
+    # paradigms added in `paradigm_coverage`. Matching is whole-phrase (see _meta_index).
+    for _k, _als in _paradigm_coverage.ENTRY_ALIASES.items():
+        _META_ALIASES[_k] = tuple(dict.fromkeys(_META_ALIASES.get(_k, ()) + tuple(_als)))
 
 
 def _meta_index() -> List[Tuple[str, float, Tuple[Any, ...]]]:
@@ -3577,38 +3626,54 @@ def _meta_index() -> List[Tuple[str, float, Tuple[Any, ...]]]:
     if _META_INDEX_CACHE is not None:
         return _META_INDEX_CACHE
     out: List[Tuple[str, float, Tuple[Any, ...]]] = []
+    # Entries added in v1.3.0.5 are recalled, not source-checked: their magnitude is damped by their
+    # verification tier (as the literature fallback already does), so they push the data less hard
+    # than a sourced value. Older entries keep their published magnitude.
+    _damped = _paradigm_coverage.RULE_ONLY_KEYS if _paradigm_coverage is not None else frozenset()
     if HAS_KNOWLEDGE_BASE:
         for key, entry in META_ANALYTIC_DB.items():
-            d = abs(float(getattr(entry, "effect_d", 0.0) or 0.0))
+            _signed = float(getattr(entry, "effect_d", 0.0) or 0.0)
+            d = abs(_signed)
             if d < 0.05 or "game" in key or "auction" in key or "taking" in key:
                 continue  # baselines/games are handled by GAME_CALIBRATIONS
+            if key in _damped:
+                if _signed < 0:
+                    continue  # a harm-type effect needs its sign from the label rule, not the study text
+                if HAS_EMPIRICAL_REGISTRY:
+                    d *= float(_empirical_registry.confidence_weight("meta", key))
             toks = [t for t in re.split(r"[^a-z]+", key.lower()) if t and t not in _META_GENERIC_TOKENS]
-            if not toks or not any(len(t) >= 5 for t in toks):
+            _als = _META_ALIASES.get(key, ())
+            if not toks or not (any(len(t) >= 5 for t in toks) or _als):
                 continue
             pats: List[Any] = []
             if len(toks) == 1:
                 if toks[0] in _META_SINGLE_TOKEN_OK:
                     pats.append(re.compile(r"\b" + re.escape(toks[0][:max(5, len(toks[0]) - 2)]) + r"\w*"))
-            else:
+            elif any(len(t) >= 5 for t in toks) and key not in _damped:
                 gap = r"[\W_]+(?:\w+[\W_]+){0,2}"
                 pats.append(re.compile(gap.join(r"\b" + re.escape(t[:max(5, len(t) - 2)]) + r"\w*" for t in toks)))
-            for al in _META_ALIASES.get(key, ()):
-                pats.append(re.compile(r"\b" + re.escape(al) + r"\b"))
+            for al in _als:
+                # "-" and "_" read as spaces on both sides: "loss_frame" and "opt-out" match "loss frame"/"opt out"
+                pats.append(re.compile(r"\b" + re.escape(re.sub(r"[_\-]+", " ", al)) + r"\b"))
             if pats:
                 out.append((key, d, tuple(pats)))
     _META_INDEX_CACHE = out
     return out
 
 
-def _match_meta_effect(text: str) -> Optional[float]:
-    """Return the meta-analytic |d| for the paradigm named in ``text``, or None.
+def _match_meta_entry(text: str) -> Optional[Tuple[Tuple[str, ...], float]]:
+    """Return ``(knowledge-base keys, published |d|)`` for the paradigm named in ``text``, or None.
 
     The paradigm with the most specific (longest) match wins. When several
     different paradigms match equally well and disagree by more than 0.15 the
-    text is ambiguous and no anchoring is applied.
+    text is ambiguous and no anchoring is applied. Equally good, agreeing
+    matches are averaged and all their keys are returned.
+
+    "_" and "-" read as spaces ("loss_frame", "foot-in-the-door"), so snake_case condition
+    labels reach the same phrases as prose does.
     """
-    text = str(text).lower()
-    hits: List[Tuple[int, float]] = []
+    text = re.sub(r"[_\-]+", " ", str(text).lower())
+    hits: List[Tuple[int, str, float]] = []
     for _key, d, pats in _meta_index():
         best = 0
         for pat in pats:
@@ -3616,14 +3681,32 @@ def _match_meta_effect(text: str) -> Optional[float]:
             if m:
                 best = max(best, len(m.group(0)))
         if best:
-            hits.append((best, d))
+            hits.append((best, _key, d))
     if not hits:
         return None
     top = max(h[0] for h in hits)
-    ds = [d for n, d in hits if n >= top * 0.999]
+    group = [(k, d) for n, k, d in hits if n >= top * 0.999]
+    if _paradigm_coverage is not None and len(group) > 1:
+        # a more specific reading of the same words beats the older, broader one unless the
+        # text carries the older paradigm's own vocabulary (see paradigm_coverage.TIE_PREFER)
+        for _pref, _other, _guard in _paradigm_coverage.TIE_PREFER:
+            _gk = {k for k, _d in group}
+            if _pref in _gk and _other in _gk and not re.search(_guard, text):
+                group = [(k, d) for k, d in group if k != _other]
+    ds = [d for _k, d in group]
     if max(ds) - min(ds) > 0.15:
         return None
-    return float(sum(ds) / len(ds))
+    return tuple(sorted(k for k, _d in group)), float(sum(ds) / len(ds))
+
+
+def _match_meta_effect(text: str) -> Optional[float]:
+    """Return the PUBLISHED meta-analytic |d| for the paradigm named in ``text``, or None.
+
+    This is the knowledge-base value, before the replication shrinkage that the
+    engine applies to inferred effects (see ``_shrink_inferred_meta_effect``).
+    """
+    hit = _match_meta_entry(text)
+    return None if hit is None else hit[1]
 
 
 class EnhancedSimulationEngine:
@@ -3691,7 +3774,13 @@ class EnhancedSimulationEngine:
         # effects from condition names. False builds in ONLY the effects you specify, so every
         # other contrast is a true null.
         auto_effects: bool = True,
+        # v1.3.0.6: repeated-measures designs. None (default) keeps the between-subjects behaviour
+        # bit-identical; a dict such as {"type": "within"} / {"type": "mixed", "within_factors": [...]}
+        # is described in utils/within_design.py.
+        design: Optional[Dict[str, Any]] = None,
     ):
+        # the arguments as given, so a repeated-measures run can build its inner single-pass engine
+        self._ctor_kwargs = {k: v for k, v in locals().items() if k not in ("self", "__class__")}
         self.progress_callback = progress_callback
         self.auto_effects = bool(auto_effects)
         self.use_socsim_experimental = bool(use_socsim_experimental)
@@ -3711,6 +3800,11 @@ class EnhancedSimulationEngine:
             logger.warning("No conditions specified — defaulting to single 'Condition A'")
             self.conditions = ["Condition A"]
         self.factors = _normalize_factors(factors, self.conditions)
+        # v1.3.0.6: None for between-subjects designs; a DesignSpec for within / mixed designs
+        self.design_spec = None
+        if design is not None:
+            from .within_design import normalize_design as _normalize_design
+            self.design_spec = _normalize_design(design, self.factors, self.conditions)
         self.scales = _normalize_scales(scales)
         # v1.2.5.3: Build DV description lookup for condition effect intelligence
         # v1.2.5.5: Store BOTH space and underscore variants so lookup always matches
@@ -3876,6 +3970,21 @@ class EnhancedSimulationEngine:
         total_weight = sum(p.weight for p in self.available_personas.values()) or 1.0
         for persona in self.available_personas.values():
             persona.weight = persona.weight / total_weight
+
+        # v1.3.0.6: random_responder_rate was stored but never used, and the careless persona's
+        # 0.05 base weight was diluted to ~1.3% by the renormalisation over ~50 personas. The
+        # careless/random-responder share is now exactly the configured rate (unless the caller
+        # set that persona's weight explicitly through custom_persona_weights).
+        _careless = self.available_personas.get("careless_responder")
+        if _careless is not None and "careless_responder" not in (custom_persona_weights or {}):
+            _rr = float(np.clip(self.random_responder_rate, 0.0, 0.5))
+            _others = sum(p.weight for k, p in self.available_personas.items()
+                          if k != "careless_responder")
+            if _others > 0:
+                for _k, _p in self.available_personas.items():
+                    if _k != "careless_responder":
+                        _p.weight = _p.weight / _others * (1.0 - _rr)
+                _careless.weight = _rr
 
         self.text_generator = TextResponseGenerator()
         self.stimulus_handler = StimulusEvaluationHandler()
@@ -4796,6 +4905,29 @@ class EnhancedSimulationEngine:
         # +/-0.004 normalized, i.e. Cohen's d near 0.01. Anything below d = 0.05 is
         # indistinguishable from no manipulation at all, so that is the trigger.
         _NEGLIGIBLE = 0.05 * COHENS_D_TO_NORMALIZED
+
+        # v1.3.0.5 — paradigms with a curated label phrase ("Mortality salience", "Ostracized",
+        # "Gamified", "Graphic warning", ...) take their recalled literature magnitude AND sign even
+        # where the keyword rules guessed something: those rules know nothing of these paradigms
+        # beyond a generic valence, and several would have signed an exclusion or a disclosure as a
+        # benefit. Never for the reference arm, and never for economic-game designs, whose
+        # calibrations are owned by the game models.
+        if (HAS_LITERATURE_EFFECTS and _paradigm_coverage is not None
+                and self._is_control_arm(condition) and self._design_has_curated_arm(variable)):
+            # the reference arm of a design built on a curated paradigm is the zero point: it must not
+            # keep a keyword residual that the other arm's label happens to induce
+            return 0.0
+        if (HAS_LITERATURE_EFFECTS and _paradigm_coverage is not None
+                and not self._is_control_arm(condition) and not self._is_economic_game_context(variable)):
+            _curated = None
+            try:
+                _curated = _literature_effects.lookup_curated(
+                    str(condition), rng=self._stable_rng("literature-effect", str(condition), str(variable)))
+            except Exception:
+                _curated = None
+            if _curated is not None:
+                return self._literature_match_to_shift(condition, variable, _curated, "curated paradigm phrase")
+
         if abs(_auto) >= _NEGLIGIBLE or not HAS_LITERATURE_EFFECTS:
             return _auto * _effect_scale
 
@@ -4828,16 +4960,65 @@ class EnhancedSimulationEngine:
                 variable=str(variable),
                 study_context=f"{self.study_title or ''} {self.study_description or ''}",
                 rng=self._stable_rng("literature-effect", str(condition), str(variable)),
+                **({"policy": self._INFERRED_EFFECT_POLICY} if self._INFERRED_EFFECT_POLICY is not None else {}),
             )
         except Exception:
             return _auto * _effect_scale
         if _lit is None:
             return _auto * _effect_scale
-        _normalized = float(_lit.effect_d) * COHENS_D_TO_NORMALIZED * _effect_scale
+        return self._literature_match_to_shift(condition, variable, _lit, "no keyword rule matched")
+
+    def _design_has_curated_arm(self, variable: str) -> bool:
+        """Whether some non-reference arm of this design names a curated paradigm (see `lookup_curated`)."""
+        if self._is_economic_game_context(variable):
+            return False
+        cache = getattr(self, "_curated_arm_cache", None)
+        if cache is None:
+            cache = self._curated_arm_cache = {}
+        if "any" not in cache:
+            found = False
+            for c in (self.conditions or []):
+                if self._is_control_arm(str(c)):
+                    continue
+                try:
+                    if _literature_effects.lookup_curated(str(c)) is not None:
+                        found = True
+                        break
+                except Exception:
+                    continue
+            cache["any"] = found
+        return bool(cache["any"])
+
+    def _is_economic_game_context(self, variable: str) -> bool:
+        """Whether the DV, the study text or the condition names look like an economic game."""
+        _ctx = " ".join([
+            " ".join(str(c).lower() for c in (self.conditions or [])),
+            str(self.study_title or "").lower(), str(self.study_description or "").lower(),
+            str(variable).lower(), str(self._dv_descriptions.get(str(variable).lower(), "")).lower(),
+        ])
+        return _paradigm_coverage is None or _paradigm_coverage.is_economic_game_text(_ctx)
+
+    def _literature_match_to_shift(self, condition: str, variable: str, _lit: Any, why: str) -> float:
+        """Normalised shift for one arm from a literature match, with its provenance logged."""
+        _lit_d = float(_lit.effect_d)
+        if getattr(_lit, "polarity_aware", False):
+            # A beneficial (or harmful) manipulation moves a positive construct one way and a
+            # symptom-type construct (distress, prejudice, use, ...) the other.
+            _dv_text = (str(variable).replace("_", " ") + " "
+                        + str(self._dv_descriptions.get(str(variable).lower(), ""))).lower()
+            if self._NEGATIVE_DV_RE.search(_dv_text) or (
+                    _paradigm_coverage is not None and _paradigm_coverage.dv_is_negative(_dv_text)):
+                _lit_d = -_lit_d
+        _normalized = _lit_d * self._EFFECT_D_TO_NORMALIZED * self._explicit_effect_scale(variable)
+        # v1.3.0.6: EVERY literature route (curated label phrase and content-matched fallback alike)
+        # contrasts one arm with a zero-point reference arm, so it is applied in the explicit currency
+        # (gap = 2 x 0.109 x d), as the study-level anchor does, and d is what is realised. The
+        # fallback used to shift the single arm by 0.109 x d only and delivered about d/2.
+        _normalized *= float(getattr(_paradigm_coverage, "CURATED_GAP_FACTOR", 2.0))
         self._log(
-            f"No keyword rule matched condition '{condition}' for '{variable}'; "
+            f"{why}: condition '{condition}' for '{variable}'; "
             f"used literature entry '{_lit.key}' ({_lit.source}, published "
-            f"d={_lit.published_d}, applied d={_lit.effect_d:.3f}, "
+            f"d={_lit.published_d}, applied d={_lit_d:.3f}, "
             f"verification={_lit.status})"
         )
         if not hasattr(self, "_literature_effect_log"):
@@ -4845,6 +5026,14 @@ class EnhancedSimulationEngine:
         self._literature_effect_log.append(
             dict(condition=str(condition), variable=str(variable), **_lit.as_dict())
         )
+        if not hasattr(self, "_inferred_effect_log"):
+            self._inferred_effect_log = []
+        self._inferred_effect_log.append({
+            "path": "literature_fallback", "condition": str(condition), "variable": str(variable),
+            "key": _lit.key, "published_d": round(float(_lit.published_d), 4),
+            "shrinkage_factor": round(float(getattr(_lit, "shrinkage", 1.0)), 4),
+            "applied_d": round(float(_lit.effect_d), 4), "verification": _lit.status,
+        })
         return _normalized
 
     def _compute_effect_for_condition(self, condition: str, variable: str) -> float:
@@ -7483,12 +7672,30 @@ class EnhancedSimulationEngine:
         # size of the design's main contrast (relational/economic-game designs keep their
         # own calibrated scaling).
         if not _raw and not _handled_by_relational and not _is_economic_game_dv:
-            _meta_d = _match_meta_effect(_study_text + " " + _all_conds_text + " " + _cond_desc_text)
-            if _meta_d is not None:
+            _meta_hit = _match_meta_entry(_study_text + " " + _all_conds_text + " " + _cond_desc_text)
+            if _meta_hit is not None:
+                # v1.3.0.5: the published d is shrunk toward the replication effect (and given
+                # its between-study draw) before it sizes the contrast.
+                _meta_d = self._shrink_inferred_meta_effect(_meta_hit[0], _meta_hit[1], variable)
                 return self._meta_anchored_effect(condition, variable, _meta_d)
 
         # Apply Cohen's d scaling with domain-aware multiplier
-        return semantic_effect * default_d * COHENS_D_TO_NORMALIZED * _domain_d_multiplier
+        _value = semantic_effect * default_d * COHENS_D_TO_NORMALIZED * _domain_d_multiplier
+        # v1.3.0.6: the hand-set valence / domain magnitudes (STEP 1-2: a gap of d 0.5-0.7, up to ~0.9
+        # with a domain multiplier) were set from ORIGINAL published effects. Replicated effects of
+        # gain/loss, high/low or positive/negative manipulations on attitudes sit at d ~0.2-0.5
+        # (OSC 2015: replication effects about half the original; Camerer et al. 2018: ~0.5-0.6), so
+        # they take the same recalled replication shrinkage the literature routes take. Not applied
+        # to relational / intergroup effects (STEP 0: replicated, calibrated to Iyengar & Westwood
+        # 2015, Dimant 2024), to economic-game DVs (owned by the game models) or to the raw call
+        # that only ranks the arms.
+        if (not _raw and not _handled_by_relational and not _is_economic_game_dv
+                and HAS_EMPIRICAL_REGISTRY):
+            try:
+                _value *= float(_empirical_registry.policy_factor(self._INFERRED_EFFECT_POLICY))
+            except Exception:
+                pass
+        return _value
 
     # Tokens marking the reference arm of a control-vs-treatment design.
     _CONTROL_ARM_WORDS = ("control", "baseline", "placebo", "waitlist", "wait-list", "wait list",
@@ -7531,6 +7738,51 @@ class EnhancedSimulationEngine:
         _key = "|".join(str(p) for p in parts).encode("utf-8", "replace")
         _digest = hashlib.sha256(_key).digest()[:8]
         return random.Random(int(self.seed) ^ int.from_bytes(_digest, "big"))
+
+    #: Policy for effects the tool infers (None = the registry default: replication-adjusted
+    #: with the recalled shrinkage and heterogeneity draw). Set an
+    #: ``empirical_registry.EffectPolicy(mode="as_published", heterogeneity_draw=False)`` to
+    #: reproduce raw published d. Never consulted for a user-specified effect.
+    _INFERRED_EFFECT_POLICY: Any = None
+
+    def _shrink_inferred_meta_effect(self, keys: Tuple[str, ...], published_d: float, variable: str) -> float:
+        """Replication-adjusted size for a paradigm-anchored (inferred) effect.
+
+        Same ``adjust_effect`` the literature fallback uses, minus the tier weighting (the anchor
+        never had it, and the paradigm match is not a per-entry verification claim). The
+        heterogeneity draw is seeded by (paradigm, variable) only, so every arm of one contrast
+        sees the same effect and a rerun with the same seed gives the same number; there is no
+        per-participant randomness here, so memoisation stays valid.
+        """
+        published_d = float(published_d)
+        if not HAS_EMPIRICAL_REGISTRY:
+            return published_d
+        cache = getattr(self, "_meta_shrink_cache", None)
+        if cache is None:
+            cache = self._meta_shrink_cache = {}
+        ck = (tuple(keys), str(variable), round(published_d, 6))
+        if ck in cache:
+            return cache[ck]
+        taus = [float(getattr(META_ANALYTIC_DB.get(k), "heterogeneity_tau", 0.0) or 0.0) for k in keys] if HAS_KNOWLEDGE_BASE else []
+        taus = [t for t in taus if t > 0]
+        tau = float(sum(taus) / len(taus)) if taus else None
+        pol = self._INFERRED_EFFECT_POLICY
+        applied = float(_empirical_registry.adjust_effect(
+            published_d, kind="meta", key="", policy=pol,
+            rng=self._stable_rng("meta-anchor", "|".join(keys), str(variable)), tau=tau))
+        cache[ck] = applied
+        if not hasattr(self, "_inferred_effect_log"):
+            self._inferred_effect_log = []
+        self._inferred_effect_log.append({
+            "path": "paradigm_anchor", "variable": str(variable), "key": "|".join(keys),
+            "published_d": round(published_d, 4),
+            "shrinkage_factor": round(float(_empirical_registry.policy_factor(pol)), 4),
+            "applied_d": round(applied, 4),
+            "verification": _empirical_registry.shrinkage_tier(),
+        })
+        self._log(f"Paradigm anchor '{'|'.join(keys)}' for '{variable}': published d={published_d:.3f}, "
+                  f"applied d={applied:.3f}")
+        return applied
 
     def _meta_anchored_effect(self, condition: str, variable: str, meta_d: float) -> float:
         """Effect for ``condition`` when the study names a paradigm with a published estimate.
@@ -8299,9 +8551,35 @@ class EnhancedSimulationEngine:
                      'offer', 'share', 'split', 'endow', 'dictator',
                      'trust game', 'ultimatum', 'public good', 'contribution',
                      'transfer', 'payment', 'donate', 'generosity']
-        _is_econ_game = any(kw in var_lower for kw in _econ_kws) or any(
+        # v1.3.0.6: "sent" is a whole word ("Amount_Sent"), not the middle of "consent"/"presentation".
+        _var_tokens = set(re.split(r"[^a-z0-9]+", var_lower))
+        _is_econ_game = any(kw in var_lower for kw in _econ_kws if kw != 'sent') or (
+            'sent' in _var_tokens) or any(
             kw in condition_lower for kw in ['dictator', 'trust game', 'ultimatum',
                                               'public good', 'prisoner'])
+        # v1.3.0.6: games the allocation keywords never matched (stag hunt, common pool, beauty
+        # contest, auctions, centipede, ...). A game must be NAMED as a whole phrase (variable name,
+        # title, description or condition label); a variable named for the game is its outcome, any
+        # other variable counts only when it reads like a decision (choice, bid, guess, harvest ...),
+        # so a Likert "Trust_in_Government" in a study that mentions a trust game stays a scale.
+        _kb_key_resolved = None
+        if HAS_KNOWLEDGE_BASE:
+            try:
+                _kb_key_resolved = resolve_game_calibration_key(
+                    variable_name, self.study_title or "", self.study_description or "", condition_lower)
+                if _kb_key_resolved and not _is_econ_game:
+                    _gsrc = detect_game_type(variable_name, self.study_title or "",
+                                             self.study_description or "", condition_lower)[1]
+                    _is_econ_game = _gsrc == "variable" or looks_like_game_decision(variable_name)
+            except Exception as _gerr:  # never let game resolution take a run down
+                self._log(f"Game resolution skipped: {_gerr}")
+                _kb_key_resolved = None
+        if not _is_econ_game and 'prisoner' in (
+                (self.study_title or "") + " " + (self.study_description or "")).lower():
+            # v1.3.0.5: a prisoner's-dilemma DV is usually named "cooperate"/"defect",
+            # which no allocation keyword matches ("cooperat" alone is too broad: it
+            # also names Likert cooperation scales). Require the game in the study text.
+            _is_econ_game = any(kw in var_lower for kw in ('cooperat', 'defect'))
         if _is_econ_game:
             # Detect specific game type for precise calibration
             _full_ctx = var_lower + " " + condition_lower + " " + (
@@ -8309,12 +8587,25 @@ class EnhancedSimulationEngine:
 
             # v1.0.8.7: Try structured knowledge base FIRST for game calibrations
             if HAS_KNOWLEDGE_BASE:
-                _kb_game = None
-                for _gt in ['dictator', 'trust', 'ultimatum', 'public_good',
-                            'prisoner', 'auction', 'bargain', 'gift_exchange',
-                            'stag_hunt', 'common_pool', 'holt_laury',
-                            'beauty_contest', 'die_roll', 'bribery']:
-                    if _gt in _full_ctx:
+                _kb_game = GAME_CALIBRATIONS.get(_kb_key_resolved) if _kb_key_resolved else None
+                # v1.3.0.5: the loop keys are underscored, but study text says
+                # "public goods game" / "prisoner's dilemma", so those two games never
+                # matched and fell through to the generic branch (a one-shot public
+                # goods game came out at a 64% mean contribution, a prisoner's dilemma at
+                # 70% cooperation, against 40% and 47% in the knowledge base).
+                _gt_aliases = {
+                    'public_good': ('public good', 'public-good', 'voluntary contribution'),
+                    'prisoner': ("prisoner's dilemma", 'prisoners dilemma', 'prisoners\' dilemma',
+                                 'prisoner dilemma'),
+                }
+                # v1.3.0.6: the resolver above names the game by whole phrase; this substring loop
+                # remains the fallback for study text it does not recognise (e.g. "trust" alone).
+                for _gt in ([] if _kb_game else
+                            ['dictator', 'trust', 'ultimatum', 'public_good',
+                             'prisoner', 'auction', 'bargain', 'gift_exchange',
+                             'stag_hunt', 'common_pool', 'holt_laury',
+                             'beauty_contest', 'die_roll', 'bribery']):
+                    if _gt in _full_ctx or any(a in _full_ctx for a in _gt_aliases.get(_gt, ())):
                         _variant = 'standard'
                         if _gt == 'dictator' and any(kw in _full_ctx for kw in ['tak', 'steal', 'negative']):
                             _variant = 'taking'
@@ -8323,6 +8614,8 @@ class EnhancedSimulationEngine:
                         elif _gt == 'public_good' and 'punish' in _full_ctx:
                             _variant = 'punishment'
                         _gt_clean = _gt.replace('_good', '_goods')
+                        if _gt == 'prisoner':
+                            _gt_clean = 'prisoners_dilemma'
                         _kb_game = get_game_calibration(_gt_clean, _variant)
                         if _kb_game is None:
                             _kb_game = get_game_calibration(_gt, _variant)
@@ -8330,7 +8623,10 @@ class EnhancedSimulationEngine:
                 if _kb_game:
                     # Use structured calibration: convert mean_proportion to adjustment
                     # mean_proportion is 0-1 scale, default midpoint is 0.5
-                    calibration['mean_adjustment'] = _kb_game.mean_proportion - 0.50
+                    # (a mean above 1, e.g. second-price overbidding at 1.05 of value, is a
+                    # ratio rather than a proportion: clamp it so the tendency stays on the scale)
+                    _kb_mean = min(0.95, max(0.05, float(_kb_game.mean_proportion)))
+                    calibration['mean_adjustment'] = _kb_mean - 0.50
                     calibration['variance_adjustment'] = max(0.08, _kb_game.sd_proportion * 0.8)
                     calibration['positivity_bias'] = -0.05 if _kb_game.mean_proportion < 0.40 else 0.0
                     calibration['_game_variant'] = f"{_kb_game.game_type}_{_kb_game.variant}"
@@ -9548,6 +9844,31 @@ class EnhancedSimulationEngine:
         # allocation-sized, unipolar scales with a recognised KB game.
         # =====================================================================
         _kb_dist = domain_calibration.get('_kb_dist')
+        _bin_rate = _binary_game_rate(_kb_dist) if scale_range == 1 else None
+        if (_bin_rate is not None and not is_reverse and not _scale_geom['is_bipolar']
+                and domain_calibration.get('_game_variant') not in ('dictator_taking', 'dictator_third_party')):
+            # v1.3.0.6: a two-option game outcome is drawn at the published choice rate (prisoner's
+            # dilemma 47%, Sally 1995; Dal Bo & Frechette 2018), not at the Likert tendency (~58%).
+            # The same person latent as the allocation route decides who chooses "1"; the condition
+            # effect moves that latent on the probit scale, sized so a requested Cohen's d on the 0/1
+            # column is recovered: gap_z = d * sqrt(p(1-p)) / phi(Phi^-1(p)).
+            from statistics import NormalDist
+            _nd = NormalDist()
+            _grng = np.random.RandomState((participant_seed * 7919 + 13) % (2**31))
+            _coop = _safe_trait_value(modified_traits.get("cooperation_tendency"), 0.5)
+            _emp = _safe_trait_value(modified_traits.get("empathy"), 0.5)
+            _zt = float(np.clip(((_coop - 0.5) + (_emp - 0.5)) / 2.0 / 0.2, -2.5, 2.5))
+            _w = 0.35
+            _z = _w * _zt + float(np.sqrt(1.0 - _w * _w)) * float(_grng.normal())
+            _zp = _nd.inv_cdf(_bin_rate)
+            _kappa = float(np.sqrt(_bin_rate * (1.0 - _bin_rate)) / _nd.pdf(_zp))
+            _unit = self._EFFECT_D_TO_NORMALIZED * self._explicit_effect_scale(variable_name)
+            # (undo the variance widening applied to every effect above: d is a gap over an SD, and
+            # here the SD is the Bernoulli SD, which the kappa term already accounts for)
+            _va = 1.0 + float(domain_calibration.get('variance_adjustment', 0.0) or 0.0)
+            _side_d = condition_effect / (_va * 2.0 * _unit) if _unit > 0 else 0.0   # +/- d/2 per arm
+            return int(scale_max if (_z + _zp + _side_d * _kappa) > 0.0 else scale_min)
+
         if (_kb_dist and not is_reverse and scale_range >= 10 and not _scale_geom['is_bipolar']
                 and domain_calibration.get('_game_variant') not in ('dictator_taking', 'dictator_third_party')):
             _qfn = _game_quantile_fn(_kb_dist)
@@ -10624,17 +10945,26 @@ class EnhancedSimulationEngine:
                 # a block of three or more items, which is exactly where that pass follows.
                 # Single-item DVs and two-item scales get no such pass, so identical rows
                 # across them stay as generated.
-                _min_points = (min(hi - lo + 1 for lo, hi in _col_bounds.values())
-                               if _col_bounds else 0)
-                _widest_block = max(
-                    (len(_le.get("columns_generated") or []) for _le in scale_generation_log
-                     if str(_le.get("type", "")).lower() not in _JOINT_DV_TYPES),
-                    default=0,
-                )
+                # v1.3.0.6: the five-option gate is evaluated PER BLOCK. It used to take the
+                # minimum over every column of the survey, so one binary item or a rank-order
+                # DV anywhere switched the audit off for all Likert blocks. Only columns whose
+                # own block has five or more options are audited (and counted), so a binary or
+                # 3-point block is still left untouched.
+                _eligible_blocks = [
+                    [c for c in (_le.get("columns_generated") or []) if c in existing_cols]
+                    for _le in scale_generation_log
+                    if str(_le.get("type", "")).lower() not in _JOINT_DV_TYPES
+                    and (_col_bounds.get(((_le.get("columns_generated") or [""])[0]), (1, 1))[1]
+                         - _col_bounds.get(((_le.get("columns_generated") or [""])[0]), (1, 1))[0] + 1)
+                    >= _MIN_OPTIONS_FOR_STRAIGHTLINE_LOGIC
+                ]
+                _eligible_cols = [c for blk in _eligible_blocks for c in blk]
+                _widest_block = max((len(blk) for blk in _eligible_blocks), default=0)
                 _check_straightlining = (
-                    _min_points >= _MIN_OPTIONS_FOR_STRAIGHTLINE_LOGIC
-                    and (len(existing_cols) >= 5 or _widest_block >= 3)
+                    len(_eligible_cols) >= 3
+                    and (len(_eligible_cols) >= 5 or _widest_block >= 3)
                 )
+                existing_cols = _eligible_cols
                 for i in range(n if _check_straightlining else 0):
                     vals = [float(df.iloc[i][c]) for c in existing_cols
                             if pd.notna(df.iloc[i][c])]
@@ -10684,6 +11014,103 @@ class EnhancedSimulationEngine:
 
         return audit_report
 
+    # Types that are not Likert-type items and so never count towards straight-lining.
+    _NON_LIKERT_TYPE_HINTS = ("numeric", "game", "constant", "rank", "best", "paired", "heat",
+                              "allocation", "text_entry")
+
+    def _recompute_straight_line_columns(self, df: "pd.DataFrame") -> None:
+        """Max_Straight_Line / Flag_StraightLine judged on the FINAL item columns.
+
+        v1.3.0.6: straight-lining is the longest run of identical answers WITHIN one block of
+        comparable Likert-type items, and only blocks of at least five items with five or more
+        response options count (chance agreement is high on binary/3-point items, and runs
+        across unrelated single-item DVs, game decisions, numeric boxes or constant-sum fields
+        mean nothing). The old rule pooled every numeric answer in the survey into one
+        sequence, which flagged 60% of a game-style survey. Max_Straight_Line is the longest
+        such run; the flag fires when a run reaches min(straight_line_threshold, block length),
+        i.e. the whole block is one answer or the run is long. Rows without an eligible block
+        get 1 (a run of one).
+        """
+        thr = int(self.exclusion_criteria.straight_line_threshold)
+        longest = np.ones(len(df), dtype=int)
+        flag = np.zeros(len(df), dtype=bool)
+        for le in getattr(self, "_scale_generation_log", None) or []:
+            typ = str(le.get("type", "")).lower()
+            if typ in _JOINT_DV_TYPES or any(h in typ for h in self._NON_LIKERT_TYPE_HINTS):
+                continue
+            cols = [c for c in (le.get("columns_generated") or []) if c in df.columns]
+            lo = int(le.get("scale_min", 1))
+            hi = int(le.get("scale_max", le.get("scale_points", 7)))
+            if len(cols) < 5 or (hi - lo + 1) < _MIN_OPTIONS_FOR_STRAIGHTLINE_LOGIC:
+                continue
+            mat = df[cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
+            run = np.ones(len(df), dtype=int)
+            best = np.ones(len(df), dtype=int)
+            for j in range(1, mat.shape[1]):
+                same = (mat[:, j] == mat[:, j - 1]) & ~np.isnan(mat[:, j])
+                run = np.where(same, run + 1, 1)
+                best = np.maximum(best, run)
+            longest = np.maximum(longest, best)
+            flag |= best >= min(thr, len(cols))
+        df["Max_Straight_Line"] = longest
+        df["Flag_StraightLine"] = flag.astype(int)
+
+    def _finalize_quality_flags(self, df: "pd.DataFrame", metadata: Dict[str, Any]) -> None:
+        """Recompute Flag_Speed / Flag_Attention / Exclude_Recommended from the FINAL columns.
+
+        v1.3.0.6: the validator rewrites Completion_Time_Seconds into a plausible human range
+        after the flags were drawn, so a flag could disagree with the recorded time. The flags
+        are now derived from the recorded time, Attention_Pass_Rate and Max_Straight_Line that
+        are returned, so each flag can be re-derived from the exported columns.
+        """
+        crit = self.exclusion_criteria
+        if "Completion_Time_Seconds" in df.columns and "Flag_Speed" in df.columns:
+            t = pd.to_numeric(df["Completion_Time_Seconds"], errors="coerce")
+            df["Flag_Speed"] = (
+                (t < int(crit.completion_time_min_seconds)) | (t > int(crit.completion_time_max_seconds))
+            ).astype(int)
+        if "Attention_Pass_Rate" in df.columns and "Flag_Attention" in df.columns:
+            thr = float(crit.attention_check_threshold)
+            pr = pd.to_numeric(df["Attention_Pass_Rate"], errors="coerce")
+            df["Flag_Attention"] = (pr < (thr if thr > 0 else 1.0)).astype(int)
+        if "Flag_StraightLine" in df.columns and "Max_Straight_Line" in df.columns:
+            self._recompute_straight_line_columns(df)
+        if "Exclude_Recommended" in df.columns:
+            if crit.exclude_careless_responders:
+                df["Exclude_Recommended"] = 0
+            else:
+                df["Exclude_Recommended"] = (
+                    (df.get("Flag_Speed", 0) > 0) | (df.get("Flag_Attention", 0) > 0)
+                    | (df.get("Flag_StraightLine", 0) > 0)
+                ).astype(int)
+        summ = metadata.get("exclusion_summary")
+        if isinstance(summ, dict):
+            for key, col in (("flagged_speed", "Flag_Speed"), ("flagged_attention", "Flag_Attention"),
+                             ("flagged_straightline", "Flag_StraightLine"),
+                             ("total_excluded", "Exclude_Recommended")):
+                if col in df.columns:
+                    summ[key] = int(pd.to_numeric(df[col], errors="coerce").fillna(0).sum())
+
+    def _calibrate_attention_fail_scale(self, all_traits: List[Dict[str, float]]) -> float:
+        """Scale so that mean per-participant failure probability == 1 - attention_rate.
+
+        Failure probability is ``min(1, scale * (1 - attention)^2)``; the scale is solved by
+        bisection because the cap at 1 makes the mean non-linear in it.
+        """
+        target = float(np.clip(1.0 - self.attention_rate, 0.0, 1.0))
+        base = np.array([(1.0 - _safe_trait_value(t.get("attention_level"), 0.85)) ** 2
+                         for t in all_traits], dtype=float)
+        if target <= 0.0 or base.size == 0 or float(base.sum()) <= 0.0:
+            return 0.0 if target <= 0.0 else target / 0.05
+        lo, hi = 0.0, 1e4
+        for _ in range(60):
+            mid = (lo + hi) / 2.0
+            if float(np.minimum(1.0, base * mid).mean()) < target:
+                lo = mid
+            else:
+                hi = mid
+        return (lo + hi) / 2.0
+
     def _generate_attention_check(
         self,
         condition: str,
@@ -10695,7 +11122,18 @@ class EnhancedSimulationEngine:
 
         # v1.2.1: Safe trait access
         attention = _safe_trait_value(traits.get("attention_level"), 0.85)
-        is_attentive = rng.random() < attention * self.attention_rate
+        # v1.3.0.6: the old rule (attention * attention_rate) multiplied the configured pass
+        # rate by the trait mean (~0.83), so 0.95 realised a ~21% failure rate. The failure
+        # probability is now (1 - attention)^2 scaled so that the sample-wide failure rate
+        # equals 1 - attention_rate (`_attention_fail_scale`, set in generate()); careless
+        # personas (attention ~0.35) still fail far more often than engaged ones.
+        _scale = getattr(self, "_attention_fail_scale", None)
+        if _scale is None:
+            _scale = (1.0 - self.attention_rate) / 0.05
+        p_fail = min(1.0, max(0.0, (1.0 - attention) ** 2 * _scale))
+        if self.attention_rate >= 1.0:
+            p_fail = 0.0
+        is_attentive = rng.random() >= p_fail
 
         if check_type == "ai_manipulation":
             correct = 1 if ("ai" in str(condition).lower() and "no ai" not in str(condition).lower()) else 2
@@ -12588,13 +13026,16 @@ class EnhancedSimulationEngine:
         attention = _safe_trait_value(traits.get("attention_level"), 0.8)
 
         if attention < 0.5:
-            completion_time = int(rng.uniform(45, 150))
+            # v1.3.0.6: genuine speeders (attention < 0.5, i.e. the careless persona): about
+            # 60% finish under the 60 s exclusion floor, the rest just above it. The validator
+            # no longer rewrites these times into a normal range.
+            completion_time = int(rng.normal(55, 18))
         elif attention > 0.9:
             completion_time = int(rng.normal(base_time * 1.2, 60))
         else:
             completion_time = int(rng.normal(base_time, 90))
 
-        completion_time = int(np.clip(completion_time, 30, 1800))
+        completion_time = int(np.clip(completion_time, 20, 1800))
 
         total_checks = len(attention_checks_passed)
         passed_checks = int(sum(bool(x) for x in attention_checks_passed))
@@ -12634,7 +13075,10 @@ class EnhancedSimulationEngine:
             completion_time < int(self.exclusion_criteria.completion_time_min_seconds)
             or completion_time > int(self.exclusion_criteria.completion_time_max_seconds)
         )
-        exclude_attention = pass_rate < float(self.exclusion_criteria.attention_check_threshold)
+        # v1.3.0.6: a threshold of 0 (the default) could never fire. It now means "failed at
+        # least one attention check"; a positive threshold keeps its meaning (pass rate below it).
+        _attn_thr = float(self.exclusion_criteria.attention_check_threshold)
+        exclude_attention = pass_rate < (_attn_thr if _attn_thr > 0 else 1.0)
         exclude_straightline = max_straight_line >= int(self.exclusion_criteria.straight_line_threshold)
 
         exclude_recommended = bool(exclude_time or exclude_attention or exclude_straightline)
@@ -13083,6 +13527,9 @@ class EnhancedSimulationEngine:
         # concurrent Streamlit sessions therefore run fully in parallel with
         # identical same-seed output and zero cross-session interference. Verified by
         # the cross-process determinism battery + a concurrent-generation test.
+        if getattr(self, "design_spec", None) is not None:
+            from .within_design import generate_repeated as _generate_repeated
+            return _generate_repeated(self)
         return self._generate_body()
 
     def _generate_body(self) -> Tuple[pd.DataFrame, Dict[str, Any]]:
@@ -13268,6 +13715,7 @@ class EnhancedSimulationEngine:
             for _ in range(n)
         ]
 
+        self._attention_fail_scale = self._calibrate_attention_fail_scale(all_traits)
         attention_results: List[List[bool]] = []
         attention_check_values: List[int] = []
         for i in range(n):
@@ -13408,7 +13856,7 @@ class EnhancedSimulationEngine:
             # triples the composite's SD, so a shift calibrated for a lone scale reaches only ~0.4 of
             # the requested d. A user effect on such a scale is therefore built into the finished item
             # responses, in units of the realised within-condition SD (_apply_user_effect_to_scale).
-            if self._defer_user_effect_for_scale(scale_name, scale_min, scale_max, bool(reverse_items)):
+            if self._defer_user_effect_for_scale(scale_name, scale_min, scale_max, bool(reverse_items), num_items):
                 self._deferred_effect_vars.add(scale_name)
                 self._reversal_ok_arr = (scale_name, np.ones((n, num_items), dtype=bool))
             else:
@@ -13501,6 +13949,11 @@ class EnhancedSimulationEngine:
                 if target_alpha is None or not (0.3 <= target_alpha <= 0.99):
                     target_alpha = float(np.random.RandomState(
                         _stable_int_hash(f"{scale_name}|target_alpha") & 0x7FFFFFFF).uniform(0.80, 0.90))
+                # v1.3.0.6: a deferred effect is added AFTER the reliability steps below. It moves every
+                # item of a respondent together, so it adds covariance and would lift the finished block
+                # above the alpha the steps aimed at; aim those steps lower by exactly that amount.
+                if scale_name in self._deferred_effect_vars:
+                    target_alpha = self._alpha_before_deferred_effect(scale_name, target_alpha, num_items, conditions)
                 item_col_names = [f"{scale_name}_{j+1}" for j in range(num_items)]
                 try:
                     _rev_idx0 = [r - 1 for r in sorted(reverse_items) if 1 <= r <= num_items]
@@ -14201,9 +14654,16 @@ class EnhancedSimulationEngine:
                                 logger.warning("disable_permanently() failed on budget exceed: %s", _dp_err)
 
                 participant_condition = conditions.iloc[i]
+                _visibility_condition = participant_condition
+                # v1.3.0.6: a repeated-measures question that belongs to one within-condition is written for THAT
+                # condition (see within_design); everything else about the cascade is unchanged.
+                if q.get("_condition_override"):
+                    participant_condition = str(q["_condition_override"])
+                elif q.get("_condition_suffix"):
+                    participant_condition = f"{participant_condition} - {q['_condition_suffix']}"
 
                 # Check if this participant's condition allows them to see this question
-                if not self.survey_flow_handler.is_question_visible(col_name, participant_condition):
+                if not self.survey_flow_handler.is_question_visible(col_name, _visibility_condition):
                     # Participant wouldn't see this question - leave blank (NA)
                     responses.append("")
                     # v1.2.2.3: Must also append to _sources_for_col to keep lists aligned.
@@ -14227,6 +14687,8 @@ class EnhancedSimulationEngine:
                     from .persona_library import Persona
                     persona = Persona(name="default", description="Default responder", weight=1.0, traits={})
                 response_vals = participant_item_responses[i]
+                if q.get("_response_slice"):  # v1.3.0.6: only this within-condition's answers shape its text
+                    response_vals = response_vals[int(q["_response_slice"][0]):int(q["_response_slice"][1])]
                 # v1.0.6.1: Filter NaN before computing mean to prevent propagation
                 _clean_resp = [float(v) for v in response_vals if v is not None and not (isinstance(v, float) and np.isnan(v))] if response_vals else []
                 response_mean = float(np.mean(_clean_resp)) if _clean_resp else None
@@ -14617,7 +15079,7 @@ class EnhancedSimulationEngine:
                 ("Attention_Pass_Rate", "Proportion of attention checks passed (0-1)"),
                 ("Max_Straight_Line", "Maximum consecutive identical responses"),
                 ("Flag_Speed", "Flagged for completion time: 1=Yes, 0=No"),
-                ("Flag_Attention", "Flagged for attention checks: 1=Yes, 0=No"),
+                ("Flag_Attention", "Flagged for failing an attention check: 1=Yes, 0=No"),
                 ("Flag_StraightLine", "Flagged for straight-lining: 1=Yes, 0=No"),
                 ("Exclude_Recommended", "Recommended for exclusion: 1=Yes, 0=No"),
             ]
@@ -15138,6 +15600,11 @@ class EnhancedSimulationEngine:
         except Exception as _eff_err:
             self._log(f"WARNING: final effect summary refresh skipped: {_eff_err}")
 
+        try:
+            self._finalize_quality_flags(df, metadata)
+        except Exception as _flag_err:
+            self._log(f"WARNING: final quality-flag refresh skipped: {_flag_err}")
+
         return df, metadata
 
     def _effect_spec_diagnostics(self) -> Dict[str, Any]:
@@ -15471,25 +15938,73 @@ class EnhancedSimulationEngine:
             self._log(f"Reconciled {fixed} composite value(s) with their final item values")
         return fixed
 
-    def _defer_user_effect_for_scale(self, scale_name: str, scale_min: int, scale_max: int, has_reverse: bool) -> bool:
-        """Whether this scale's user-specified effect is built into the finished item responses.
+    def _defer_user_effect_for_scale(self, scale_name: str, scale_min: int, scale_max: int, has_reverse: bool,
+                                     num_items: int = 0) -> bool:
+        """Whether this scale's effect (requested or inferred) is built into the finished item responses.
 
-        True for a scale that carries the cross-scale latent term (several scales in the design) and
-        has a user effect. Not for knowledge-base economic-game outcomes: their generator shifts a latent
-        quantile of the published outcome distribution (keeping its spikes at zero and at an even
-        split) and never receives the latent term, so the ordinary route is exact for them.
+        True when the scale carries the cross-scale latent term (several scales in the design) OR is a
+        block of three or more items (v1.3.0.6: the reliability steps that follow generation -- alpha
+        injection / attenuation, decoupling, marginal shaping -- change the item noise AFTER a generator
+        shift is built in, which cost a 4-item 5-point block 12% of the requested d), and the scale has an
+        effect: a user spec, or a non-zero effect inferred from the condition names. Not for
+        knowledge-base economic-game outcomes: their generator shifts a latent quantile of the published
+        outcome distribution (keeping its spikes at zero and at an even split) and never receives the
+        latent term, so the ordinary route is exact for them. Inferred effects in an economic-game
+        context stay in the generator too: their calibrations belong to the game models.
         """
-        if scale_name not in getattr(self, "_latent_dv_names", ()) or scale_max <= scale_min:
+        if scale_max <= scale_min:
+            return False
+        in_latent = scale_name in getattr(self, "_latent_dv_names", ())
+        if not (in_latent or int(num_items) >= 3):
             return False
         if not self._variable_has_user_spec(scale_name):
-            return False
-        if not has_reverse and (scale_max - scale_min) >= 10:
+            if not bool(getattr(self, "auto_effects", True)) or self._is_economic_game_context(scale_name):
+                return False
+            # "an effect" means a per-arm shift of at least d = 0.05, the same floor the inference uses to
+            # tell a match from noise: the stable-hash jitter alone (|d| ~ 0.03) must not defer a scale
+            _unit = self._EFFECT_D_TO_NORMALIZED * self._explicit_effect_scale(scale_name)
+            if _unit <= 0 or not any(abs(self._get_effect_for_condition(str(c), scale_name)) >= 0.05 * _unit
+                                     for c in (self.conditions or [])):
+                return False
+        if not has_reverse and (scale_max - scale_min) >= 1:
             geometry = self._detect_scale_geometry(scale_min, scale_max, scale_name)
             calibration = self._get_domain_response_calibration(scale_name, "")
-            if (calibration.get("_kb_dist") and not geometry["is_bipolar"]
+            _kd = calibration.get("_kb_dist")
+            _route = ((scale_max - scale_min) >= 10) or (
+                (scale_max - scale_min) == 1 and _binary_game_rate(_kd) is not None)   # v1.3.0.6: binary route
+            if (_kd and _route and not geometry["is_bipolar"]
                     and calibration.get("_game_variant") not in ("dictator_taking", "dictator_third_party")):
                 return False
         return True
+
+    def _alpha_before_deferred_effect(self, scale_name: str, target_alpha: float, num_items: int,
+                                      conditions: "pd.Series") -> float:
+        """Cronbach's alpha the reliability steps must aim at so the block ends on ``target_alpha`` once its
+        deferred condition effect has been added.
+
+        The effect shifts all items of a respondent by the same amount, so with a per-item between-condition
+        variance B (in units of the item variance) the finished inter-item correlation is
+        (r_pre + B) / (1 + B). Solving for r_pre, with B = Var(t) x (1 + (k-1) r) / k where t is each
+        respondent's applied move in composite-SD units, gives the lower target. Never raises the target.
+        """
+        try:
+            applied = getattr(self, "_applied_effects", None) or {}
+            move: Dict[str, float] = {}
+            for (cond, var), info in applied.items():
+                unit = float(info.get("unit") or 0.0)
+                if var == scale_name and info.get("source") in ("user", "inferred") and unit > 0:
+                    move[str(cond)] = float(info.get("offset", 0.0)) / (2.0 * unit)
+            if not move:
+                return target_alpha
+            t = np.array([move.get(str(c), 0.0) for c in (conditions.tolist() if hasattr(conditions, "tolist") else conditions)])
+            var_t = float(t.var()) if t.size else 0.0
+            k = int(num_items)
+            r = target_alpha / (k - (k - 1) * target_alpha)
+            b = var_t * (1.0 + (k - 1) * r) / k
+            r_pre = max(0.05, r - (1.0 - r) * b)
+            return float(min(target_alpha, k * r_pre / (1.0 + (k - 1) * r_pre)))
+        except Exception:
+            return target_alpha
 
     def _apply_user_effect_to_scale(
         self,
@@ -15527,7 +16042,7 @@ class EnhancedSimulationEngine:
         applied = getattr(self, "_applied_effects", None) or {}
         targets: Dict[str, float] = {}
         for (cond, var), info in applied.items():
-            if var != scale_name or info.get("source") != "user":
+            if var != scale_name or info.get("source") not in ("user", "inferred"):
                 continue
             unit = float(info.get("unit") or 0.0)
             if unit > 0:
@@ -15583,7 +16098,10 @@ class EnhancedSimulationEngine:
         if sd <= 0:
             return skipped("the scale shows no variation within conditions")
         shrink = {c: float((sign * move)[m].mean()) for c, m in arms.items()}   # reverse-item failures
-        u = np.random.RandomState((int(self.seed) + _stable_int_hash(f"{scale_name}|user_effect")) % (2**31)).random_sample((n, k))
+        # One uniform draw per respondent, shared by the item columns (v1.3.0.6): the randomised rounding then
+        # moves a respondent's items together, so the inter-item correlation, Cronbach's alpha and the share
+        # of identical answers the reliability steps just set are not eroded by independent per-item flips.
+        u = np.random.RandomState((int(self.seed) + _stable_int_hash(f"{scale_name}|user_effect")) % (2**31)).random_sample((n, 1))
         mult = {c: 1.0 for c in arms}
         result, moved, iterations = X, {}, 0
         for iterations in range(1, 15):
@@ -15660,11 +16178,21 @@ class EnhancedSimulationEngine:
             if sd_w <= 0:
                 continue
             lo, hi = float(entry["scale_min"]), float(entry["scale_max"])
-            grand = float(comp.mean())
-            masks = {cond: (df["CONDITION"] == cond).to_numpy() for cond in targets_d}
-            masks = {cond: m for cond, m in masks.items() if m.any()}
-            if not masks:
+            if not any((df["CONDITION"] == cond).any() for cond in targets_d):
                 continue
+            # Every condition takes part: the requested arms move by their target, and each
+            # condition (reference included) gets the chance error of an independent sample.
+            masks = {cond: (df["CONDITION"] == cond).to_numpy() for cond in df["CONDITION"].dropna().unique()}
+            masks = {cond: m for cond, m in masks.items() if m.sum() > 1}
+            aim_d = {cond: float(targets_d.get(cond, 0.0)) for cond in masks}
+            # The game model draws each condition's participants by stratified latent class, so its
+            # arms differ by chance only ~30% as much as independent samples do (measured on the
+            # null gap: SD 0.044 against sqrt(1/n1 + 1/n2) = 0.082 at N = 600). A real sample
+            # carries the full sampling error, so the missing ~70% of its variance is added as a
+            # seeded draw per condition mean, in within-condition SD units (var = 0.7 / n).
+            _chance = np.random.RandomState((int(self.seed) + _stable_int_hash(prefix + "|chance")) % (2**31))
+            for cond in sorted(masks, key=str):
+                aim_d[cond] += float(_chance.normal(0.0, np.sqrt(_GAME_MISSING_CHANCE_VAR / int(masks[cond].sum()))))
             # One uniform draw per participant, shared by the item columns, drives randomised
             # rounding: the answers are integers, so a shift smaller than half a point would
             # otherwise round away entirely (or jump a whole point), while randomised rounding
@@ -15676,6 +16204,13 @@ class EnhancedSimulationEngine:
             shift = {cond: 0.0 for cond in masks}
             sd_now = sd_w
             result = values.copy()
+            # v1.3.0.6: aim at the MOVE, not at the realised gap. Each arm's mean is moved by its
+            # target (+/- d/2 within-condition SDs) from wherever the generated data put it, so the
+            # chance difference between arms that any real sample has is kept and the observed d
+            # varies around the request (SD ~ sqrt(1/n1 + 1/n2)) instead of landing on it every
+            # time (it used to vary by ~0.01 between seeds, against ~0.08 at N = 600). Averaged over
+            # samples the gap is still the requested one. Same rule as _apply_user_effect_to_scale.
+            base_mean = {cond: float(np.nanmean(np.nanmean(values[m], axis=1))) for cond, m in masks.items()}
             for _ in range(8):  # clipping at the bounds eats part of the shift; re-aim
                 result = values.copy()
                 for cond, m in masks.items():
@@ -15683,7 +16218,7 @@ class EnhancedSimulationEngine:
                 new_comp = np.nanmean(result, axis=1)
                 gaps = {}
                 for cond, m in masks.items():
-                    gaps[cond] = (grand + targets_d[cond] * sd_now) - float(np.nanmean(new_comp[m]))
+                    gaps[cond] = aim_d[cond] * sd_now - (float(np.nanmean(new_comp[m])) - base_mean[cond])
                 var_parts = [(float(np.nanvar(new_comp[m], ddof=1)), int(m.sum()) - 1) for m in groups_idx if m.sum() > 1]
                 if var_parts:
                     sd_now = float(np.sqrt(sum(v * k for v, k in var_parts) / max(1, sum(k for _, k in var_parts)))) or sd_now
@@ -15704,13 +16239,14 @@ class EnhancedSimulationEngine:
 
         ``source`` is "user" (an effect you specified; calibrated so the observed Cohen's d on
         the scale mean lands near ``intended_d``), "inferred" (a heuristic difference derived
-        from the condition names; NOT calibrated, so no intended d is given) or "none"
+        from the condition names; built in with the same calibration, but no intended d is given) or "none"
         (inferred effects switched off). ``observed_d`` is the effect actually present in
         this sample.
         """
         import itertools
 
         applied = getattr(self, "_applied_effects", {}) or {}
+        inferred_log = list(getattr(self, "_inferred_effect_log", []) or [])
         by_var: Dict[str, Dict[str, Dict[str, Any]]] = {}
         for (cond, var), info in applied.items():
             by_var.setdefault(var, {})[cond] = info
@@ -15746,21 +16282,53 @@ class EnhancedSimulationEngine:
                         observed = -reverse if reverse is not None else None
                     if observed is not None:
                         break
-                rows.append({
+                row = {
                     "variable": var, "condition_1": c1, "condition_2": c2, "source": source,
                     "intended_d": None if intended is None else round(float(intended), 3),
                     "observed_d": None if observed is None else round(float(observed), 3),
-                })
+                }
+                if source in ("inferred", "mixed"):
+                    # v1.3.0.5: published d, the replication shrinkage and the d that sized the contrast
+                    for ent in inferred_log:
+                        if ent["variable"] == var and (ent["path"] == "paradigm_anchor"
+                                                       or ent.get("condition") in (c1, c2)):
+                            row.update(published_d=ent["published_d"],
+                                       shrinkage_factor=ent["shrinkage_factor"],
+                                       applied_d=ent["applied_d"], inferred_from=ent["key"])
+                            break
+                rows.append(row)
         return {
             "inferred_effects_enabled": bool(getattr(self, "auto_effects", True)),
             "contrasts": rows,
+            # v1.3.0.5: how literature-inferred effects were turned into targets
+            "inferred_effect_policy": self._inferred_policy_summary(),
+            "inferred_effect_sources": inferred_log,
             # v1.2.9.1: one entry per effect you specified: did it reach a variable and a condition?
             "specs": self._effect_spec_diagnostics()["specs"],
             # scales whose effect was built into the finished item responses (several scales in the design)
             "applied_after_generation": list(getattr(self, "_deferred_effect_log", []) or []),
             "note": ("Each contrast is condition_1 minus condition_2, in the order of the conditions. "
                      "intended_d is given only for effects you specified. Inferred effects are a "
-                     "heuristic read of the condition names and are not calibrated to a target d."),
+                     "heuristic read of the condition names, but since v1.3.0.6 they are built in "
+                     "with the same calibration, so the d they name is the d the scale mean shows."),
+        }
+
+    def _inferred_policy_summary(self) -> Dict[str, Any]:
+        """The replication policy applied to inferred (never to user-specified) effects."""
+        if not HAS_EMPIRICAL_REGISTRY:
+            return {"mode": "as_published", "shrinkage_factor": 1.0}
+        pol = self._INFERRED_EFFECT_POLICY or _empirical_registry.EffectPolicy()
+        tier = _empirical_registry.shrinkage_tier()
+        return {
+            "mode": pol.mode,
+            "shrinkage_factor": round(float(_empirical_registry.policy_factor(pol)), 4),
+            "default_tau": round(float(pol.default_tau or _empirical_registry.default_tau()), 4),
+            "heterogeneity_draw": bool(pol.heterogeneity_draw),
+            "min_retained": float(pol.min_retained),
+            "evidence_tier": tier,
+            "source_verified": bool(_empirical_registry.shrinkage_verified()),
+            "applies_to": "inferred effects only (paradigm anchoring and literature fallback); "
+                          "never to effects you specify, the true null, or economic-game baselines",
         }
 
     def _compute_observed_effect_sizes(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
@@ -16158,6 +16726,9 @@ class EnhancedSimulationEngine:
         Composites are computed from the item columns; Simulation_Diagnostics.csv is
         joined on ResponseId for the optional exclusion step.
         """
+        if getattr(self, "_within_result", None):  # v1.3.0.6: repeated-measures layout (wide + long)
+            from .within_scripts import script_for as _within_script
+            return _within_script("r", self, df)
         def _r_quote(x: str) -> str:
             x = _script_text(x).replace("\\", "\\\\").replace('"', '\\"')
             return f'"{x}"'
@@ -16235,6 +16806,9 @@ class EnhancedSimulationEngine:
         Composites are computed from the item columns; Simulation_Diagnostics.csv is
         merged on ResponseId for the optional exclusion step.
         """
+        if getattr(self, "_within_result", None):  # v1.3.0.6: repeated-measures layout (wide + long)
+            from .within_scripts import script_for as _within_script
+            return _within_script("python", self, df)
         def _py_quote(x: str) -> str:
             x = _script_text(x).replace("\\", "\\\\").replace("'", "\\'")
             return f"'{x}'"
@@ -16311,6 +16885,9 @@ class EnhancedSimulationEngine:
         Composites are computed from the item columns; Simulation_Diagnostics.csv is
         joined on ResponseId for the optional exclusion step.
         """
+        if getattr(self, "_within_result", None):  # v1.3.0.6: repeated-measures layout (wide + long)
+            from .within_scripts import script_for as _within_script
+            return _within_script("julia", self, df)
         def _jl_quote(x: str) -> str:
             x = _script_text(x).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
             return f'"{x}"'
@@ -16394,6 +16971,9 @@ class EnhancedSimulationEngine:
         Composites are computed from the item columns; Simulation_Diagnostics.csv is
         matched on ResponseId for the optional exclusion step.
         """
+        if getattr(self, "_within_result", None):  # v1.3.0.6: repeated-measures layout (wide + long)
+            from .within_scripts import script_for as _within_script
+            return _within_script("spss", self, df)
         lines: List[str] = [
             "* ============================================================.",
             f"* SPSS Data Preparation Syntax - {_script_text(self.study_title)}.",
@@ -16468,6 +17048,9 @@ class EnhancedSimulationEngine:
         merged on responseid (Stata lower-cases imported names) for the optional
         exclusion step.
         """
+        if getattr(self, "_within_result", None):  # v1.3.0.6: repeated-measures layout (wide + long)
+            from .within_scripts import script_for as _within_script
+            return _within_script("stata", self, df)
         def _stata_quote(x: str) -> str:
             # Stata expands `macros' and $globals inside double quotes, so neither may survive in a label
             x = _script_text(x).replace('"', "'").replace("`", "'").replace("$", "")
@@ -16578,6 +17161,13 @@ class EnhancedSimulationEngine:
             else:
                 effect_info = f"d = {min(ds):.2f}-{max(ds):.2f}"
 
+        _design_sentence = (
+            f"N = {self.sample_size} synthetic participants were randomly\nassigned to {n_conditions} experimental "
+            f"condition{'s' if n_conditions > 1 else ''}.")
+        if getattr(self, "_within_result", None):  # v1.3.0.6: repeated measures
+            from .within_scripts import methods_sentence as _within_methods_sentence
+            _design_sentence = _within_methods_sentence(self)
+
         methods = f"""
 METHODS: SYNTHETIC DATA GENERATION
 
@@ -16585,8 +17175,7 @@ Data were generated by a persona-based simulation engine whose response-style
 and domain parameters are informed by published survey-methodology research.
 The data are synthetic.
 
-Sample and Design: N = {self.sample_size} synthetic participants were randomly
-assigned to {n_conditions} experimental condition{'s' if n_conditions > 1 else ''}.
+Sample and Design: {_design_sentence}
 Responses were generated for {n_scales} scale{'s' if n_scales > 1 else ''} measuring
 dependent variables relevant to the study context.
 

@@ -1,3 +1,60 @@
+## 2026-10-08 — v1.3.0.6
+### Within-subjects and mixed designs, literature-informed defaults, data-quality flags, cleaner survey parsing
+
+Numbers from recalled literature knowledge sit in the recall band (`recall_*` tiers) and are never marked
+verified: this build reaches web search, GitHub and PyPI but no journal site. Explicit effect sizes and
+`auto_effects=False` keep their meaning; between-subjects output is byte-identical to 1.3.0.5 (checked by
+hash on fixed configurations and random corpus samples).
+
+**Within-subjects and mixed designs (new)**
+- `design=` on the engine and a real design selector on the QSF and builder paths: every participant sees all
+  conditions (or a between x within mix). One person-level baseline makes measures correlate (default r 0.5,
+  user-adjustable; realised r within about 0.02 of the request); `<DV>_<cond>_<i>` wide columns plus a long file;
+  counterbalanced order (random, Latin square, full, fixed) with `Order`/`Position_*`; optional mild order drift
+  (off for a fixed order, where it would be confounded); attrition removes later conditions; careless
+  responders are careless in every condition; open-ended questions can be asked per condition.
+- A requested within d is d_av (d_z is reported next to it): recovered at 0.96-0.99 over 12 seeds. Mixed
+  interactions are expressible ("group difference at one level").
+- Reports: paired t (d_z, d_av, CIs, Holm), repeated-measures ANOVA with Mauchly, Greenhouse-Geisser and
+  Huynh-Feldt, a mixed ANOVA with every between factor as a full factor (numpy only), Wilcoxon and Friedman;
+  never between-subjects tests on within data. Data-preparation scripts understand the wide layout.
+- The "between-subjects only" limitation is gone.
+
+**Literature-informed defaults** (effects you did not specify)
+- 19 new paradigms (`utils/paradigm_coverage.py`), "_" and "-" read as spaces, about 45 new phrase aliases,
+  negators veto a match, the reference arm is exactly 0, polarity flips for symptom outcomes. The matcher now
+  needs a distinctive label token, so "Generic brand" or "Standard price" no longer select a paradigm
+  (27 spurious matches removed over 505 example labels).
+- Replication shrinkage: inferred effects use a recalled publication-bias factor of 0.45 (evidence gathered:
+  OSC 2015 about 0.5, Camerer 2018 about 0.5, Camerer 2016 about 0.66, Many Labs 2 about 0.25, Kvarven 2020
+  about 0.33) with a between-study draw, floored at 0.35 x published. The tier weight and the shrinkage are one
+  discount (the stronger), not a product. Generic keyword effects are shrunk too. Every literature route now
+  delivers the d it names (the content-matched fallback delivered about half).
+- Explicit effects: a lone scale with 3+ items now gets its effect after the reliability steps, so the 4-item
+  5-point cell recovers 0.94 (was 0.88); 18 cells x 12 fresh seeds: mean absolute error 2.8%, worst 7.0%.
+  The remaining 6% in that cell is the consistency audit's inward +-1 repair of ceiling straight-liners.
+- 7-point blocks use their own measured straight-lining rates (same-keyed 0.031, from 16 measured cells).
+
+**Baselines**
+- Public goods and prisoner's dilemma reach their calibrations (key-naming bug); 71 game keys resolve from
+  study text. Binary game outcomes use the stored choice rate (PD 0.57 -> 0.47). Ultimatum SD 0.13 and its modal
+  50% offer, beauty-contest mean 0.36 (p-dependent), DS-R and FSQ ranges, 30 zero-based instruments. Restored
+  game effects keep natural sampling variation (SD across seeds 0.001 -> 0.081).
+- 146 measured registry entries from open data (Likert process at 5 and 7 points, ultimatum acceptance, dictator
+  choices, n-person PD) with scripts and SHA-256 hashes; 51 corroboration verdicts (27 corroborated, 6
+  contradicted, 18 inconclusive); three entries that cite no meta-analysis are relabelled.
+
+**Data-quality flags**
+- Attention failures follow `attention_rate` (21.2% -> 5.0% at the default); the careless share follows
+  `random_responder_rate` (1.3% -> 4.6%); Flag_Attention fires; speeders keep their fast times (Flag_Speed
+  3.9%); flags are computed from the exported columns; straight-lining is judged per Likert block
+  (Exclude_Recommended on a game survey 60% -> 8%); the audit gate is per block.
+
+**Survey parsing and Design page**
+- Conditions come from the randomizer arms, not from section blocks (surveys pre-selecting more than 10
+  conditions 113 -> 5 of 303); duplicate DV columns 2 -> 0; number boxes use Qualtrics validation first
+  (numeric boxes 2,701 -> 2,686); advanced effect widgets survive page changes.
+
 ## 2026-10-07 — v1.3.0.5
 ### Three open-ended template banks could never be selected
 
@@ -62,7 +119,7 @@ lookup) is untouched; only the text post-processing after a response is drawn ch
 - LLM answers: post-processing no longer edits random word positions or replaces substrings without
   word boundaries; it edits only at grammatical positions (`utils/text_cleanup.py`, shared by the LLM
   variation code, the template engine, the stylometric engine and the validator).
-- Numeric text boxes (2,701 of the 4,668 open-ended questions in the 302-file corpus) get numbers that
+- Numeric text boxes (2,686 of the 4,668 open-ended questions in the 302-file corpus) get numbers that
   respect Qualtrics validation: ages, years, counts, amounts, percentages, ZIP codes, and
   MTurk/Prolific/participant IDs. A text box that repeats a numeric DV is skipped. These boxes are
   exempt from every later text pass (stylometric, validator, tidy-up): before, 27 of 60 generated
