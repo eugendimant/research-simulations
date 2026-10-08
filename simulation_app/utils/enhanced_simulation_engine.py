@@ -7502,10 +7502,21 @@ class EnhancedSimulationEngine:
         r"discrimination|stigma|hostil|rumination|worry|guilt|shame)"
     )
 
+    # A glued label ("ControlGroup", "NoTreatment", "Control1") is read as separate words: a change from
+    # lower to upper case, or between a letter and a digit, starts a new word.
+    _LABEL_WORD_BREAK_RE = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])")
+
     def _is_control_arm(self, condition: str) -> bool:
-        """Whether ``condition`` names the reference arm of the design."""
-        _c = str(condition or "").lower()
-        return any(w in _c for w in self._CONTROL_ARM_WORDS)
+        """Whether ``condition`` names the reference arm of the design.
+
+        A reference-arm word has to be a whole word of the label (``_word_in``): a substring test took
+        "Unusual outcome", "Standardized message" and "Uncontrolled spending" for control arms, which
+        skipped their literature effect. As in ``_kw_hit`` an underscore separates words
+        ("cognitive_dissonance_control"); a plural counts ("Healthy controls"), and so does a glued
+        label ("ControlGroup", "NoTreatment", "Control1").
+        """
+        _c = _label_norm(self._LABEL_WORD_BREAK_RE.sub(" ", str(condition or "")).replace("_", " "))
+        return any(_word_in(w, _c) or _word_in(w + "s", _c) for w in self._CONTROL_ARM_WORDS)
 
     def _stable_rng(self, *parts: str) -> random.Random:
         """A Random seeded only by this run's seed and ``parts``.
@@ -7540,7 +7551,7 @@ class EnhancedSimulationEngine:
             unit = 2.0 * 0.109 * float(meta_d)  # same currency as explicit specs: gap = 2*0.109*d
             conds = [str(c) for c in (self.conditions or [])]
             raw = {c: self._get_automatic_condition_effect(c, variable, _raw=True) for c in conds}
-            is_ctrl = {c: (any(w in c.lower() for w in self._CONTROL_ARM_WORDS)
+            is_ctrl = {c: (self._is_control_arm(c)
                            or bool(re.search(r"\b(no|without|absent|not)\b", c.lower()))) for c in conds}
             gap = (max(raw.values()) - min(raw.values())) if raw else 0.0
             table = {c: 0.0 for c in conds}

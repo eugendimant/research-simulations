@@ -3596,7 +3596,7 @@ def _send_email_with_smtp_legacy(
 
     Supports Gmail, Google Workspace, Outlook, or any SMTP provider.
 
-    Required Streamlit secrets:
+    Required secrets (environment variables or Streamlit secrets, see ``_secret``):
         - SMTP_SERVER (e.g., "smtp.gmail.com")
         - SMTP_PORT (e.g., 587)
         - SMTP_USERNAME (your email address)
@@ -3618,12 +3618,15 @@ def _send_email_with_smtp_legacy(
 
     # Get SMTP configuration from secrets
     smtp_server = _secret("SMTP_SERVER", "")
-    smtp_port = int(_secret("SMTP_PORT", 587))
+    try:  # an environment variable is text, and a mistyped one must not stop the send before it starts
+        smtp_port = int(_secret("SMTP_PORT", 587) or 587)
+    except (TypeError, ValueError):
+        smtp_port = 587
     smtp_username = _secret("SMTP_USERNAME", "")
     smtp_password = _secret("SMTP_PASSWORD", "")
     from_email = _secret("SMTP_FROM_EMAIL", smtp_username)
     from_name = _secret("SMTP_FROM_NAME", "Behavioral Experiment Simulation Tool")
-    use_tls = _secret("SMTP_USE_TLS", True)
+    use_tls = _secret_bool("SMTP_USE_TLS", True)
 
     if not smtp_server or not smtp_username or not smtp_password:
         return False, "Email not configured. Contact the administrator."
@@ -3695,12 +3698,41 @@ def _send_email_with_smtp_legacy(
 
 
 def _secret(name: str, default: Any = "") -> Any:
-    """Read one Streamlit secret. Returns ``default`` when the secret is missing or when no
-    secrets file exists at all (local runs), instead of raising."""
+    """Read one deployment secret: environment variable first, then ``st.secrets``, then ``default``.
+
+    That is the order docs/DEPLOYMENT_SECRETS.md promises and the one ``_access_code_matches`` and the
+    LLM key loader already use, so SMTP settings, the instructor address and the email limits work
+    when they are set only as environment variables. An environment variable that is empty or only
+    whitespace counts as unset; a value that is used is returned stripped. An environment variable is
+    always text: callers coerce numbers (``int(...)``) and flags (``_secret_bool``) themselves.
+    Never raises: a missing secret, or no secrets file at all (local runs), gives ``default``.
+    """
     try:
+        from_environment = os.environ.get(name, "").strip()
+        if from_environment:
+            return from_environment
         return st.secrets.get(name, default)
-    except Exception:
+    except Exception as exc:  # no secrets.toml configured (every local run), or an unreadable one
+        _app_logging.getLogger(__name__).debug("Secret %s not read from st.secrets (%s)", name, type(exc).__name__)
         return default
+
+
+def _secret_bool(name: str, default: bool = True) -> bool:
+    """A true/false secret that reads the same from an environment variable and from ``st.secrets``.
+
+    The environment gives the text "false" (and a quoted TOML value does too), which a bare ``if``
+    treats as True. Same rule as ``utils.email_delivery._as_bool``: ``0``/``false``/``no``/``off`` in
+    any case are False, empty means ``default``, anything else is True. It is repeated here because
+    the only caller that needs it without ``utils.email_delivery`` is the legacy sender, which runs
+    exactly when that module failed to import; ``tests/test_audit_fixes_v1304.py`` pins the two to
+    the same answers.
+    """
+    value = _secret(name, default)
+    if isinstance(value, bool):
+        return value
+    if value is None or str(value).strip() == "":
+        return default
+    return str(value).strip().lower() not in ("0", "false", "no", "off")
 
 
 # ---------------------------------------------------------------------------------------

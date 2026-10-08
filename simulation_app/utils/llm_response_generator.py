@@ -43,7 +43,7 @@ try:
 except ImportError:  # imported as a top-level module (scripts, some test layouts)
     from text_cleanup import (  # type: ignore[no-redef]
         apply_contractions, drop_one_optional_word, finalize_generated_text, has_opener,
-        insert_filler, lower_first, swap_one_word,
+        insert_filler, lower_first, swap_one_word, split_sentences, is_probably_non_english,
     )
 
 logger = logging.getLogger(__name__)
