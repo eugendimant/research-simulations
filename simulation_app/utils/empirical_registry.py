@@ -810,3 +810,12 @@ try:  # pragma: no cover - exercised through the registry's own tests
     RECALL_AUDIT_COUNT = load_recall_audit()
 except Exception:
     RECALL_AUDIT_COUNT = 0
+
+#: Recall records for the paradigms added in v1.3.0.5 (see `paradigm_coverage`). Same format and
+#: same `register_recall` gate as the main audit; a separate file keeps the audit of the original
+#: entries untouched.
+RECALL_COVERAGE_FILE = "recall_coverage_v1305.json"
+try:  # pragma: no cover - exercised through the coverage tests
+    RECALL_AUDIT_COUNT += load_recall_audit(_os.path.join(_REGISTRY_DIR, RECALL_COVERAGE_FILE))
+except Exception:
+    pass
