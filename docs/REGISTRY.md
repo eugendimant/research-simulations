@@ -102,6 +102,20 @@ reverse-keying and these mirrors do not all publish a key — the α reference l
 mirror verified only by row-count agreement with the source index. Derived summary
 statistics only, with the source's own terms quoted in the provenance record.
 
+### Evidence entries (v1.3.0.6)
+
+`tools/derive_evidence_benchmarks.py <data_root> -o simulation_app/utils/registry/evidence_v1306.json`
+produces 103 MEASURED entries under the `evidence.` prefix (5- and 7-point Likert process,
+per-item response time, ultimatum acceptance by offer, binary dictator choices, n-person PD,
+two single experiments). No engine path consults that prefix, so they change no output
+until one is wired in on purpose. The exception is `item_process_7pt_v1306.json`, written by the
+same tool with `--engine-out`: the 7-point straight-lining cells under the ids
+`item.likert.<same|mixed>.k<n>.sp7.straightlined_share`, scoped to `scale_points [7]`, which the
+identical-answer pass finds through the existing `lookup_best` call (narrower entries win ties),
+so 5- and 9-point blocks keep the 5-point cells. `registry/corroboration_v1306.json` is **not** a registry
+store (it has no `entries` key): it records search-summary corroboration verdicts and
+never carries a tier.
+
 ## Promoting an entry
 
 1. Read the primary source and copy the sentence that states the number.
@@ -130,7 +144,7 @@ effect the simulator produces. It refuses:
 The recalled-figure route is separate: `set_recalled_shrinkage()` installs a factor
 through `register_recall()`, so it is tiered `recall_uncertain`, can never claim a source,
 and cannot overwrite a verified record. Since v1.3.0.5 it is how the active default is
-installed: `shrinkage_factor()` is **0.60** and `default_tau()` **0.15**, applied to
+installed: `shrinkage_factor()` is **0.45** (0.60 before v1.3.0.6, kept as `factor_was`) and `default_tau()` **0.15**, applied to
 effects the tool infers (paradigm anchor, literature fallback) and never to an effect you
 specify. `coverage_summary()["shrinkage_verified"]` stays False and `honesty_notice()`
 says the factor is recalled and unchecked. See `docs/EMPIRICAL_PROVENANCE.md` for the

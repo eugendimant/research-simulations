@@ -67,7 +67,7 @@ def test_policy_is_active_and_labelled_recalled():
     assert rec.status in R.RECALL_TIERS and rec.status != R.VERIFIED
     assert rec.note.startswith("RECALL, NOT SOURCE-VERIFIED")
     assert rec.doi == "" and rec.url == "" and rec.quote == ""
-    assert R.shrinkage_factor() == pytest.approx(0.60)
+    assert R.shrinkage_factor() == pytest.approx(0.45)
     assert R.default_tau() == pytest.approx(0.15)
     assert R.shrinkage_verified() is False
     s = R.coverage_summary()
@@ -78,7 +78,7 @@ def test_policy_is_active_and_labelled_recalled():
 
 def test_a_source_verified_gate_still_refuses_recall_and_recall_cannot_overwrite_a_check():
     with pytest.raises(R.ProvenanceTooWeak):
-        R.set_shrinkage(0.6, 0.15, R.Provenance(status=R.RECALL_CONSISTENT, quote="x"))
+        R.set_shrinkage(0.45, 0.15, R.Provenance(status=R.RECALL_CONSISTENT, quote="x"))
     saved_prov, saved_state = dict(R.PROVENANCE), dict(R._SHRINKAGE)
     try:
         R.PROVENANCE[POLICY_KEY] = R.Provenance(status=R.VERIFIED, quote="q", doi="10.x/y")
@@ -100,8 +100,8 @@ def test_no_registry_or_match_ever_reports_the_policy_as_verified():
 
 
 def test_adjust_effect_applies_the_factor_and_respects_the_floor():
-    assert R.adjust_effect(0.8, key="", policy=SHRINK_ONLY) == pytest.approx(0.48)
-    assert R.adjust_effect(-0.8, key="", policy=SHRINK_ONLY) == pytest.approx(-0.48)
+    assert R.adjust_effect(0.8, key="", policy=SHRINK_ONLY) == pytest.approx(0.36)
+    assert R.adjust_effect(-0.8, key="", policy=SHRINK_ONLY) == pytest.approx(-0.36)
     assert R.adjust_effect(0.8, key="", policy=AS_PUBLISHED) == pytest.approx(0.8)
     rng = random.Random(0)
     for pub in (0.1, 0.3, 0.8):
@@ -120,11 +120,11 @@ def test_literature_fallback_is_shrunk():
     raw = L.lookup(policy=AS_PUBLISHED, **kw)
     shr = L.lookup(policy=SHRINK_ONLY, **kw)
     assert raw.published_d == shr.published_d
-    assert shr.shrinkage == pytest.approx(0.60) and raw.shrinkage == 1.0
-    assert shr.effect_d == pytest.approx(raw.effect_d * 0.60) or \
+    assert shr.shrinkage == pytest.approx(0.45) and raw.shrinkage == 1.0
+    assert shr.effect_d == pytest.approx(raw.effect_d * 0.45) or \
         shr.effect_d == pytest.approx(0.35 * shr.published_d)            # at the floor
     assert abs(shr.effect_d) < abs(raw.effect_d)
-    assert shr.as_dict()["shrinkage_factor"] == pytest.approx(0.60)
+    assert shr.as_dict()["shrinkage_factor"] == pytest.approx(0.45)
 
 
 def test_fallback_default_draw_uses_a_default_tau_when_the_entry_has_none():
@@ -140,7 +140,7 @@ def test_engine_fallback_logs_published_factor_and_applied():
     v = eng._get_effect_for_condition("cognitive_dissonance_induced", "attitude")
     # since the paradigm vocabulary grew, this label is anchored; either inferred path must log the policy
     row = [r for r in eng._inferred_effect_log if r["path"] in ("literature_fallback", "paradigm_anchor")][0]
-    assert row["shrinkage_factor"] == pytest.approx(0.60)
+    assert row["shrinkage_factor"] == pytest.approx(0.45)
     assert row["applied_d"] < row["published_d"]
     assert row["applied_d"] >= 0.35 * row["published_d"] - 1e-9
     assert v > 0
@@ -152,11 +152,11 @@ def test_paradigm_anchor_is_shrunk_and_matches_the_logged_d():
     shr = _engine(policy=SHRINK_ONLY)
     v_raw = raw._get_effect_for_condition("High anchor", "Price")
     v_shr = shr._get_effect_for_condition("High anchor", "Price")
-    assert v_shr == pytest.approx(v_raw * 0.60, rel=1e-6)
+    assert v_shr == pytest.approx(v_raw * 0.45, rel=1e-6)
     row = shr._inferred_effect_log[0]
     assert row["path"] == "paradigm_anchor"
     assert row["published_d"] == pytest.approx(pub, abs=1e-4)
-    assert row["applied_d"] == pytest.approx(pub * 0.60, abs=1e-4)
+    assert row["applied_d"] == pytest.approx(pub * 0.45, abs=1e-4)
     # default policy: shrunk, with a between-study draw, never under the floor
     dflt = _engine()
     dflt._get_effect_for_condition("High anchor", "Price")
@@ -233,11 +233,11 @@ def test_metadata_reports_published_factor_and_applied():
     eng = _engine(n=200)
     meta = eng.generate()[1]["effect_sizes_applied"]
     pol = meta["inferred_effect_policy"]
-    assert pol["mode"] == "replication_adjusted" and pol["shrinkage_factor"] == pytest.approx(0.60)
+    assert pol["mode"] == "replication_adjusted" and pol["shrinkage_factor"] == pytest.approx(0.45)
     assert pol["source_verified"] is False and pol["evidence_tier"] in R.RECALL_TIERS
     row = [c for c in meta["contrasts"] if c["source"] == "inferred"][0]
     assert {"published_d", "shrinkage_factor", "applied_d"} <= set(row)
-    assert row["shrinkage_factor"] == pytest.approx(0.60)
+    assert row["shrinkage_factor"] == pytest.approx(0.45)
     assert meta["inferred_effect_sources"]
     json.dumps(meta, allow_nan=False)                           # no NaN / inf anywhere
     assert np.isfinite(row["applied_d"])

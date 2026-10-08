@@ -167,7 +167,7 @@ def test_only_a_recall_labelled_shrinkage_is_installed_by_default():
     """
     assert R.shrinkage_verified() is False
     assert R.shrinkage_tier() in R.RECALL_TIERS
-    assert R.shrinkage_factor() == pytest.approx(0.60)
+    assert R.shrinkage_factor() == pytest.approx(0.45)
     assert R.default_tau() == pytest.approx(0.15)
 
 

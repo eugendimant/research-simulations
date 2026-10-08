@@ -297,7 +297,8 @@ def set_shrinkage(factor: float, default_tau: float, prov: Provenance,
 
 def set_recalled_shrinkage(factor: float, default_tau: float, note: str, *,
                            by_evidence: Optional[Dict[str, float]] = None,
-                           source: str = "", audited_on: str = "") -> bool:
+                           source: str = "", audited_on: str = "",
+                           corrected: Optional[Dict[str, Any]] = None) -> bool:
     """Install a publication-bias shrinkage figure that rests on RECALL.
 
     The recall-band counterpart of `set_shrinkage`. It is honest about what it is:
@@ -317,7 +318,7 @@ def set_recalled_shrinkage(factor: float, default_tau: float, note: str, *,
         return False
     if not register_recall(_SHRINKAGE["provenance_key"], RECALL_UNCERTAIN, note,
                            source=source, checked_fields=("shrinkage", "default_tau"),
-                           audited_on=audited_on):
+                           audited_on=audited_on, corrected=corrected):
         return False
     _SHRINKAGE["factor"] = float(factor)
     _SHRINKAGE["default_tau"] = float(default_tau)
@@ -844,7 +845,7 @@ try:
     from .empirical_provenance_data import RECALLED_SHRINKAGE as _RS  # type: ignore
     set_recalled_shrinkage(_RS["factor"], _RS["default_tau"], _RS["note"],
                            by_evidence=_RS.get("by_evidence"), source=_RS.get("source", ""),
-                           audited_on="2026-10-08")
+                           audited_on="2026-10-08", corrected=_RS.get("corrected"))
 except Exception:  # pragma: no cover
     pass
 
@@ -903,5 +904,14 @@ except Exception:
 RECALL_COVERAGE_FILE = "recall_coverage_v1305.json"
 try:  # pragma: no cover - exercised through the coverage tests
     RECALL_AUDIT_COUNT += load_recall_audit(_os.path.join(_REGISTRY_DIR, RECALL_COVERAGE_FILE))
+except Exception:
+    pass
+
+#: v1.3.0.6 recall records written after search-summary corroboration (relabels two entries that
+#: cite no meta-analysis and scopes the ostracism magnitude). Loaded last so it supersedes the
+#: earlier recall verdicts for those keys; still gated by `register_recall`.
+RECALL_EVIDENCE_FILE = "recall_evidence_v1306.json"
+try:  # pragma: no cover - exercised through tests/test_evidence_v1306.py
+    RECALL_AUDIT_COUNT += load_recall_audit(_os.path.join(_REGISTRY_DIR, RECALL_EVIDENCE_FILE))
 except Exception:
     pass

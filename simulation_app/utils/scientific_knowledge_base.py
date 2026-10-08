@@ -2390,11 +2390,11 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
     ),
 
     "loyalty_program_meta": MetaAnalyticEffect(
-        source="Dorotic et al. (2012); Breugelmans et al. (2015)",
+        source="NOT a meta-analysis - judgement informed by a literature review (Dorotic et al., 2012) and a research agenda (Breugelmans et al., 2015); no pooled estimate",
         effect_d=0.20,
         ci_95=(0.10, 0.30),
-        n_studies=35,
-        n_participants=100000,
+        n_studies=0,
+        n_participants=0,
         domain="consumer_psychology",
         construct="purchase_frequency",
         paradigm="loyalty_program",
@@ -2405,15 +2405,15 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
             "program_type": {"points": 0.22, "tiered": 0.28, "cashback": 0.15},
             "industry": {"airline": 0.25, "retail": 0.18, "hospitality": 0.22},
         },
-        notes="Modest effects on purchase behavior. Tiered programs most effective."
+        notes="Modest effects on purchase behavior. Tiered programs most effective. v1.3.0.6: neither cited work is a meta-analysis, so the d, interval, k (was 35) and N (was 100,000) have no pooled source; a real meta-analysis exists (Belli et al., 2022, 429 effect sizes) and was not read. Treat 0.20 as a judgement."
     ),
 
     "personalization_meta": MetaAnalyticEffect(
-        source="Aguirre et al. (2015); Tam & Ho (2006)",
+        source="NOT a meta-analysis - judgement informed by two primary experiments (Aguirre et al., 2015; Tam & Ho, 2006); no pooled estimate",
         effect_d=0.32,
         ci_95=(0.20, 0.44),
-        n_studies=40,
-        n_participants=35000,
+        n_studies=0,
+        n_participants=0,
         domain="consumer_psychology",
         construct="response_rate",
         paradigm="personalization",
@@ -2424,7 +2424,7 @@ META_ANALYTIC_DB: Dict[str, MetaAnalyticEffect] = {
             "type": {"content": 0.38, "name_only": 0.15, "recommendation": 0.35},
             "privacy_concern": {"low": 0.40, "high": 0.15},
         },
-        notes="Content-based personalization effective but privacy concerns moderate effects."
+        notes="Content-based personalization effective but privacy concerns moderate effects. v1.3.0.6: both cited works are single-paper experiments, so the d, interval, k (was 40) and N (was 35,000) have no pooled source; a personalization meta-analysis of about 53 studies is described as showing a relatively small effect and was not read. Treat 0.32 as a judgement."
     ),
 
     "user_review_meta": MetaAnalyticEffect(

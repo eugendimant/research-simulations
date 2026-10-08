@@ -49,8 +49,10 @@ One self-selected web sample of one instrument family, on one scale length.
 It pins down the shape of 6-point agreement data; it is **not** a reference for
 other scale lengths (the benchmark widens tolerances and says so when it has to
 substitute), other response formats, or economic-game allocations. Adding 5- and
-7-point references needs OSF / Zenodo, which this build's network policy blocks
-(see `EMPIRICAL_PROVENANCE.md`).
+7-point references needed OSF / Zenodo, which this build's network policy blocks;
+5- and 7-point response-process aggregates were since measured from GitHub-mirrored
+instruments (`registry/evidence_v1306.json`, see "Evidence gathered 2026-10-08" in
+`EMPIRICAL_PROVENANCE.md`) but are **not yet wired into this benchmark**.
 
 ## Result: before and after
 

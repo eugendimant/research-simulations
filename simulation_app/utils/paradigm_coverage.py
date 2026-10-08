@@ -109,7 +109,12 @@ PARADIGM_ENTRIES: Dict[str, Dict[str, Any]] = {
         replication_status="replicated",
         notes="Exclusion lowers belonging, mood and need satisfaction; the immediate effect on "
               "need satisfaction is larger than on downstream outcomes. Magnitude recalled "
-              "loosely and set well below the largest reported figures."),
+              "loosely and set well below the largest reported figures. v1.3.0.6: a Cyberball "
+              "meta-analysis (Hartgerink et al., 2015; 120 studies) reports an average |d| above "
+              "1.4, dominated by need-satisfaction and mood checks taken right after the game. "
+              "The stored -0.45 is NOT that figure and not a pooled estimate: it is a "
+              "conservative size for a belonging or mood DV measured as a downstream outcome, "
+              "and understates a manipulation check by a wide margin."),
     "expressive_writing_meta": dict(
         source="Frattaroli (2006, Psychological Bulletin)",
         effect_d=0.15, ci_95=(0.05, 0.25), n_studies=146, domain="health_psychology",
