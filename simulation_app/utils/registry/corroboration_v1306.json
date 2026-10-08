@@ -3,7 +3,7 @@
  "gathered_on": "2026-10-08",
  "method": "Web search (standard mode) only. Each item cites the search-engine summary of the paper or its abstract, quoted in 25 words or fewer, with the result URLs. A summary is NOT the paper: nothing here is promoted to verified, no tier changes, and no item supplies the quote required for the verified tier. Where two results carry the same abstract they count as ONE source.",
  "verdict_rule": "corroborated = a summary states a figure consistent with ours; contradicted = a summary states a figure that differs from ours; inconclusive = no comparable figure was returned.",
- "change_rule": "A stored value is changed only when two INDEPENDENT summaries agree with each other and differ from us. No item met that bar, so no stored value was changed.",
+ "change_rule": "Default: a stored magnitude is changed only when two INDEPENDENT summaries agree with each other and differ from us. v1.3.0.6 changes the shrinkage factor on the pooled evidence of five replication projects, and relabels or scopes (never re-sizes) three entries; each change is a recall-band record with the old value kept as <field>_was.",
  "qsf_usage": {
   "note": "Condition names (QSFPreviewParser.detected_conditions) plus survey names of the 303 example QSFs were run through _match_meta_entry; counts are QSFs in which the key matched. Block-name text was also tried, which is where endowment_effect matched.",
   "files_parsed": 303,
@@ -39,14 +39,14 @@
  },
  "counts": {
   "corroborated": 27,
-  "contradicted": 5,
-  "inconclusive": 19
+  "contradicted": 6,
+  "inconclusive": 18
  },
  "counts_by_group": {
   "replication_shrinkage": {
    "corroborated": 5,
-   "contradicted": 1,
-   "inconclusive": 2
+   "contradicted": 2,
+   "inconclusive": 1
   },
   "game_baseline": {
    "corroborated": 6,
@@ -81,7 +81,9 @@
    ],
    "verdict": "corroborated",
    "note": "Abstract-level summary; 36% of replications significant, 47% of original effects inside the replication CI.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "camerer2018",
@@ -95,7 +97,9 @@
    ],
    "verdict": "corroborated",
    "note": "The 71% figure is the authors' estimate for true positives only, which is the upper end of our 0.45-0.75 band.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "camerer2016",
@@ -109,7 +113,9 @@
    ],
    "verdict": "corroborated",
    "note": "11 of 18 replicated in the original direction (61%).",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "manylabs2_ratio",
@@ -123,7 +129,9 @@
    ],
    "verdict": "contradicted",
    "note": "Median ratio is ~0.25, not ~0.5 (28 findings, 15,305 participants; 54% significant in the original direction, 32% reversed). The 'about half' in our notes is true of the share that replicated, not of effect size. Documentation corrected; shrinkage value unchanged.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "Documentation corrected, and the ratio is one of the five inputs to the lowered shrinkage factor (0.60 -> 0.45).",
+   "recall_key": ""
   },
   {
    "id": "manylabs1",
@@ -137,7 +145,9 @@
    ],
    "verdict": "inconclusive",
    "note": "Summary gives counts (13 effects, 36 samples, 6,344 participants) but no effect-size ratio, so it cannot corroborate a shrinkage number.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "kvarven2020",
@@ -151,7 +161,9 @@
    ],
    "verdict": "corroborated",
    "note": "Corroborates the LOW end (ratio ~0.33). The same summary says a reanalysis (Lewis et al. 2022) finds the discrepancy 'less dramatic'. Relevant because the inferred-effect path draws on meta-analytic entries.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "mertens_maier2022",
@@ -165,7 +177,9 @@
    ],
    "verdict": "corroborated",
    "note": "Abstract states d = 0.45 [0.39, 0.52]; a letter quotes 0.43 from the main text (unresolved). A separate letter (Szaszi et al.) gives bias-corrected 0.08-0.31, so the stored compromise 0.15 lies inside the corrected range.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "shrinkage_overall",
@@ -177,9 +191,11 @@
     "https://authors.library.caltech.edu/records/gr9cr-qjb08",
     "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8864345/"
    ],
-   "verdict": "inconclusive",
-   "note": "Figures gathered span 0.25 (ML2 median) / 0.33 (Kvarven) / 0.5 (OSC, Camerer 2018) / 0.66 (Camerer 2016) / 0.71 (true positives). They bracket 0.60 at its upper end, exactly where the notes put it. Heterogeneous definitions and populations: not clear enough to change the factor.",
-   "changed_value": false
+   "verdict": "contradicted",
+   "note": "Figures gathered span 0.25 (Many Labs 2 median) / 0.33 (Kvarven) / 0.5 (OSC, Camerer 2018) / 0.66 (Camerer 2016) / 0.71 (true positives). Weighted by the number of studies they centre on 0.46, and the two sources that compare meta-analyses with replications are the lowest, so 0.60 was too high for effects drawn from META_ANALYTIC_DB. Changed to 0.45 (recall tier, old value kept as factor_was); min_retained stays 0.35.",
+   "changed_value": true,
+   "resolution": "Factor changed 0.60 -> 0.45 in v1.3.0.6 through set_recalled_shrinkage; still recall_uncertain.",
+   "recall_key": "policy:publication_bias"
   },
   {
    "id": "engel_mean",
@@ -193,7 +209,9 @@
    ],
    "verdict": "corroborated",
    "note": "Two independent citing papers state 28.3%.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "engel_zero",
@@ -207,7 +225,9 @@
    ],
    "verdict": "corroborated",
    "note": "A second source gives the zero-offer rate as 36% on average.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "engel_shape",
@@ -220,7 +240,9 @@
    ],
    "verdict": "corroborated",
    "note": "One source; the SD (0.18) in the same entry remains inconsistent with this shape (see EMPIRICAL_PROVENANCE).",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "engel_k",
@@ -234,7 +256,9 @@
    ],
    "verdict": "inconclusive",
    "note": "The summaries disagree with each other about the count; neither is the paper.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "jm_trust_mean",
@@ -248,7 +272,9 @@
    ],
    "verdict": "corroborated",
    "note": "Secondhand figure from a 2025 preprint, not from the meta-analysis summary.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "jm_trust_k",
@@ -262,7 +288,9 @@
    ],
    "verdict": "contradicted",
    "note": "Both pages are the same abstract, so this is ONE source. Not applied: the entry's k may count something broader (papers vs iterations).",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "Note added to the trust_standard recall record; value left because both pages are one abstract and k may count papers rather than iterations.",
+   "recall_key": ""
   },
   {
    "id": "oosterbeek_offer",
@@ -276,7 +304,9 @@
    ],
    "verdict": "corroborated",
    "note": "Also 'pools 37 papers containing 75 results' (matches n_studies 37) and 'About 16% of offers are rejected'.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "ug_low_offer_rejection",
@@ -290,7 +320,9 @@
    ],
    "verdict": "inconclusive",
    "note": "No meta-analytic rejection-by-offer curve found. Our MEASURED student sample (n=111) rejects 67-82% at a 20% or smaller share, so the rate is sample-dependent.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "zelmer_pgg",
@@ -304,7 +336,9 @@
    ],
    "verdict": "inconclusive",
    "note": "Zelmer's summary reports group efficiency, not a contribution share; 28 studies/711 groups in the working paper, 27 in the journal version. 0.40 lies inside the cited 30-70% range, which is too wide to corroborate it.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "pgg_decay",
@@ -317,7 +351,9 @@
    ],
    "verdict": "corroborated",
    "note": "Direction only; magnitudes not found. The MEASURED Guyer data are a repeated n-person PD, not a PGG.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "sally_pd",
@@ -331,7 +367,9 @@
    ],
    "verdict": "inconclusive",
    "note": "The summary does not show the cooperation rate or experiment count.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "dalbo_pd",
@@ -345,7 +383,9 @@
    ],
    "verdict": "inconclusive",
    "note": "Qualitative agreement only; no cooperation rates in the summaries.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "meade_craig",
@@ -359,7 +399,9 @@
    ],
    "verdict": "inconclusive",
    "note": "Secondary sources put the usual share at 10-15% (range 3.5%-46%), above our 5%, but the share depends on sample and definition. Our MEASURED volunteer data show 0.2% with a median item time under 2 s and 0.1% straight-lining across 20 mixed-keyed items. Not changed: the default lives in the engine and is user-adjustable.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "prolific_mturk",
@@ -373,7 +415,9 @@
    ],
    "verdict": "corroborated",
    "note": "Direction only. Vendor-written pass rates (69% vs 48-51% passing both checks) are not independent and are not used.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "nudge_general_meta",
@@ -387,7 +431,9 @@
    ],
    "verdict": "corroborated",
    "note": "Matches the entry's own note; 0.15 is explicitly a compromise, not a published number.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "social_norm_message_meta",
@@ -401,7 +447,9 @@
    ],
    "verdict": "inconclusive",
    "note": "110 articles; no pooled value in the summary. A separate 2025 health-norms meta-analysis (not this entry) gives d = 0.1 that vanishes after bias control.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "identifiable_victim_effect",
@@ -415,7 +463,9 @@
    ],
    "verdict": "corroborated",
    "note": "Value and k corroborated. Caveat from the same summary: the three highest-powered studies are near zero (r = 0.004) and Bayesian reanalyses suggest publication bias; a preregistered replication found no effect.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "anthropomorphism_meta",
@@ -429,7 +479,9 @@
    ],
    "verdict": "inconclusive",
    "note": "No effect size in either summary; the citation is confirmed as a real meta-analysis.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "mortality_salience_meta",
@@ -443,7 +495,9 @@
    ],
    "verdict": "inconclusive",
    "note": "Original meta-analysis r = .35 (~d 0.75); Many Labs 4 (21 labs, N = 2,220) could not replicate under any condition, Bayesian reanalysis d 0.03-0.18. The stored 0.15 sits at the replication end by design, so neither end settles it.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "source_credibility_meta",
@@ -457,7 +511,9 @@
    ],
    "verdict": "inconclusive",
    "note": "Summary reports explained variance (9% overall, 16% expertise), not d; only 6% of studies measured behaviour.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "sponsorship_disclosure_meta",
@@ -471,7 +527,9 @@
    ],
    "verdict": "inconclusive",
    "note": "Sign corroborated (61 papers, 57 data sets); magnitude not in the summaries.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "social_exclusion_ostracism_meta",
@@ -485,7 +543,9 @@
    ],
    "verdict": "contradicted",
    "note": "Cyberball meta-analysis (120 studies, N = 11,869) reports d > |1.4|, versus our -0.45. NOT applied: both pages are the same abstract (one source), the Gerber & Wheeler (2009) figure was not retrievable, and the 1.4 is for need/affect outcomes where a behavioural DV would be far smaller. Flagged for a source check.",
-   "changed_value": false
+   "changed_value": true,
+   "resolution": "Magnitude kept (-0.45) but scoped to a downstream belonging/mood outcome; entry notes and recall record state that the manipulation-check/need-satisfaction effect is |d| > 1.4 and that -0.45 is not a pooled estimate.",
+   "recall_key": "meta:social_exclusion_ostracism_meta"
   },
   {
    "id": "expressive_writing_meta",
@@ -499,7 +559,9 @@
    ],
    "verdict": "corroborated",
    "note": "r = .075 converts to d ~0.15; k matches.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "gratitude_intervention_meta",
@@ -513,7 +575,9 @@
    ],
    "verdict": "inconclusive",
    "note": "Direction and 'small' agree; k differs by one (27 appears to belong to a different, later gratitude meta-analysis, g = -0.29 on depression/anxiety).",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "positive_psychology_intervention_meta",
@@ -527,7 +591,9 @@
    ],
    "verdict": "corroborated",
    "note": "39 studies, 6,139 participants; 0.25 is inside the three outcome-specific values.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "cognitive_reappraisal_meta",
@@ -541,7 +607,9 @@
    ],
    "verdict": "inconclusive",
    "note": "Secondary teaching source; 'cognitive change' is broader than reappraisal; 306 comparisons. The paper's own figure was not seen.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "active_learning_stem_meta",
@@ -555,7 +623,9 @@
    ],
    "verdict": "corroborated",
    "note": "225 studies in all; 0.47 SD on 158 of them.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "feedback_intervention_meta",
@@ -569,7 +639,9 @@
    ],
    "verdict": "corroborated",
    "note": "607 effect sizes, 23,663 observations; about 38% of effects negative (relevant to heterogeneity, not modelled).",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "tailored_health_messages_meta",
@@ -582,7 +654,9 @@
    ],
    "verdict": "corroborated",
    "note": "r = .074 converts to d ~0.15; k matches.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "graphic_warning_labels_meta",
@@ -596,7 +670,9 @@
    ],
    "verdict": "inconclusive",
    "note": "37 studies / 48 samples (N = 33,613); direction corroborated, no pooled value in the summary.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "illusory_truth_meta",
@@ -610,7 +686,9 @@
    ],
    "verdict": "corroborated",
    "note": "0.39 is the within-items estimate; between-items is larger (0.50). A later paper warns the old estimate pre-dates modern bias correction.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "gamification_meta",
@@ -624,7 +702,9 @@
    ],
    "verdict": "corroborated",
    "note": "0.30 lies inside the three outcome-specific values. A 2023 meta-analysis reports g = 0.82 under different inclusion criteria.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "imagined_contact_meta",
@@ -638,7 +718,9 @@
    ],
    "verdict": "corroborated",
    "note": "Published point estimate 0.35 is above our 0.25 but inside our CI (0.10-0.40); abstract says 'over 70 studies'. Many Labs 1 found only weak support for imagined contact.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "endowment_effect",
@@ -652,7 +734,9 @@
    ],
    "verdict": "inconclusive",
    "note": "Healthcare-goods WTA/WTP ratios 1.73 mean (13 papers) and a survey correlation of 0.15-0.2 exist, but no pooled d.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "anchoring_effect",
@@ -666,7 +750,9 @@
    ],
    "verdict": "corroborated",
    "note": "Value corroborated; the same summary says incidental anchors are near zero (Many Labs 2: d = 0.04). The stored k=95 and the 'narrative review' source do not match this meta-analysis.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "placebo_effect_meta",
@@ -680,7 +766,9 @@
    ],
    "verdict": "corroborated",
    "note": "Magnitude corroborated; k differs (158 continuous-outcome trials vs stored 202) and the stored CI upper bound 0.40 is outside the published interval. Authors call pooling 'questionable'.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "loyalty_program_meta",
@@ -694,7 +782,9 @@
    ],
    "verdict": "contradicted",
    "note": "Neither cited source is a meta-analysis (an agenda paper and a literature review), so the pooled d, CI and k=35 have no source. Real meta-analyses exist (Belli et al. 2022, 429 effect sizes; r < .30 in a thesis). Magnitude not changed: no pooled figure retrieved.",
-   "changed_value": false
+   "changed_value": true,
+   "resolution": "Source text and notes now say it is NOT a meta-analysis; k 35 -> 0, N 100,000 -> 0 (old values in the recall record as *_was); d unchanged.",
+   "recall_key": "meta:loyalty_program_meta"
   },
   {
    "id": "scarcity_effect_meta",
@@ -708,7 +798,9 @@
    ],
    "verdict": "inconclusive",
    "note": "k corroborated; pooled effect not in the summaries.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "green_defaults_meta",
@@ -722,7 +814,9 @@
    ],
    "verdict": "corroborated",
    "note": "d corroborated for ALL defaults (58 studies). The same paper finds environmental-domain defaults are LESS effective than average, and I-squared is above 90%.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "ingroup_cooperation_meta",
@@ -735,7 +829,9 @@
    ],
    "verdict": "corroborated",
    "note": "Same summary: d = 0.19 for dictator-type tasks and 0.42 for social dilemmas, which matters for the political-matching rules.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "self_affirmation_meta",
@@ -749,7 +845,9 @@
    ],
    "verdict": "corroborated",
    "note": "144 tests confirmed. The 0.17 value matches message acceptance; the summary itself warns the published article's values were not confirmed.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "zero_price_effect",
@@ -763,7 +861,9 @@
    ],
    "verdict": "inconclusive",
    "note": "The original paper is a single-experiment series reporting choice shares; k=18 and a pooled d have no source found.",
-   "changed_value": false
+   "changed_value": false,
+   "resolution": "",
+   "recall_key": ""
   },
   {
    "id": "personalization_meta",
@@ -777,7 +877,9 @@
    ],
    "verdict": "contradicted",
    "note": "Both cited sources are primary experiments (three experiments plus a field study; a lab experiment plus a field study), so a pooled d and k=40 have no source. A real personalization meta-analysis (53 studies) is described as 'relatively small'. Value not changed.",
-   "changed_value": false
+   "changed_value": true,
+   "resolution": "Source text and notes now say it is NOT a meta-analysis; k 40 -> 0, N 35,000 -> 0 (old values in the recall record as *_was); d unchanged.",
+   "recall_key": "meta:personalization_meta"
   }
  ]
 }

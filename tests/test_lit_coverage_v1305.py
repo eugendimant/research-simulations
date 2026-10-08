@@ -282,7 +282,10 @@ def test_the_applied_size_is_the_damped_recalled_value():
     damped = (published * reg.confidence_weight("meta", "expressive_writing_meta")
               * reg.policy_factor(reg.EffectPolicy()))
     # explicit currency: the reference arm is the zero point and the gap is 2 x 0.109 x d
-    assert d == pytest.approx(damped * PC.CURATED_GAP_FACTOR, rel=1e-6)
+    # v1.3.0.6: with the factor at 0.45 the recall-tier damping takes this below the
+    # EffectPolicy floor (0.35 x published), so the floor is what sets the size.
+    floor = reg.EffectPolicy().min_retained * published
+    assert d == pytest.approx(max(damped, floor) * PC.CURATED_GAP_FACTOR, rel=1e-6)
     assert 0 < d / PC.CURATED_GAP_FACTOR < published
 
 

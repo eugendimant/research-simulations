@@ -216,7 +216,7 @@ def test_automatic_valence_effect_is_literature_sized():
 
     v1.3.0.5: this study's title names "framing", so the effect is the framing
     meta-analysis (published d 0.31) and, like every inferred paradigm effect, it is
-    shrunk toward the replication effect (x0.60, with a between-study draw, never
+    shrunk toward the replication effect (x0.45 since v1.3.0.6, with a between-study draw, never
     below 0.35 x published). The lower bound drops from 0.3 to 0.1 for that reason
     alone; the upper bound still catches a return to the old inflated magnitude."""
     df = _named_run("Positive feedback", "Negative feedback", 0.0, with_spec=False)
@@ -409,13 +409,13 @@ def _auto_d(title, conds, dv, n=1600, seed=7):
 def test_meta_anchored_effect_magnitude(title, conds, dv, expected):
     """A named paradigm gets its published magnitude, replication-shrunk (and the right sign).
 
-    v1.3.0.5: ``expected`` stays the PUBLISHED d. An inferred effect is multiplied by 0.60
-    and given a between-study draw (SD about 0.1-0.15 d), so the target is 0.60 x published
+    v1.3.0.5: ``expected`` stays the PUBLISHED d. An inferred effect is multiplied by 0.45
+    and given a between-study draw (SD about 0.1-0.15 d), so the target is 0.45 x published
     with a band of max(30%, 0.12) -- wide enough for the draw, narrow enough to fail if
     the shrinkage were removed (the published value would sit outside it for the large
     effects, which are also asserted to be clearly below the published d)."""
     d = _auto_d(title, conds, dv)
-    target = 0.60 * abs(expected)
+    target = 0.45 * abs(expected)
     assert abs(abs(d) - target) <= max(0.30 * target, 0.12), f"d={d:.2f} vs shrunk {target:.2f}"
     if abs(expected) >= 0.5:
         assert abs(d) < 0.85 * abs(expected), f"d={d:.2f} is not below the published {expected}"

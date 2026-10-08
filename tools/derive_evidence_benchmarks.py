@@ -122,7 +122,7 @@ def empirical_key(mat: np.ndarray) -> np.ndarray:
     return key
 
 
-def window_stats(mat: np.ndarray, key: np.ndarray, widths=range(3, 9)) -> Dict[str, Dict[int, dict]]:
+def window_stats(mat: np.ndarray, key: np.ndarray, widths=range(3, 11)) -> Dict[str, Dict[int, dict]]:
     """Straight-line share and aligned reliability over every contiguous k-window,
     split by whether the window is same- or mixed-keyed (empirical key)."""
     n, p = mat.shape
@@ -240,11 +240,45 @@ def d_se(d: float, na: int, nb: int) -> float:
     return float(np.sqrt((na + nb) / (na * nb) + d * d / (2 * (na + nb))))
 
 
+#: Fewest contributing blocks for a width/keying cell to be republished for the engine.
+#: Widths of nine and ten items exist only where a whole 10-item facet is same-keyed, which
+#: is rare, so one block is accepted there (the entry then carries the single-block caveat);
+#: the alternative is the 5-point same-keyed rate, which is several times too high.
+MIN_BLOCKS_FOR_ENGINE = 5
+MIN_BLOCKS_FOR_WIDE = 1
+
+
+def engine_entries(entries: List[dict]) -> List[dict]:
+    """Copy the 7-point straight-lining cells into the id shape the engine's lookup
+    uses (`item.likert.<keying>.k<n>...straightlined_share`). Scoped to
+    scale_points [7], so the lookup declines for every other scale length and the
+    5- and 9-point behaviour stays on the existing entries. Cells measured on fewer
+    than MIN_BLOCKS_FOR_ENGINE blocks are not republished (the lookup then declines)."""
+    out = []
+    for e in entries:
+        m = re.fullmatch(r"evidence\.likert7\.(same|mixed)\.k(\d+)\.straightlined_share", e["entry_id"])
+        if not m:
+            continue
+        need = MIN_BLOCKS_FOR_WIDE if int(m.group(2)) >= 9 else MIN_BLOCKS_FOR_ENGINE
+        if len(e["provenance"]["contributing_blocks"]) < need:
+            continue
+        c = json.loads(json.dumps(e))
+        c["entry_id"] = f"item.likert.{m.group(1)}.k{m.group(2)}.sp7.straightlined_share"
+        c["provenance"]["consumed_by_engine"] = True
+        c["caveats"] = list(c["caveats"]) + [
+            "Scoped to 7-point scales: a 7-point same-keyed block straight-lines about a "
+            "third as often as a 5-point one, so the 5-point rate must not be reused"]
+        out.append(c)
+    return out
+
+
 # --------------------------------------------------------------------------- main
 def main(argv: List[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("data_root")
     ap.add_argument("-o", "--out", default="-")
+    ap.add_argument("--engine-out", default="",
+                    help="write the 7-point straight-lining entries the engine consults")
     args = ap.parse_args(argv)
     root = args.data_root
 
@@ -337,7 +371,7 @@ def main(argv: List[str]) -> int:
                 f"evidence.likert{sp}.{kind}.whole_block.straightlined_share", "proportion",
                 [p["straightlined_share"] for p in sub], "proportion", a2, contrib(sub),
                 sources, common, license_=OPP_LICENSE, license_quote=OPP_QUOTE))
-        for k in range(3, 9):
+        for k in range(3, 11):
             for kind in ("same", "mixed"):
                 vals, who = [], []
                 for p in keyed:
@@ -571,11 +605,22 @@ def main(argv: List[str]) -> int:
     out = {
         "schema_version": 1, "generated_by": SCRIPT, "generated_on": RETRIEVED,
         "note": ("Entries use the 'evidence.' prefix, which no engine path consults. They are "
-                 "MEASURED but do not change generated data; wiring one in is a separate, "
-                 "tested change."),
+                 "MEASURED but do not change generated data. The 7-point straight-lining rates "
+                 "are republished under 'item.likert.<keying>.k<n>.sp7' by --engine-out, which "
+                 "the identical-answer pass consults through the existing registry lookup."),
         "sources": sources, "entries": entries,
         "cross_checks": cross, "block_profiles": profiles,
     }
+    if args.engine_out:
+        eng = engine_entries(entries)
+        eng_out = {"schema_version": 1, "generated_by": SCRIPT, "generated_on": RETRIEVED,
+                   "note": ("7-point straight-lining rates by block width and keying, measured on "
+                            "HEXACO-IPIP facets. Scoped to seven response options, so 5- and "
+                            "9-point blocks keep the entries in item_process.json."),
+                   "entries": eng}
+        with open(args.engine_out, "w") as fh:
+            fh.write(json.dumps(eng_out, indent=1) + "\n")
+        print(f"wrote {args.engine_out}: {len(eng)} entries", file=sys.stderr)
     text = json.dumps(out, indent=1, sort_keys=False)
     if args.out == "-":
         print(text)

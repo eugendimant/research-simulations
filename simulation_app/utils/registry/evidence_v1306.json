@@ -2,7 +2,7 @@
  "schema_version": 1,
  "generated_by": "tools/derive_evidence_benchmarks.py",
  "generated_on": "2026-10-08",
- "note": "Entries use the 'evidence.' prefix, which no engine path consults. They are MEASURED but do not change generated data; wiring one in is a separate, tested change.",
+ "note": "Entries use the 'evidence.' prefix, which no engine path consults. They are MEASURED but do not change generated data. The 7-point straight-lining rates are republished under 'item.likert.<keying>.k<n>.sp7' by --engine-out, which the identical-answer pass consults through the existing registry lookup.",
  "sources": [
   {
    "dataset": "CFCS",
@@ -3567,6 +3567,690 @@
    ]
   },
   {
+   "entry_id": "evidence.likert5.same.k9.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.013685255899440862,
+   "dispersion": 0.0019006136771824082,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     5
+    ],
+    "items_per_block": [
+     9,
+     9
+    ],
+    "keying": "same",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "NPAS :: NPAS (n=23617, k=26)",
+     "HSNS :: HSNS (n=52385, k=10)"
+    ],
+    "datasets": [
+     "HSNS",
+     "NPAS"
+    ],
+    "sources": [
+     {
+      "dataset": "NPAS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/NPAS-data-16December2018/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/NPAS-data-16December2018.zip",
+      "sha256": "286019040c1f35e8e59bd899f85d3d3b48329b7f48528cc9ad2b7607aa9373ef",
+      "bytes": 4520411,
+      "n_rows_file": 25226
+     },
+     {
+      "dataset": "HSNS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSNS%2BDD/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HSNS+DD.zip",
+      "sha256": "8d42609e61e230c4e43bf2f7b319c7a753fabf12d7f8c44524388bc4690b41fd",
+      "bytes": 2974656,
+      "n_rows_file": 53981
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block"
+   ]
+  },
+  {
+   "entry_id": "evidence.likert5.mixed.k9.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.0019498003047649438,
+   "dispersion": 0.0005520817224262848,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     5
+    ],
+    "items_per_block": [
+     9,
+     9
+    ],
+    "keying": "mixed",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "CFCS :: CFCS (n=14819, k=12)",
+     "MACH-IV :: MACH (n=73486, k=20)",
+     "PWE :: PWE (n=1349, k=19)"
+    ],
+    "datasets": [
+     "CFCS",
+     "MACH-IV",
+     "PWE"
+    ],
+    "sources": [
+     {
+      "dataset": "CFCS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/CFCS/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/CFCS.zip",
+      "sha256": "1dfbbf32ba042256ced3528b7501881b827fbb7900302713d9dcd7664c23f58a",
+      "bytes": 528889,
+      "n_rows_file": 15035
+     },
+     {
+      "dataset": "MACH-IV",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/MACH_data/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/MACH_data.zip",
+      "sha256": "52b830731aeae52c945b6f62b7f7c3083a44aded8353041a2670bf98882fdaec",
+      "bytes": 22501950,
+      "n_rows_file": 73489
+     },
+     {
+      "dataset": "PWE",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/PWE_data/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/PWE_data.zip",
+      "sha256": "457a27a112c92580fbabd33e62a015b72b7634bdd4d702c2c49c91c4b7a8ec21",
+      "bytes": 396969,
+      "n_rows_file": 1350
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block"
+   ]
+  },
+  {
+   "entry_id": "evidence.likert5.k9.aligned_mean_interitem_r",
+   "quantity": "mean",
+   "value": 0.26172065389020827,
+   "dispersion": 0.064526595744805,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "raw_points",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     5
+    ],
+    "items_per_block": [
+     9,
+     9
+    ],
+    "keying": "any",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "CFCS :: CFCS (n=14819, k=12)",
+     "MACH-IV :: MACH (n=73486, k=20)",
+     "PWE :: PWE (n=1349, k=19)",
+     "NPAS :: NPAS (n=23617, k=26)",
+     "HSNS :: HSNS (n=52385, k=10)"
+    ],
+    "datasets": [
+     "CFCS",
+     "HSNS",
+     "MACH-IV",
+     "NPAS",
+     "PWE"
+    ],
+    "sources": [
+     {
+      "dataset": "CFCS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/CFCS/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/CFCS.zip",
+      "sha256": "1dfbbf32ba042256ced3528b7501881b827fbb7900302713d9dcd7664c23f58a",
+      "bytes": 528889,
+      "n_rows_file": 15035
+     },
+     {
+      "dataset": "MACH-IV",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/MACH_data/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/MACH_data.zip",
+      "sha256": "52b830731aeae52c945b6f62b7f7c3083a44aded8353041a2670bf98882fdaec",
+      "bytes": 22501950,
+      "n_rows_file": 73489
+     },
+     {
+      "dataset": "PWE",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/PWE_data/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/PWE_data.zip",
+      "sha256": "457a27a112c92580fbabd33e62a015b72b7634bdd4d702c2c49c91c4b7a8ec21",
+      "bytes": 396969,
+      "n_rows_file": 1350
+     },
+     {
+      "dataset": "NPAS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/NPAS-data-16December2018/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/NPAS-data-16December2018.zip",
+      "sha256": "286019040c1f35e8e59bd899f85d3d3b48329b7f48528cc9ad2b7607aa9373ef",
+      "bytes": 4520411,
+      "n_rows_file": 25226
+     },
+     {
+      "dataset": "HSNS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSNS%2BDD/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HSNS+DD.zip",
+      "sha256": "8d42609e61e230c4e43bf2f7b319c7a753fabf12d7f8c44524388bc4690b41fd",
+      "bytes": 2974656,
+      "n_rows_file": 53981
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Direction-aligned using the empirical key; standardised alpha from the mean inter-item r of each k-item window"
+   ]
+  },
+  {
+   "entry_id": "evidence.likert5.k9.aligned_alpha",
+   "quantity": "mean",
+   "value": 0.7514857061099578,
+   "dispersion": 0.06306256784316516,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "raw_points",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     5
+    ],
+    "items_per_block": [
+     9,
+     9
+    ],
+    "keying": "any",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "CFCS :: CFCS (n=14819, k=12)",
+     "MACH-IV :: MACH (n=73486, k=20)",
+     "PWE :: PWE (n=1349, k=19)",
+     "NPAS :: NPAS (n=23617, k=26)",
+     "HSNS :: HSNS (n=52385, k=10)"
+    ],
+    "datasets": [
+     "CFCS",
+     "HSNS",
+     "MACH-IV",
+     "NPAS",
+     "PWE"
+    ],
+    "sources": [
+     {
+      "dataset": "CFCS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/CFCS/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/CFCS.zip",
+      "sha256": "1dfbbf32ba042256ced3528b7501881b827fbb7900302713d9dcd7664c23f58a",
+      "bytes": 528889,
+      "n_rows_file": 15035
+     },
+     {
+      "dataset": "MACH-IV",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/MACH_data/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/MACH_data.zip",
+      "sha256": "52b830731aeae52c945b6f62b7f7c3083a44aded8353041a2670bf98882fdaec",
+      "bytes": 22501950,
+      "n_rows_file": 73489
+     },
+     {
+      "dataset": "PWE",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/PWE_data/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/PWE_data.zip",
+      "sha256": "457a27a112c92580fbabd33e62a015b72b7634bdd4d702c2c49c91c4b7a8ec21",
+      "bytes": 396969,
+      "n_rows_file": 1350
+     },
+     {
+      "dataset": "NPAS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/NPAS-data-16December2018/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/NPAS-data-16December2018.zip",
+      "sha256": "286019040c1f35e8e59bd899f85d3d3b48329b7f48528cc9ad2b7607aa9373ef",
+      "bytes": 4520411,
+      "n_rows_file": 25226
+     },
+     {
+      "dataset": "HSNS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSNS%2BDD/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HSNS+DD.zip",
+      "sha256": "8d42609e61e230c4e43bf2f7b319c7a753fabf12d7f8c44524388bc4690b41fd",
+      "bytes": 2974656,
+      "n_rows_file": 53981
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Direction-aligned using the empirical key; standardised alpha from the mean inter-item r of each k-item window"
+   ]
+  },
+  {
+   "entry_id": "evidence.likert5.same.k10.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.011022785733937621,
+   "dispersion": 0.0016043671946179231,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     5
+    ],
+    "items_per_block": [
+     10,
+     10
+    ],
+    "keying": "same",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "NPAS :: NPAS (n=23617, k=26)",
+     "HSNS :: HSNS (n=52385, k=10)"
+    ],
+    "datasets": [
+     "HSNS",
+     "NPAS"
+    ],
+    "sources": [
+     {
+      "dataset": "NPAS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/NPAS-data-16December2018/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/NPAS-data-16December2018.zip",
+      "sha256": "286019040c1f35e8e59bd899f85d3d3b48329b7f48528cc9ad2b7607aa9373ef",
+      "bytes": 4520411,
+      "n_rows_file": 25226
+     },
+     {
+      "dataset": "HSNS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSNS%2BDD/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HSNS+DD.zip",
+      "sha256": "8d42609e61e230c4e43bf2f7b319c7a753fabf12d7f8c44524388bc4690b41fd",
+      "bytes": 2974656,
+      "n_rows_file": 53981
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block"
+   ]
+  },
+  {
+   "entry_id": "evidence.likert5.mixed.k10.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.0017319918884254864,
+   "dispersion": 0.0004671629582848557,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     5
+    ],
+    "items_per_block": [
+     10,
+     10
+    ],
+    "keying": "mixed",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "CFCS :: CFCS (n=14819, k=12)",
+     "MACH-IV :: MACH (n=73486, k=20)",
+     "PWE :: PWE (n=1349, k=19)"
+    ],
+    "datasets": [
+     "CFCS",
+     "MACH-IV",
+     "PWE"
+    ],
+    "sources": [
+     {
+      "dataset": "CFCS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/CFCS/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/CFCS.zip",
+      "sha256": "1dfbbf32ba042256ced3528b7501881b827fbb7900302713d9dcd7664c23f58a",
+      "bytes": 528889,
+      "n_rows_file": 15035
+     },
+     {
+      "dataset": "MACH-IV",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/MACH_data/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/MACH_data.zip",
+      "sha256": "52b830731aeae52c945b6f62b7f7c3083a44aded8353041a2670bf98882fdaec",
+      "bytes": 22501950,
+      "n_rows_file": 73489
+     },
+     {
+      "dataset": "PWE",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/PWE_data/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/PWE_data.zip",
+      "sha256": "457a27a112c92580fbabd33e62a015b72b7634bdd4d702c2c49c91c4b7a8ec21",
+      "bytes": 396969,
+      "n_rows_file": 1350
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block"
+   ]
+  },
+  {
+   "entry_id": "evidence.likert5.k10.aligned_mean_interitem_r",
+   "quantity": "mean",
+   "value": 0.2647910242845427,
+   "dispersion": 0.06688508889621256,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "raw_points",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     5
+    ],
+    "items_per_block": [
+     10,
+     10
+    ],
+    "keying": "any",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "CFCS :: CFCS (n=14819, k=12)",
+     "MACH-IV :: MACH (n=73486, k=20)",
+     "PWE :: PWE (n=1349, k=19)",
+     "NPAS :: NPAS (n=23617, k=26)",
+     "HSNS :: HSNS (n=52385, k=10)"
+    ],
+    "datasets": [
+     "CFCS",
+     "HSNS",
+     "MACH-IV",
+     "NPAS",
+     "PWE"
+    ],
+    "sources": [
+     {
+      "dataset": "CFCS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/CFCS/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/CFCS.zip",
+      "sha256": "1dfbbf32ba042256ced3528b7501881b827fbb7900302713d9dcd7664c23f58a",
+      "bytes": 528889,
+      "n_rows_file": 15035
+     },
+     {
+      "dataset": "MACH-IV",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/MACH_data/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/MACH_data.zip",
+      "sha256": "52b830731aeae52c945b6f62b7f7c3083a44aded8353041a2670bf98882fdaec",
+      "bytes": 22501950,
+      "n_rows_file": 73489
+     },
+     {
+      "dataset": "PWE",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/PWE_data/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/PWE_data.zip",
+      "sha256": "457a27a112c92580fbabd33e62a015b72b7634bdd4d702c2c49c91c4b7a8ec21",
+      "bytes": 396969,
+      "n_rows_file": 1350
+     },
+     {
+      "dataset": "NPAS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/NPAS-data-16December2018/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/NPAS-data-16December2018.zip",
+      "sha256": "286019040c1f35e8e59bd899f85d3d3b48329b7f48528cc9ad2b7607aa9373ef",
+      "bytes": 4520411,
+      "n_rows_file": 25226
+     },
+     {
+      "dataset": "HSNS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSNS%2BDD/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HSNS+DD.zip",
+      "sha256": "8d42609e61e230c4e43bf2f7b319c7a753fabf12d7f8c44524388bc4690b41fd",
+      "bytes": 2974656,
+      "n_rows_file": 53981
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Direction-aligned using the empirical key; standardised alpha from the mean inter-item r of each k-item window"
+   ]
+  },
+  {
+   "entry_id": "evidence.likert5.k10.aligned_alpha",
+   "quantity": "mean",
+   "value": 0.7727605191922102,
+   "dispersion": 0.06064645430702723,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "raw_points",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     5
+    ],
+    "items_per_block": [
+     10,
+     10
+    ],
+    "keying": "any",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "CFCS :: CFCS (n=14819, k=12)",
+     "MACH-IV :: MACH (n=73486, k=20)",
+     "PWE :: PWE (n=1349, k=19)",
+     "NPAS :: NPAS (n=23617, k=26)",
+     "HSNS :: HSNS (n=52385, k=10)"
+    ],
+    "datasets": [
+     "CFCS",
+     "HSNS",
+     "MACH-IV",
+     "NPAS",
+     "PWE"
+    ],
+    "sources": [
+     {
+      "dataset": "CFCS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/CFCS/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/CFCS.zip",
+      "sha256": "1dfbbf32ba042256ced3528b7501881b827fbb7900302713d9dcd7664c23f58a",
+      "bytes": 528889,
+      "n_rows_file": 15035
+     },
+     {
+      "dataset": "MACH-IV",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/MACH_data/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/MACH_data.zip",
+      "sha256": "52b830731aeae52c945b6f62b7f7c3083a44aded8353041a2670bf98882fdaec",
+      "bytes": 22501950,
+      "n_rows_file": 73489
+     },
+     {
+      "dataset": "PWE",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/PWE_data/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/PWE_data.zip",
+      "sha256": "457a27a112c92580fbabd33e62a015b72b7634bdd4d702c2c49c91c4b7a8ec21",
+      "bytes": 396969,
+      "n_rows_file": 1350
+     },
+     {
+      "dataset": "NPAS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/NPAS-data-16December2018/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/NPAS-data-16December2018.zip",
+      "sha256": "286019040c1f35e8e59bd899f85d3d3b48329b7f48528cc9ad2b7607aa9373ef",
+      "bytes": 4520411,
+      "n_rows_file": 25226
+     },
+     {
+      "dataset": "HSNS",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HSNS%2BDD/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HSNS+DD.zip",
+      "sha256": "8d42609e61e230c4e43bf2f7b319c7a753fabf12d7f8c44524388bc4690b41fd",
+      "bytes": 2974656,
+      "n_rows_file": 53981
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Direction-aligned using the empirical key; standardised alpha from the mean inter-item r of each k-item window"
+   ]
+  },
+  {
    "entry_id": "evidence.likert7.blocks.item_sd_fraction_of_span",
    "quantity": "proportion",
    "value": 0.28345902116314486,
@@ -6555,6 +7239,608 @@
    ]
   },
   {
+   "entry_id": "evidence.likert7.same.k9.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.0037972397235825936,
+   "dispersion": 0.0005283988412608133,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     9,
+     9
+    ],
+    "keying": "same",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: EDepe (n=22783, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block"
+   ]
+  },
+  {
+   "entry_id": "evidence.likert7.mixed.k9.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.0009036631745029716,
+   "dispersion": 0.0002990329436356166,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     9,
+     9
+    ],
+    "keying": "mixed",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block"
+   ]
+  },
+  {
+   "entry_id": "evidence.likert7.k9.aligned_mean_interitem_r",
+   "quantity": "mean",
+   "value": 0.3388830142337647,
+   "dispersion": 0.07913884848948292,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "raw_points",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     9,
+     9
+    ],
+    "keying": "any",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: EDepe (n=22783, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Direction-aligned using the empirical key; standardised alpha from the mean inter-item r of each k-item window"
+   ]
+  },
+  {
+   "entry_id": "evidence.likert7.k9.aligned_alpha",
+   "quantity": "mean",
+   "value": 0.8138601219791012,
+   "dispersion": 0.04835107752522928,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "raw_points",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     9,
+     9
+    ],
+    "keying": "any",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: EDepe (n=22783, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Direction-aligned using the empirical key; standardised alpha from the mean inter-item r of each k-item window"
+   ]
+  },
+  {
+   "entry_id": "evidence.likert7.same.k10.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.002765219681341351,
+   "dispersion": null,
+   "dispersion_kind": "none",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     10,
+     10
+    ],
+    "keying": "same",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: EDepe (n=22783, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block",
+    "Derived from a single contributing block or study, so the value is an order of magnitude rather than a precise rate"
+   ]
+  },
+  {
+   "entry_id": "evidence.likert7.mixed.k10.straightlined_share",
+   "quantity": "proportion",
+   "value": 0.000740486936989134,
+   "dispersion": 0.00018017873213496438,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "proportion",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     10,
+     10
+    ],
+    "keying": "mixed",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Mean over every contiguous k-item window of each block"
+   ]
+  },
+  {
+   "entry_id": "evidence.likert7.k10.aligned_mean_interitem_r",
+   "quantity": "mean",
+   "value": 0.33609362510917834,
+   "dispersion": 0.0781940747711446,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "raw_points",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     10,
+     10
+    ],
+    "keying": "any",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: EDepe (n=22783, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Direction-aligned using the empirical key; standardised alpha from the mean inter-item r of each k-item window"
+   ]
+  },
+  {
+   "entry_id": "evidence.likert7.k10.aligned_alpha",
+   "quantity": "mean",
+   "value": 0.8276083721463628,
+   "dispersion": 0.04555548456458724,
+   "dispersion_kind": "across_blocks",
+   "effect_scale": "raw_points",
+   "construct": "",
+   "paradigm": null,
+   "applicability": {
+    "scale_points": [
+     7
+    ],
+    "items_per_block": [
+     10,
+     10
+    ],
+    "keying": "any",
+    "design": "any",
+    "population": "any",
+    "repetition": "any"
+   },
+   "k_studies": null,
+   "n_participants": null,
+   "tier": "T0_MEASURED",
+   "provenance": {
+    "kind": "dataset",
+    "script": "tools/derive_evidence_benchmarks.py",
+    "retrieved": "2026-10-08",
+    "measured_in_population": "online_volunteer",
+    "contributing_blocks": [
+     "HEXACO :: HSinc (n=22777, k=10)",
+     "HEXACO :: HFair (n=22783, k=10)",
+     "HEXACO :: HGree (n=22783, k=10)",
+     "HEXACO :: HMode (n=22785, k=10)",
+     "HEXACO :: EFear (n=22780, k=10)",
+     "HEXACO :: EAnxi (n=22782, k=10)",
+     "HEXACO :: EDepe (n=22783, k=10)",
+     "HEXACO :: ESent (n=22777, k=10)",
+     "HEXACO :: XExpr (n=22783, k=10)",
+     "HEXACO :: XSocB (n=22784, k=10)",
+     "HEXACO :: XSoci (n=22782, k=10)",
+     "HEXACO :: XLive (n=22783, k=10)",
+     "HEXACO :: AForg (n=22783, k=10)",
+     "HEXACO :: AGent (n=22780, k=10)",
+     "HEXACO :: AFlex (n=22782, k=10)",
+     "HEXACO :: APati (n=22783, k=10)",
+     "HEXACO :: COrga (n=22782, k=10)",
+     "HEXACO :: CDili (n=22778, k=10)",
+     "HEXACO :: CPerf (n=22783, k=10)",
+     "HEXACO :: CPrud (n=22781, k=10)",
+     "HEXACO :: OAesA (n=22785, k=10)",
+     "HEXACO :: OInqu (n=22784, k=10)",
+     "HEXACO :: OCrea (n=22782, k=10)",
+     "HEXACO :: OUnco (n=22780, k=10)"
+    ],
+    "datasets": [
+     "HEXACO"
+    ],
+    "sources": [
+     {
+      "dataset": "HEXACO",
+      "retrieved_from": "https://raw.githubusercontent.com/haghish/openpsychometrics/main/HEXACO/data.csv",
+      "canonical_source": "https://openpsychometrics.org/_rawdata/HEXACO.zip",
+      "sha256": "c57020fb7b4a16fd03cdaa3ff25ea9f4455fd6619d3efdb864d619b757437f99",
+      "bytes": 11202266,
+      "n_rows_file": 22786
+     }
+    ],
+    "license": "none stated; the mirror states 'solely for research purpose, allowing students to access the data for statistical courses'",
+    "license_quote": "For general public edification the data collected through the personality tests on this website is dumped here. All data is anonymous.",
+    "consumed_by_engine": false
+   },
+   "caveats": [
+    "Self-selected internet volunteers who took an online personality test, not a probability sample and not a paid experiment panel",
+    "Single-group instruments: these benchmark response process only and must never calibrate a condition effect",
+    "Items are 'scale blocks' (all items of one instrument or facet). Straight-lining is the share answering every item of a contiguous k-item window identically; column order is the instrument's item numbering, not necessarily page order",
+    "Item keying is empirical (sign of the first-principal-component loading), not a published key",
+    "Direction-aligned using the empirical key; standardised alpha from the mean inter-item r of each k-item window"
+   ]
+  },
+  {
    "entry_id": "evidence.rt.mach5pt.item_seconds_median",
    "quantity": "mean",
    "value": 6.979,
@@ -8431,6 +9717,18 @@
       "rbar": 0.3398010085205438,
       "alpha": 0.8044726755606211,
       "windows": 5
+     },
+     "9": {
+      "straightlined": 0.0023112220797624674,
+      "rbar": 0.3489686501076187,
+      "alpha": 0.8281022449534409,
+      "windows": 4
+     },
+     "10": {
+      "straightlined": 0.0020019344535168815,
+      "rbar": 0.3580447984234971,
+      "alpha": 0.8479245941715717,
+      "windows": 3
      }
     },
     "any": {
@@ -8469,6 +9767,18 @@
       "rbar": 0.3398010085205438,
       "alpha": 0.8044726755606211,
       "windows": 5
+     },
+     "9": {
+      "straightlined": 0.0023112220797624674,
+      "rbar": 0.3489686501076187,
+      "alpha": 0.8281022449534409,
+      "windows": 4
+     },
+     "10": {
+      "straightlined": 0.0020019344535168815,
+      "rbar": 0.3580447984234971,
+      "alpha": 0.8479245941715717,
+      "windows": 3
      }
     }
    },
@@ -8537,6 +9847,18 @@
       "rbar": 0.2929512238340101,
       "alpha": 0.7636526979350735,
       "windows": 13
+     },
+     "9": {
+      "straightlined": 0.0013143093015449655,
+      "rbar": 0.2954618630361375,
+      "alpha": 0.7866671654966054,
+      "windows": 12
+     },
+     "10": {
+      "straightlined": 0.00119255863207092,
+      "rbar": 0.2952082340816745,
+      "alpha": 0.8038595155640625,
+      "windows": 11
      }
     },
     "any": {
@@ -8575,6 +9897,18 @@
       "rbar": 0.2929512238340101,
       "alpha": 0.7636526979350735,
       "windows": 13
+     },
+     "9": {
+      "straightlined": 0.0013143093015449655,
+      "rbar": 0.2954618630361375,
+      "alpha": 0.7866671654966054,
+      "windows": 12
+     },
+     "10": {
+      "straightlined": 0.00119255863207092,
+      "rbar": 0.2952082340816745,
+      "alpha": 0.8038595155640625,
+      "windows": 11
      }
     }
    },
@@ -8673,6 +10007,18 @@
       "rbar": 0.25403790028154777,
       "alpha": 0.7304201315002806,
       "windows": 11
+     },
+     "9": {
+      "straightlined": 0.002223869532987398,
+      "rbar": 0.25854843419968276,
+      "alpha": 0.757545088049974,
+      "windows": 11
+     },
+     "10": {
+      "straightlined": 0.002001482579688658,
+      "rbar": 0.2609722361738856,
+      "alpha": 0.7782102637592949,
+      "windows": 10
      }
     },
     "any": {
@@ -8711,6 +10057,18 @@
       "rbar": 0.25371153540068153,
       "alpha": 0.7301685571596835,
       "windows": 12
+     },
+     "9": {
+      "straightlined": 0.002223869532987398,
+      "rbar": 0.25854843419968276,
+      "alpha": 0.757545088049974,
+      "windows": 11
+     },
+     "10": {
+      "straightlined": 0.002001482579688658,
+      "rbar": 0.2609722361738856,
+      "alpha": 0.7782102637592949,
+      "windows": 10
      }
     }
    },
@@ -8771,6 +10129,18 @@
       "rbar": 0.1795625461942617,
       "alpha": 0.6329863931902229,
       "windows": 19
+     },
+     "9": {
+      "straightlined": 0.015029192718992442,
+      "rbar": 0.18097686667987153,
+      "alpha": 0.6624088518752574,
+      "windows": 18
+     },
+     "10": {
+      "straightlined": 0.012157244656765192,
+      "rbar": 0.18166869975096822,
+      "alpha": 0.6866914681744545,
+      "windows": 17
      }
     },
     "mixed": {},
@@ -8810,6 +10180,18 @@
       "rbar": 0.1795625461942617,
       "alpha": 0.6329863931902229,
       "windows": 19
+     },
+     "9": {
+      "straightlined": 0.015029192718992442,
+      "rbar": 0.18097686667987153,
+      "alpha": 0.6624088518752574,
+      "windows": 18
+     },
+     "10": {
+      "straightlined": 0.012157244656765192,
+      "rbar": 0.18166869975096822,
+      "alpha": 0.6866914681744545,
+      "windows": 17
      }
     }
    },
@@ -8870,6 +10252,18 @@
       "rbar": 0.2270530208697349,
       "alpha": 0.7011763070635905,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.01234131907988928,
+      "rbar": 0.22464745542773062,
+      "alpha": 0.7227051801745115,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.00988832681111005,
+      "rbar": 0.2280611529926882,
+      "alpha": 0.7471167542916678,
+      "windows": 1
      }
     },
     "mixed": {},
@@ -8909,6 +10303,18 @@
       "rbar": 0.2270530208697349,
       "alpha": 0.7011763070635905,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.01234131907988928,
+      "rbar": 0.22464745542773062,
+      "alpha": 0.7227051801745115,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.00988832681111005,
+      "rbar": 0.2280611529926882,
+      "alpha": 0.7471167542916678,
+      "windows": 1
      }
     }
    },
@@ -9563,6 +10969,12 @@
       "rbar": 0.2847429325276323,
       "alpha": 0.7596102218149354,
       "windows": 2
+     },
+     "9": {
+      "straightlined": 0.004170874127409229,
+      "rbar": 0.26960198516361056,
+      "alpha": 0.7686282500157878,
+      "windows": 1
      }
     },
     "mixed": {
@@ -9600,6 +11012,18 @@
       "straightlined": 0.0015805417745971813,
       "rbar": 0.3222543066665547,
       "alpha": 0.7918330898271807,
+      "windows": 1
+     },
+     "9": {
+      "straightlined": 0.0014049260218641612,
+      "rbar": 0.30254987366038455,
+      "alpha": 0.7960910032645628,
+      "windows": 1
+     },
+     "10": {
+      "straightlined": 0.0009219827018483558,
+      "rbar": 0.2658850176051938,
+      "alpha": 0.7836361565437133,
       "windows": 1
      }
     },
@@ -9639,6 +11063,18 @@
       "rbar": 0.2972467239072731,
       "alpha": 0.7703511778190171,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.002787900074636695,
+      "rbar": 0.28607592941199755,
+      "alpha": 0.7823596266401753,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0009219827018483558,
+      "rbar": 0.2658850176051938,
+      "alpha": 0.7836361565437133,
+      "windows": 1
      }
     }
    },
@@ -9719,6 +11155,18 @@
       "rbar": 0.34142116400071026,
       "alpha": 0.8052657013560746,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0007022780143089145,
+      "rbar": 0.3398011875870498,
+      "alpha": 0.8222170882896302,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0006583856384146074,
+      "rbar": 0.3494147906212532,
+      "alpha": 0.8430332686726113,
+      "windows": 1
      }
     },
     "any": {
@@ -9757,6 +11205,18 @@
       "rbar": 0.34142116400071026,
       "alpha": 0.8052657013560746,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0007022780143089145,
+      "rbar": 0.3398011875870498,
+      "alpha": 0.8222170882896302,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0006583856384146074,
+      "rbar": 0.3494147906212532,
+      "alpha": 0.8430332686726113,
+      "windows": 1
      }
     }
    },
@@ -9855,6 +11315,18 @@
       "rbar": 0.26158128200428177,
       "alpha": 0.7391731661078721,
       "windows": 2
+     },
+     "9": {
+      "straightlined": 0.0007900627660975289,
+      "rbar": 0.2609806870320043,
+      "alpha": 0.7605699381547646,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0005706008866259931,
+      "rbar": 0.25846987748868305,
+      "alpha": 0.7770658167598271,
+      "windows": 1
      }
     },
     "any": {
@@ -9893,6 +11365,18 @@
       "rbar": 0.27410757365622346,
       "alpha": 0.7506131370969601,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0007900627660975289,
+      "rbar": 0.2609806870320043,
+      "alpha": 0.7605699381547646,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0005706008866259931,
+      "rbar": 0.25846987748868305,
+      "alpha": 0.7770658167598271,
+      "windows": 1
      }
     }
    },
@@ -9979,6 +11463,18 @@
       "rbar": 0.3039499168135786,
       "alpha": 0.7766152773136739,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0009216589861751152,
+      "rbar": 0.30090077811394667,
+      "alpha": 0.7946065452403754,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0006583278472679394,
+      "rbar": 0.29915225789251326,
+      "alpha": 0.8101902893880141,
+      "windows": 1
      }
     },
     "any": {
@@ -10017,6 +11513,18 @@
       "rbar": 0.3039499168135786,
       "alpha": 0.7766152773136739,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0009216589861751152,
+      "rbar": 0.30090077811394667,
+      "alpha": 0.7946065452403754,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0006583278472679394,
+      "rbar": 0.29915225789251326,
+      "alpha": 0.8101902893880141,
+      "windows": 1
      }
     }
    },
@@ -10097,6 +11605,18 @@
       "rbar": 0.4336791540113289,
       "alpha": 0.8596597996505149,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0005487269534679544,
+      "rbar": 0.4315349816096909,
+      "alpha": 0.8723067082056928,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0005267778753292362,
+      "rbar": 0.43105091122230466,
+      "alpha": 0.8833991264314944,
+      "windows": 1
      }
     },
     "any": {
@@ -10135,6 +11655,18 @@
       "rbar": 0.4336791540113289,
       "alpha": 0.8596597996505149,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0005487269534679544,
+      "rbar": 0.4315349816096909,
+      "alpha": 0.8723067082056928,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0005267778753292362,
+      "rbar": 0.43105091122230466,
+      "alpha": 0.8833991264314944,
+      "windows": 1
      }
     }
    },
@@ -10215,6 +11747,18 @@
       "rbar": 0.4033706135216937,
       "alpha": 0.8436431189997546,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0007462031428320604,
+      "rbar": 0.40507688695038124,
+      "alpha": 0.8596570100946415,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0007023088403125275,
+      "rbar": 0.39993042333955675,
+      "alpha": 0.869532331695141,
+      "windows": 1
      }
     },
     "any": {
@@ -10253,6 +11797,18 @@
       "rbar": 0.4033706135216937,
       "alpha": 0.8436431189997546,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0007462031428320604,
+      "rbar": 0.40507688695038124,
+      "alpha": 0.8596570100946415,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0007023088403125275,
+      "rbar": 0.39993042333955675,
+      "alpha": 0.869532331695141,
+      "windows": 1
      }
     }
    },
@@ -10313,6 +11869,18 @@
       "rbar": 0.31432691423769593,
       "alpha": 0.7852509431581036,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0034236053197559584,
+      "rbar": 0.3106774997374521,
+      "alpha": 0.8021500909221371,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.002765219681341351,
+      "rbar": 0.32080986838308806,
+      "alpha": 0.8252792205925472,
+      "windows": 1
      }
     },
     "mixed": {},
@@ -10352,6 +11920,18 @@
       "rbar": 0.31432691423769593,
       "alpha": 0.7852509431581036,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0034236053197559584,
+      "rbar": 0.3106774997374521,
+      "alpha": 0.8021500909221371,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.002765219681341351,
+      "rbar": 0.32080986838308806,
+      "alpha": 0.8252792205925472,
+      "windows": 1
      }
     }
    },
@@ -10432,6 +12012,18 @@
       "rbar": 0.38802029899439217,
       "alpha": 0.8352440163456315,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0007024630109320806,
+      "rbar": 0.39008877321746416,
+      "alpha": 0.8519756600110706,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0006585590727488256,
+      "rbar": 0.3834672295370995,
+      "alpha": 0.8614908184762774,
+      "windows": 1
      }
     },
     "any": {
@@ -10470,6 +12062,18 @@
       "rbar": 0.38802029899439217,
       "alpha": 0.8352440163456315,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0007024630109320806,
+      "rbar": 0.39008877321746416,
+      "alpha": 0.8519756600110706,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0006585590727488256,
+      "rbar": 0.3834672295370995,
+      "alpha": 0.8614908184762774,
+      "windows": 1
      }
     }
    },
@@ -10550,6 +12154,18 @@
       "rbar": 0.3316445504837365,
       "alpha": 0.7976182736114201,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0006144932625203002,
+      "rbar": 0.32097973918879374,
+      "alpha": 0.8094947430335391,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0005706008866259931,
+      "rbar": 0.33930926514905513,
+      "alpha": 0.8370187373412636,
+      "windows": 1
      }
     },
     "any": {
@@ -10588,6 +12204,18 @@
       "rbar": 0.3316445504837365,
       "alpha": 0.7976182736114201,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0006144932625203002,
+      "rbar": 0.32097973918879374,
+      "alpha": 0.8094947430335391,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0005706008866259931,
+      "rbar": 0.33930926514905513,
+      "alpha": 0.8370187373412636,
+      "windows": 1
      }
     }
    },
@@ -10668,6 +12296,18 @@
       "rbar": 0.3801801898036614,
       "alpha": 0.8305571699515086,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0007461376404494382,
+      "rbar": 0.3865525357607428,
+      "alpha": 0.8500875037735438,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0007022471910112359,
+      "rbar": 0.37977630475029556,
+      "alpha": 0.8596139528333511,
+      "windows": 1
      }
     },
     "any": {
@@ -10706,6 +12346,18 @@
       "rbar": 0.3801801898036614,
       "alpha": 0.8305571699515086,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0007461376404494382,
+      "rbar": 0.3865525357607428,
+      "alpha": 0.8500875037735438,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0007022471910112359,
+      "rbar": 0.37977630475029556,
+      "alpha": 0.8596139528333511,
+      "windows": 1
      }
     }
    },
@@ -10786,6 +12438,18 @@
       "rbar": 0.466318633893009,
       "alpha": 0.8746140366462755,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.000636467386533228,
+      "rbar": 0.45373575290455437,
+      "alpha": 0.8819878771778149,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0006145202352734615,
+      "rbar": 0.45586364648716193,
+      "alpha": 0.8933645739523415,
+      "windows": 1
      }
     },
     "any": {
@@ -10824,6 +12488,18 @@
       "rbar": 0.466318633893009,
       "alpha": 0.8746140366462755,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.000636467386533228,
+      "rbar": 0.45373575290455437,
+      "alpha": 0.8819878771778149,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0006145202352734615,
+      "rbar": 0.45586364648716193,
+      "alpha": 0.8933645739523415,
+      "windows": 1
      }
     }
    },
@@ -10922,6 +12598,18 @@
       "rbar": 0.3471758567287521,
       "alpha": 0.8096847919379748,
       "windows": 2
+     },
+     "9": {
+      "straightlined": 0.000943686081727604,
+      "rbar": 0.35402858957154804,
+      "alpha": 0.83119259204568,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0007022780143089146,
+      "rbar": 0.3580202616335566,
+      "alpha": 0.8479507315330647,
+      "windows": 1
      }
     },
     "any": {
@@ -10960,6 +12648,18 @@
       "rbar": 0.3584725153130957,
       "alpha": 0.8168686362581453,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.000943686081727604,
+      "rbar": 0.35402858957154804,
+      "alpha": 0.83119259204568,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0007022780143089146,
+      "rbar": 0.3580202616335566,
+      "alpha": 0.8479507315330647,
+      "windows": 1
      }
     }
    },
@@ -11046,6 +12746,18 @@
       "rbar": 0.3762102889012659,
       "alpha": 0.8282841309131376,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.001250932712987754,
+      "rbar": 0.3637906177939861,
+      "alpha": 0.8370034797120218,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0009656322696747575,
+      "rbar": 0.34603070146317716,
+      "alpha": 0.8410487656252793,
+      "windows": 1
      }
     },
     "any": {
@@ -11084,6 +12796,18 @@
       "rbar": 0.3762102889012659,
       "alpha": 0.8282841309131376,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.001250932712987754,
+      "rbar": 0.3637906177939861,
+      "alpha": 0.8370034797120218,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0009656322696747575,
+      "rbar": 0.34603070146317716,
+      "alpha": 0.8410487656252793,
+      "windows": 1
      }
     }
    },
@@ -11170,6 +12894,18 @@
       "rbar": 0.2730535325881113,
       "alpha": 0.748374173568647,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0007243195785776998,
+      "rbar": 0.2563664519559623,
+      "alpha": 0.7554962859644478,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0005706760316066726,
+      "rbar": 0.2607517446691727,
+      "alpha": 0.7791156235155403,
+      "windows": 1
      }
     },
     "any": {
@@ -11208,6 +12944,18 @@
       "rbar": 0.2730535325881113,
       "alpha": 0.748374173568647,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0007243195785776998,
+      "rbar": 0.2563664519559623,
+      "alpha": 0.7554962859644478,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0005706760316066726,
+      "rbar": 0.2607517446691727,
+      "alpha": 0.7791156235155403,
+      "windows": 1
      }
     }
    },
@@ -11306,6 +13054,18 @@
       "rbar": 0.21301423365367783,
       "alpha": 0.6833628364029956,
       "windows": 2
+     },
+     "9": {
+      "straightlined": 0.0012070933192871564,
+      "rbar": 0.22247451848315267,
+      "alpha": 0.7195031295420091,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0009217803529101923,
+      "rbar": 0.21784141465805398,
+      "alpha": 0.7358083532593906,
+      "windows": 1
      }
     },
     "any": {
@@ -11344,6 +13104,18 @@
       "rbar": 0.2272622714169982,
       "alpha": 0.7000006259642134,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0012070933192871564,
+      "rbar": 0.22247451848315267,
+      "alpha": 0.7195031295420091,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0009217803529101923,
+      "rbar": 0.21784141465805398,
+      "alpha": 0.7358083532593906,
+      "windows": 1
      }
     }
    },
@@ -11424,6 +13196,18 @@
       "rbar": 0.5850848781266244,
       "alpha": 0.9184552900353493,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0008997937058332968,
+      "rbar": 0.5803885241654438,
+      "alpha": 0.9255623544914966,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0007461703902032217,
+      "rbar": 0.5672759727924243,
+      "alpha": 0.9291253495115994,
+      "windows": 1
      }
     },
     "any": {
@@ -11462,6 +13246,18 @@
       "rbar": 0.5850848781266244,
       "alpha": 0.9184552900353493,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0008997937058332968,
+      "rbar": 0.5803885241654438,
+      "alpha": 0.9255623544914966,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0007461703902032217,
+      "rbar": 0.5672759727924243,
+      "alpha": 0.9291253495115994,
+      "windows": 1
      }
     }
    },
@@ -11542,6 +13338,18 @@
       "rbar": 0.30009937057260655,
       "alpha": 0.7738240226263965,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0008778860503906593,
+      "rbar": 0.3100405007212055,
+      "alpha": 0.8008793119889781,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0007462031428320604,
+      "rbar": 0.3191053039757824,
+      "alpha": 0.8241467234353841,
+      "windows": 1
      }
     },
     "any": {
@@ -11580,6 +13388,18 @@
       "rbar": 0.30009937057260655,
       "alpha": 0.7738240226263965,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0008778860503906593,
+      "rbar": 0.3100405007212055,
+      "alpha": 0.8008793119889781,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0007462031428320604,
+      "rbar": 0.3191053039757824,
+      "alpha": 0.8241467234353841,
+      "windows": 1
      }
     }
    },
@@ -11660,6 +13480,18 @@
       "rbar": 0.39397027797660167,
       "alpha": 0.8385997654808128,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0009877952410220388,
+      "rbar": 0.3843907907822551,
+      "alpha": 0.8489303009110676,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0008341382035297216,
+      "rbar": 0.3861669619935405,
+      "alpha": 0.8628460119631028,
+      "windows": 1
      }
     },
     "any": {
@@ -11698,6 +13530,18 @@
       "rbar": 0.39397027797660167,
       "alpha": 0.8385997654808128,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0009877952410220388,
+      "rbar": 0.3843907907822551,
+      "alpha": 0.8489303009110676,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0008341382035297216,
+      "rbar": 0.3861669619935405,
+      "alpha": 0.8628460119631028,
+      "windows": 1
      }
     }
    },
@@ -11796,6 +13640,18 @@
       "rbar": 0.30979792583452004,
       "alpha": 0.7805564975096762,
       "windows": 2
+     },
+     "9": {
+      "straightlined": 0.0012289865250406005,
+      "rbar": 0.32939303876945114,
+      "alpha": 0.814099002161436,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0009217398937804503,
+      "rbar": 0.3185074868518075,
+      "alpha": 0.8237474105896718,
+      "windows": 1
      }
     },
     "any": {
@@ -11834,6 +13690,18 @@
       "rbar": 0.3308150374431071,
       "alpha": 0.795794791056118,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0012289865250406005,
+      "rbar": 0.32939303876945114,
+      "alpha": 0.814099002161436,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0009217398937804503,
+      "rbar": 0.3185074868518075,
+      "alpha": 0.8237474105896718,
+      "windows": 1
      }
     }
    },
@@ -11926,6 +13794,18 @@
       "rbar": 0.34915846629931147,
       "alpha": 0.8105413828330702,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0017777972872130283,
+      "rbar": 0.3307488420369282,
+      "alpha": 0.8162304401016389,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.001316886879417058,
+      "rbar": 0.314226735590132,
+      "alpha": 0.820855280173563,
+      "windows": 1
      }
     },
     "any": {
@@ -11964,6 +13844,18 @@
       "rbar": 0.34915846629931147,
       "alpha": 0.8105413828330702,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0017777972872130283,
+      "rbar": 0.3307488420369282,
+      "alpha": 0.8162304401016389,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.001316886879417058,
+      "rbar": 0.314226735590132,
+      "alpha": 0.820855280173563,
+      "windows": 1
      }
     }
    },
@@ -12044,6 +13936,18 @@
       "rbar": 0.2462522754410058,
       "alpha": 0.7219756524550972,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0007022163704191353,
+      "rbar": 0.2446264115026194,
+      "alpha": 0.7440759466212513,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0006583278472679394,
+      "rbar": 0.2549180970756114,
+      "alpha": 0.7738243936520013,
+      "windows": 1
      }
     },
     "any": {
@@ -12082,6 +13986,18 @@
       "rbar": 0.2462522754410058,
       "alpha": 0.7219756524550972,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0007022163704191353,
+      "rbar": 0.2446264115026194,
+      "alpha": 0.7440759466212513,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0006583278472679394,
+      "rbar": 0.2549180970756114,
+      "alpha": 0.7738243936520013,
+      "windows": 1
      }
     }
    },
@@ -12168,6 +14084,18 @@
       "rbar": 0.2781069291176477,
       "alpha": 0.754554564690423,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0005925210674157303,
+      "rbar": 0.2569936415309365,
+      "alpha": 0.7568588515230212,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0005705758426966292,
+      "rbar": 0.24759472774266256,
+      "alpha": 0.7669383189481602,
+      "windows": 1
      }
     },
     "any": {
@@ -12206,6 +14134,18 @@
       "rbar": 0.2781069291176477,
       "alpha": 0.754554564690423,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0005925210674157303,
+      "rbar": 0.2569936415309365,
+      "alpha": 0.7568588515230212,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0005705758426966292,
+      "rbar": 0.24759472774266256,
+      "alpha": 0.7669383189481602,
+      "windows": 1
      }
     }
    },
@@ -12292,6 +14232,18 @@
       "rbar": 0.34887633730800865,
       "alpha": 0.8071881358145596,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0007681502940918268,
+      "rbar": 0.33259452411917106,
+      "alpha": 0.8171000501320785,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0006584145377929945,
+      "rbar": 0.32325184695802583,
+      "alpha": 0.8268861609167938,
+      "windows": 1
      }
     },
     "any": {
@@ -12330,6 +14282,18 @@
       "rbar": 0.34887633730800865,
       "alpha": 0.8071881358145596,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0007681502940918268,
+      "rbar": 0.33259452411917106,
+      "alpha": 0.8171000501320785,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0006584145377929945,
+      "rbar": 0.32325184695802583,
+      "alpha": 0.8268861609167938,
+      "windows": 1
      }
     }
    },
@@ -12410,6 +14374,18 @@
       "rbar": 0.28565807655137604,
       "alpha": 0.7617238039489808,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0010096575943810359,
+      "rbar": 0.2809511386636149,
+      "alpha": 0.7782983907599175,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0008340649692712906,
+      "rbar": 0.26942615474012654,
+      "alpha": 0.7866835157025727,
+      "windows": 1
      }
     },
     "any": {
@@ -12448,6 +14424,18 @@
       "rbar": 0.28565807655137604,
       "alpha": 0.7617238039489808,
       "windows": 3
+     },
+     "9": {
+      "straightlined": 0.0010096575943810359,
+      "rbar": 0.2809511386636149,
+      "alpha": 0.7782983907599175,
+      "windows": 2
+     },
+     "10": {
+      "straightlined": 0.0008340649692712906,
+      "rbar": 0.26942615474012654,
+      "alpha": 0.7866835157025727,
+      "windows": 1
      }
     }
    },

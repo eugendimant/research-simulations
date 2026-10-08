@@ -89,6 +89,8 @@ def install(register, set_shrinkage, Provenance,
 #:     18 laboratory economics experiments: about 0.66.
 #:   * Klein et al. (2014; 2018), Many Labs 1 and 2: about half of the selected
 #:     effects replicated in 2, with replication effects well below the originals.
+#:     Search summaries of the Many Labs 2 abstract (2026-10-08) give median d 0.60 for
+#:     the originals and 0.15 for the replications, a ratio near 0.25.
 #:   * Kvarven, Stromland and Johannesson (2020, Nature Human Behaviour): meta-
 #:     analytic estimates exceeded matched preregistered multi-lab replications by
 #:     roughly d 0.2-0.3 on average, i.e. a meta-analytic d near 0.4-0.5 corresponds
@@ -101,24 +103,37 @@ def install(register, set_shrinkage, Provenance,
 #:     recalled at about d 0.1-0.25; the knowledge base's own entry tau values run
 #:     0.05-0.20 (median 0.12), so 0.15 is used where an entry reports none.
 #: The active factor is the meta-analysis one because every inferred path draws on
-#: META_ANALYTIC_DB. 0.60 sits at the upper end of the recalled 0.3-0.65 range on
-#: purpose: the knowledge base was already recalibrated toward meta-analytic values in
-#: places, and over-correcting would erase real effects. `by_evidence` documents the
-#: other evidence types; only "meta_analysis" is applied today.
+#: META_ANALYTIC_DB. v1.3.0.6 lowers it from 0.60 to 0.45. Figures stated by search
+#: summaries on 2026-10-08 (docs/EMPIRICAL_PROVENANCE.md, "Evidence gathered";
+#: registry/corroboration_v1306.json): OSC 2015 about 0.5 (k=100), Camerer 2018 about
+#: 0.5 (k=21; 0.71 for true positives), Camerer 2016 0.66 (k=18), Many Labs 2 median
+#: d 0.60 -> 0.15 = 0.25 (k=28), Kvarven 2020 meta-analyses almost 3x the preregistered
+#: replications = 0.33 (k=15). Weighted by the number of studies that is 0.46; the plain
+#: median is 0.50; the two sources that compare META-ANALYSES with replications
+#: (Kvarven, Many Labs 2) are the lowest. 0.45 is the study-weighted centre, rounded
+#: down because the inferred path draws on meta-analytic entries and the knowledge
+#: base was already recalibrated toward meta-analytic values in places. The floor
+#: (EffectPolicy.min_retained = 0.35 of the published d) is unchanged and now binds in
+#: the lower tail of the between-study draw. `by_evidence` documents the other evidence
+#: types; only "meta_analysis" is applied today. Still recall-tier: the summaries are
+#: not the papers.
 RECALLED_SHRINKAGE = {
-    "factor": 0.60,
+    "factor": 0.45,
+    "corrected": {"factor_was": 0.60, "meta_analysis_was": 0.60},
     "default_tau": 0.15,
     "by_evidence": {
         "single_original_study": 0.50,
-        "meta_analysis": 0.60,
+        "meta_analysis": 0.45,
         "preregistered_replication": 1.00,
     },
     "source": ("Open Science Collaboration 2015; Camerer et al. 2016, 2018; Klein et al. "
                "2014, 2018; Kvarven et al. 2020; Schafer & Schwarz 2019; Mertens et al. 2022"),
-    "note": ("Inferred effects are multiplied by 0.60 (recalled range about 0.3-0.75 across "
-             "OSC 2015, Camerer 2016/2018, Many Labs, Kvarven 2020) and given a between-study "
+    "note": ("Inferred effects are multiplied by 0.45 (stated range about 0.25-0.71 across "
+             "OSC 2015, Camerer 2016/2018, Many Labs 2, Kvarven 2020) and given a between-study "
              "draw with SD 0.15 d where the entry reports no tau (recalled range 0.1-0.25). "
              "Estimates differ by definition (ratio of pooled means, median of per-pair "
              "ratios, regression slope), so the figure is a judgement, not a measurement. "
+             "Lowered from 0.60 in v1.3.0.6 after search-summary figures (OSC 0.5, Camerer 0.5/0.66, "
+             "Many Labs 2 0.25, Kvarven 0.33) gave a study-weighted centre of about 0.46. "
              "Never applied to an effect the user specifies."),
 }

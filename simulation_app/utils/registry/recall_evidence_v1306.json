@@ -1,0 +1,64 @@
+{
+ "audited_on": "2026-10-08",
+ "method": "Web-search summaries (not the papers) were compared with three entries; see registry/corroboration_v1306.json. Each record goes through register_recall, so none can claim a source. Old values are kept in 'corrected' as <field>_was.",
+ "records": {
+  "meta:loyalty_program_meta": {
+   "tier": "recall_uncertain",
+   "note": "Not a meta-analysis: the two cited works are a literature review (Dorotic, Bijmolt & Verhoef 2012) and a research agenda (Breugelmans et al. 2015), confirmed by search summaries on 2026-10-08. The pooled d 0.20, its interval, k=35 and N=100,000 therefore have no pooled source and are relabelled as a judgement (source text and notes changed; k and N set to 0). A genuine meta-analysis exists (Belli et al. 2022, 429 effect sizes; another reports r below .30) but was not read. The magnitude is unchanged.",
+   "source": "Dorotic et al. (2012, IJMR, review); Breugelmans et al. (2015, Marketing Letters, agenda)",
+   "checked_fields": [
+    "citation",
+    "n_studies"
+   ],
+   "corrected": {
+    "n_studies_was": 35,
+    "n_participants_was": 100000,
+    "source_type_was": "meta-analysis",
+    "source_type": "review and research agenda; no pooled estimate"
+   }
+  },
+  "meta:personalization_meta": {
+   "tier": "recall_uncertain",
+   "note": "Not a meta-analysis: both cited works are single-paper experiments (Aguirre et al. 2015: three experiments and a field study; Tam & Ho 2006: a laboratory experiment and a field study), confirmed by search summaries on 2026-10-08. The pooled d 0.32, its interval, k=40 and N=35,000 have no pooled source and are relabelled as a judgement (k and N set to 0). A personalization meta-analysis of about 53 studies is described as showing a relatively small effect; it was not read, and 0.32 may be too high. The magnitude is unchanged; the privacy moderator is faithful to Aguirre et al.",
+   "source": "Aguirre et al. (2015, J Retailing); Tam & Ho (2006, MIS Quarterly)",
+   "checked_fields": [
+    "citation",
+    "n_studies"
+   ],
+   "corrected": {
+    "n_studies_was": 40,
+    "n_participants_was": 35000,
+    "source_type_was": "meta-analysis",
+    "source_type": "two primary experiments; no pooled estimate"
+   }
+  },
+  "meta:social_exclusion_ostracism_meta": {
+   "tier": "recall_uncertain",
+   "note": "A Cyberball meta-analysis (Hartgerink et al. 2015, 120 studies, N=11,869) is summarised as reporting an average ostracism effect of |d| above 1.4, generalising across needs, intrapersonal and interpersonal measures; the Gerber & Wheeler (2009) figure was not retrievable. The stored -0.45 is NOT a pooled estimate and is far below the manipulation-check / need-satisfaction effect. It is kept as a deliberately conservative size for a belonging or mood outcome measured downstream, and the entry notes now say so. Do not use it for a manipulation check. Both search results carried the same abstract, so this is one source.",
+   "source": "Hartgerink et al. (2015, PLOS ONE); Gerber & Wheeler (2009, Perspectives on Psychological Science)",
+   "checked_fields": [
+    "citation"
+   ],
+   "corrected": {
+    "scope_was": "belonging_and_mood_after_exclusion (unqualified)",
+    "scope": "downstream belonging/mood outcome only; manipulation check is |d| > 1.4"
+   }
+  },
+  "game:trust_standard": {
+   "checked_fields": [
+    "distribution_shape",
+    "sd_proportion"
+   ],
+   "citation_recognized": true,
+   "corrected": {
+    "distribution_shape": "multimodal",
+    "distribution_shape_was": "normal",
+    "sd_proportion": 0.28,
+    "sd_proportion_was": 0.15,
+    "n_studies_check": "summary says 84 iterations; stored 162 unchanged"
+   },
+   "note": "Berg, Dickhaut & McCabe (1995, GEB) and Johnson & Mislin (2011) support the 50% mean, but both show a wide, lumpy distribution rather than a tight normal one. | Trust-game sending is not normally distributed: there is mass at 0 and at the full endowment plus a spike at 0.5 (Berg et al. 1995); sd_proportion=0.15 is far too tight for that distribution; individual-level SD is ~0.25-0.30 | v1.3.0.6 search check: the Johnson & Mislin abstract is summarised as 'eighty-four iterations' of the investment game, against the stored n_studies of 162 (one abstract, so not changed; the stored count may include papers, not iterations). The ~50% mean sent is repeated secondhand by a 2025 preprint.",
+   "tier": "recall_corrected"
+  }
+ }
+}

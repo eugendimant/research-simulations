@@ -75,15 +75,68 @@ def test_every_entry_names_its_script_and_hashed_sources(evidence):
         assert prov["consumed_by_engine"] is False
 
 
-def test_evidence_does_not_change_generation(evidence):
-    """New entries live under 'evidence.' which no engine path consults, so the
-    registry-driven behaviour (straight-lining targets, dispersion) is unchanged."""
+def test_evidence_prefix_is_not_consulted_and_other_scales_keep_their_cells(evidence):
+    """The `evidence.` ids are not read by any engine path; the engine-facing 7-point cells
+    are scoped to seven options, so 5- and 9-point lookups still return the old cells."""
     assert all(e["entry_id"].startswith("evidence.") for e in evidence["entries"])
-    hit = reg.lookup_best("item.likert.same.k5", "straightlined_share",
-                          {"scale_points": 5, "items_per_block": 5, "keying": "same"})
-    assert hit is not None and hit.entry_id.startswith("item.likert.")
+    for sp in (5, 9):
+        sig = {"scale_points": sp, "items_per_block": 5, "keying": "same"}
+        hit = reg.lookup_best("item.likert.same.k5", "straightlined_share", sig)
+        assert hit is not None and hit.entry_id == "item.likert.same.k5.straightlined_share"
     hit = reg.lookup_best("item.likert.any", "item_sd_fraction_of_span", {"items_per_block": 20})
     assert hit is not None and hit.entry_id == "item.likert.any.item_sd_fraction_of_span"
+
+
+def test_seven_point_blocks_get_the_measured_seven_point_cells():
+    for keying, k, lo, hi in (("same", 5, 0.02, 0.045), ("mixed", 5, 0.002, 0.01), ("same", 3, 0.08, 0.15),
+                              ("mixed", 8, 0.0003, 0.003), ("same", 9, 0.001, 0.01)):
+        hit = reg.lookup_best(f"item.likert.{keying}.k{k}", "straightlined_share",
+                              {"scale_points": 7, "items_per_block": k, "keying": keying})
+        assert hit is not None and ".sp7." in hit.entry_id, (keying, k)
+        assert lo < hit.value < hi, (keying, k, hit.value)
+    five = reg.lookup_best("item.likert.same.k5", "straightlined_share",
+                           {"scale_points": 5, "items_per_block": 5, "keying": "same"})
+    seven = reg.lookup_best("item.likert.same.k5", "straightlined_share",
+                            {"scale_points": 7, "items_per_block": 5, "keying": "same"})
+    assert seven.value < 0.5 * five.value                  # the measured 7-point gap
+    # unknown scale length never satisfies a scale-scoped cell
+    unk = reg.lookup_best("item.likert.same.k5", "straightlined_share", {"items_per_block": 5, "keying": "same"})
+    assert unk is not None and ".sp7." not in unk.entry_id
+
+
+def test_engine_file_matches_the_evidence_file_and_is_measured():
+    with open(os.path.join(REG_DIR, "item_process_7pt_v1306.json"), encoding="utf-8") as fh:
+        eng = json.load(fh)
+    with open(EVID, encoding="utf-8") as fh:
+        ev = {e["entry_id"]: e for e in json.load(fh)["entries"]}
+    assert len(eng["entries"]) >= 12
+    for e in eng["entries"]:
+        m = re.fullmatch(r"item\.likert\.(same|mixed)\.k(\d+)\.sp7\.straightlined_share", e["entry_id"])
+        assert m, e["entry_id"]
+        twin = ev[f"evidence.likert7.{m.group(1)}.k{m.group(2)}.straightlined_share"]
+        assert e["value"] == twin["value"] and e["applicability"]["scale_points"] == [7]
+        assert e["provenance"]["consumed_by_engine"] is True and e["tier"] == "T0_MEASURED"
+        assert reg.entries()[e["entry_id"]].tier == reg.MEASURED
+
+
+@pytest.mark.parametrize("points,expect_sp7", [(5, False), (7, True), (9, False)])
+def test_identical_answer_pass_uses_the_seven_point_cell_only_for_seven_points(points, expect_sp7):
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine
+    scales = [{"name": "DV", "variable_name": "DV", "num_items": 5, "scale_points": points,
+               "scale_min": 1, "scale_max": points, "type": "likert", "reverse_items": [],
+               "detected_from_qsf": False, "_validated": True}]
+    eng = EnhancedSimulationEngine(
+        study_title="Warm glow giving", study_description="Judgements of a charity", sample_size=400,
+        conditions=["A", "B"], factors=[{"name": "F", "levels": ["A", "B"]}], scales=scales,
+        additional_vars=[], demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        open_ended_questions=[], seed=3)
+    eng.llm_generator.disable_permanently("test")
+    eng.generate()
+    rows = [x for x in eng._item_realism_log if x.get("stage") == "identical_answers"]
+    assert rows, "the pass should have run on a 5-item block"
+    assert (".sp7." in rows[0]["entry_id"]) is expect_sp7
+    if expect_sp7:
+        assert rows[0]["target_share"] == pytest.approx(reg.entries()["item.likert.same.k5.sp7.straightlined_share"].value, abs=1e-4)
 
 
 def test_kb_headline_unmoved_by_registry_store():
@@ -234,26 +287,48 @@ def test_nothing_is_promoted_to_verified_without_a_quote():
 
 
 def test_changed_values_keep_their_old_value(corroboration):
-    """The change rule needs two independent summaries; any item that did change a
-    stored value must have a <field>_was record in the recall band."""
+    """Anything the evidence pass changed keeps the old value as <field>_was in the recall band."""
     changed = [i for i in corroboration["items"] if i["changed_value"]]
-    recall = json.load(open(os.path.join(REG_DIR, "recall_audit.json"), encoding="utf-8"))["records"]
+    assert {i["id"] for i in changed} >= {"shrinkage_overall", "loyalty_program_meta",
+                                          "personalization_meta", "social_exclusion_ostracism_meta"}
     for i in changed:
-        key = next((k for k in recall if k.endswith(":" + i["id"])), None)
-        assert key and any(f.endswith("_was") for f in (recall[key].get("corrected") or {})), i["id"]
-    # as shipped, no item met the two-independent-summaries bar
-    assert not changed
+        p = reg.PROVENANCE.get(i["recall_key"])
+        assert p is not None and p.status in reg.RECALL_TIERS, i["id"]
+        assert any(k.endswith("_was") for k in p.corrected), i["id"]
+        assert p.doi == "" and p.url == "" and p.quote == ""
 
 
-def test_shrinkage_factor_unchanged_and_still_unverified():
-    assert reg.shrinkage_factor() == pytest.approx(0.60)
+def test_shrinkage_factor_lowered_on_the_gathered_ratios_and_still_unverified():
+    from utils.empirical_provenance_data import RECALLED_SHRINKAGE as RS
+    assert reg.shrinkage_factor() == pytest.approx(0.45)
+    assert RS["corrected"]["factor_was"] == 0.60
+    assert reg.EffectPolicy().min_retained == pytest.approx(0.35)
     assert reg.shrinkage_verified() is False
+    assert reg.PROVENANCE["policy:publication_bias"].status in reg.RECALL_TIERS
+    # the new factor is the study-weighted centre of the figures the summaries gave
+    ratios = {"osc2015": (0.50, 100), "camerer2018": (0.50, 21), "camerer2016": (0.66, 18),
+              "manylabs2": (0.25, 28), "kvarven2020": (0.33, 15)}
+    centre = sum(r * k for r, k in ratios.values()) / sum(k for _, k in ratios.values())
+    assert 0.40 <= reg.shrinkage_factor() <= 0.50 and abs(centre - 0.46) < 0.01
 
 
-def test_published_replication_ratios_bracket_the_factor(corroboration):
-    """The gathered figures (0.25-0.71) bracket the 0.60 factor at its upper end,
-    which is where the provenance notes put it on purpose."""
+def test_relabelled_entries_no_longer_claim_to_be_meta_analyses():
+    from utils import scientific_knowledge_base as kb
+    for key in ("loyalty_program_meta", "personalization_meta"):
+        e = kb.META_ANALYTIC_DB[key]
+        assert e.source.startswith("NOT a meta-analysis") and e.n_studies == 0 and e.n_participants == 0
+        assert "judgement" in e.notes
+        assert reg.provenance_of("meta", key).corrected["n_studies_was"] in (35, 40)
+    assert kb.META_ANALYTIC_DB["loyalty_program_meta"].effect_d == 0.20       # magnitude untouched
+    assert kb.META_ANALYTIC_DB["personalization_meta"].effect_d == 0.32
+    ost = kb.META_ANALYTIC_DB["social_exclusion_ostracism_meta"]
+    assert ost.effect_d == -0.45 and "NOT that figure" in ost.notes
+    assert "1.4" in reg.provenance_of("meta", "social_exclusion_ostracism_meta").note
+
+
+def test_published_replication_ratios_are_recorded(corroboration):
     by = {i["id"]: i for i in corroboration["items"]}
-    assert by["shrinkage_overall"]["verdict"] == "inconclusive"
-    assert by["manylabs2_ratio"]["verdict"] == "contradicted"
-    assert "0.25" in by["manylabs2_ratio"]["note"]
+    assert by["manylabs2_ratio"]["verdict"] == "contradicted" and "0.25" in by["manylabs2_ratio"]["note"]
+    assert by["shrinkage_overall"]["changed_value"] is True
+    assert all(by[k]["resolution"] for k in ("manylabs2_ratio", "jm_trust_k", "social_exclusion_ostracism_meta",
+                                             "loyalty_program_meta", "personalization_meta"))
