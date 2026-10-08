@@ -965,7 +965,9 @@ def _clean_question_text(text: Any) -> str:
 
 _NUMERIC_EXCLUDE_RE = re.compile(
     r"\b(why|explain|describe|reasons?|in your own words|comments?|feedback|opinions?|thoughts?|"
-    r"elaborate|tell us|suggestions?|what do you think|how do you feel|justify|briefly)\b",
+    r"elaborate|tell us|suggestions?|what do you think|how do you feel|justify|briefly|"
+    r"strateg\w+|approach|rationale|reasoning|"
+    r"e-?mail|phone number|telephone|mailing address|contact (?:you|information|details))\b",
     re.IGNORECASE,
 )
 _YEAR_OF_BIRTH_RE = re.compile(
@@ -1056,6 +1058,12 @@ def _infer_numeric_answer_spec(
     if ctype == "validzip":
         return {"kind": "zip"}
     declared_number = ctype in ("validnumber", "validdecimal", "validinteger")
+    # The survey's own validation outranks wording: a box validated as an e-mail address, phone number,
+    # date, URL, ... is not a numeric box however much money or counting its prompt mentions ("enter your
+    # e-mail to win $50" is an e-mail box). Boxes with no ContentType (or the plain "None") fall through
+    # to the wording cues below.
+    if ctype and ctype not in ("none", "validnumber", "validdecimal", "validinteger", "validzip"):
+        return None
     t = _PIPED_TEXT_RE.sub(" ", text).lower()  # "${e://Field/Random%20ID}" must not read as "%"
     # Crowd-worker / participant ID boxes hold an ID, not prose. Only short prompts that do not
     # ask for an explanation count ("Did you do this on MTurk? Please explain" stays free text).

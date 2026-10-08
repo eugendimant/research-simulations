@@ -102,7 +102,7 @@ lookup) is untouched; only the text post-processing after a response is drawn ch
 - LLM answers: post-processing no longer edits random word positions or replaces substrings without
   word boundaries; it edits only at grammatical positions (`utils/text_cleanup.py`, shared by the LLM
   variation code, the template engine, the stylometric engine and the validator).
-- Numeric text boxes (2,701 of the 4,668 open-ended questions in the 302-file corpus) get numbers that
+- Numeric text boxes (2,686 of the 4,668 open-ended questions in the 302-file corpus) get numbers that
   respect Qualtrics validation: ages, years, counts, amounts, percentages, ZIP codes, and
   MTurk/Prolific/participant IDs. A text box that repeats a numeric DV is skipped. These boxes are
   exempt from every later text pass (stylometric, validator, tidy-up): before, 27 of 60 generated

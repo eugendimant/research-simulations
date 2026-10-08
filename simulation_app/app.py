@@ -4967,6 +4967,7 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
                 "dv_description": s.get("dv_description", s.get("description", "")) or "",
                 "scale_anchors": s.get("scale_anchors", {}) or {},
                 "item_names": s.get("item_names", []) or [],
+                "question_id": str(s.get("question_id") or ""),
                 "detected_from_qsf": s.get("scale_points") is not None,
                 "_validated": True,
             }
@@ -5010,7 +5011,7 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
         except (TypeError, ValueError):
             return default
 
-    def _make_numeric_dv(vname: str, lo: float, hi: float, dv_type: str):
+    def _make_numeric_dv(vname: str, lo: float, hi: float, dv_type: str, qid: str = ""):
         key = vname.lower().replace(" ", "_").replace("-", "_")
         if not key or key in seen_scale_names:
             return None
@@ -5035,6 +5036,7 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
             "scale_points": max(2, min(1001, s_max - s_min + 1)),
             "scale_min": s_min, "scale_max": s_max, "reverse_items": [],
             "type": dv_type, "detected_from_qsf": True, "_validated": True,
+            "question_id": str(qid or ""),
         }
 
     for sl in (getattr(preview, "slider_questions", None) or []):
@@ -5044,7 +5046,7 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
             continue
         _vn = str(sl.get("export_tag") or sl.get("question_id") or "Slider").strip() or "Slider"
         _dv = _make_numeric_dv(_vn, _finite(sl.get("slider_min"), 0.0),
-                               _finite(sl.get("slider_max"), 100.0), "slider")
+                               _finite(sl.get("slider_max"), 100.0), "slider", sl.get("question_id") or "")
         if _dv is not None:
             scales.append(_dv)
             _n_recovered += 1
@@ -5061,10 +5063,38 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
             continue
         _vn = str(te.get("export_tag") or te.get("question_id") or "Numeric").strip() or "Numeric"
         _dv = _make_numeric_dv(_vn, _finite(te.get("number_min"), 0.0),
-                               _finite(te.get("number_max"), 100.0), "numeric")
+                               _finite(te.get("number_max"), 100.0), "numeric", te.get("question_id") or "")
         if _dv is not None:
             scales.append(_dv)
             _n_recovered += 1
+
+    # v1.3.0.6: every output column is defined once, and no DV is lost doing it.  A single-item
+    # numeric/slider whose name is one of the columns "<scale>_<i>" of a multi-item scale (an
+    # export-tag collision in the source survey: Qualtrics would rename one of them on export) is
+    # renamed with its own question id, "<tag>_<QID>"; the multi-item scale keeps its column names.
+    _taken_cols: set = set()
+    for _s in scales:
+        try:
+            _k = int(_s.get("num_items") or 1)
+        except (TypeError, ValueError):
+            _k = 1
+        if _k > 1:
+            _b = str(_s.get("variable_name", "")).lower()
+            _taken_cols.update(f"{_b}_{_i}" for _i in range(1, _k + 1))
+    if _taken_cols:
+        _all_names = {str(_s.get("variable_name", "")).lower() for _s in scales}
+        for _s in scales:
+            _vn = str(_s.get("variable_name", ""))
+            if int(_s.get("num_items") or 1) == 1 and _vn.lower() in _taken_cols:
+                _new = f"{_vn}_{_s.get('question_id') or 'dup'}"
+                _n = 2
+                while _new.lower() in _all_names or _new.lower() in _taken_cols:
+                    _new = f"{_vn}_{_s.get('question_id') or 'dup'}_{_n}"
+                    _n += 1
+                _all_names.add(_new.lower())
+                _s["variable_name"] = _new
+                if str(_s.get("name", "")).lower() == _vn.lower():
+                    _s["name"] = _new
 
     # Only add the generic default if NO scales were detected AND none recovered.
     if not scales:
@@ -7166,6 +7196,11 @@ _QSF_DERIVED_STATE_KEYS: Tuple[str, ...] = (
     "qsf_identifiers", "confirmed_attention_checks", "confirmed_manipulation_checks",
     "confirmed_comprehension_checks", "confirmed_mediators", "variable_review_rows",
     "_checks_version", "_med_version", "enhanced_analysis",
+    # v1.3.0.6: the advanced effect widgets name this survey's DVs and conditions
+    "add_effect_checkbox", "effect_variable", "effect_factor", "effect_cohens_d",
+    "effect_level_high", "effect_level_low",
+    "_p_add_effect_checkbox", "_p_effect_variable", "_p_effect_factor", "_p_effect_cohens_d",
+    "_p_effect_level_high", "_p_effect_level_low",
 )
 
 
@@ -7181,6 +7216,17 @@ def _clear_qsf_derived_state() -> None:
         _reset_generation_state()
 
 
+# v1.3.0.6: widget keys mirrored to ``_p_<key>`` on every page switch.  Streamlit drops a widget's
+# key once the widget is no longer rendered, so anything the user typed on a page they leave would
+# come back at its default.  The first four are Setup-page text boxes; the rest are the Generate
+# page's advanced "Expected Effect Sizes" widgets (restored through ``_restore_persisted_widgets``).
+_PERSISTED_WIDGET_KEYS: Tuple[str, ...] = (
+    "study_title", "study_description", "team_name", "team_members_raw",
+    "add_effect_checkbox", "effect_variable", "effect_factor", "effect_cohens_d",
+    "effect_level_high", "effect_level_low",
+)
+
+
 def _navigate_to(page_index: int) -> None:
     """Navigate to a section by index and rerun.
 
@@ -7190,9 +7236,7 @@ def _navigate_to(page_index: int) -> None:
     """
     # v1.7.0: Persist widget values that would be lost when their page
     # is not rendered (Streamlit removes unrendered widget keys).
-    _widget_persist_keys = [
-        "study_title", "study_description", "team_name", "team_members_raw",
-    ]
+    _widget_persist_keys = _PERSISTED_WIDGET_KEYS
     for _wk in _widget_persist_keys:
         _wv = st.session_state.get(_wk)
         if _wv is not None:
@@ -9381,7 +9425,7 @@ def _inject_scroll_to_top_js() -> None:
 # v1.7.0: Restore persisted widget values EARLY — before sidebar or any code
 # that reads study_title, study_description, etc.  Streamlit removes widget keys
 # from session_state when their widgets are not rendered on the current page.
-for _pk in ["study_title", "study_description", "team_name", "team_members_raw"]:
+for _pk in _PERSISTED_WIDGET_KEYS:
     _saved_val = st.session_state.get(f"_p_{_pk}")
     if _saved_val is not None and _pk not in st.session_state:
         st.session_state[_pk] = _saved_val
@@ -9610,6 +9654,14 @@ def _get_condition_candidates(
 
     candidates: List[str] = []
 
+    # v1.3.0.6: the conditions the parser derived from the QSF flow itself (arms
+    # of a between-subjects randomizer, embedded-data/branch evidence) come first
+    # and are always selectable, even when a generic name such as "Block 1" would
+    # be filtered out below.
+    if preview and getattr(preview, "detected_conditions", None):
+        candidates.extend(c for c in preview.detected_conditions if str(c).strip())
+    _section_names = {str(b).strip().lower() for b in (getattr(preview, "section_blocks", None) or [])}
+
     # Extract from enhanced analysis (highest quality source)
     if enhanced_analysis and enhanced_analysis.conditions:
         for cond in enhanced_analysis.conditions:
@@ -9621,7 +9673,7 @@ def _get_condition_candidates(
     if preview and preview.blocks:
         for block in preview.blocks:
             block_name = block.block_name.strip()
-            if block_name and not is_excluded(block_name):
+            if block_name and not is_excluded(block_name) and block_name.lower() not in _section_names:
                 # Also check block type
                 if hasattr(block, 'block_type') and block.block_type in ('Trash', 'Default'):
                     continue
@@ -9637,6 +9689,28 @@ def _get_condition_candidates(
 
     # Deduplicate while preserving order
     return list(dict.fromkeys([c for c in candidates if c.strip()]))
+
+
+def _default_condition_selection(
+    preview: Optional[QSFPreviewResult],
+    enhanced_analysis: Optional[DesignAnalysisResult],
+    candidates: List[str],
+) -> List[str]:
+    """Conditions to pre-select on the Design page.
+
+    v1.3.0.6: the candidate list offers every plausible block, but only what the
+    QSF flow itself marks as an experimental arm is pre-selected: the parser's
+    ``detected_conditions`` (arms of a between-subjects randomizer first), then
+    the enhanced identifier's randomizer-sourced conditions.  Section blocks
+    (consent, demographics, feedback, ...) and blocks every participant sees
+    stay selectable but unchecked.  Returns [] when the QSF has no evidence.
+    """
+    cand_set = set(candidates or [])
+    picked = [c for c in (getattr(preview, "detected_conditions", None) or []) if c in cand_set]
+    if not picked and enhanced_analysis and getattr(enhanced_analysis, "conditions", None):
+        picked = [c.name for c in enhanced_analysis.conditions
+                  if getattr(c, "source", "") == "QSF Randomizer" and c.name in cand_set]
+    return list(dict.fromkeys(picked))
 
 
 def _get_qsf_identifiers(preview: Optional[QSFPreviewResult]) -> List[str]:
@@ -10521,7 +10595,9 @@ if active_page == 1:
         st.markdown("#### QSF Analysis")
         _n_questions = int(getattr(preview, "total_questions", 0) or 0)
         _n_scales = int(len(getattr(preview, "detected_scales", []) or []))
-        _n_candidates = int(len(st.session_state.get("condition_candidates", []) or []))
+        _n_candidates = int(len(_default_condition_selection(
+            preview, st.session_state.get("enhanced_analysis"),
+            st.session_state.get("condition_candidates", []) or [])))
         warnings = getattr(preview, "validation_warnings", []) or []
         # v1.0.2.3: Compact inline metrics (consistent across all pages)
         st.markdown(
@@ -10672,7 +10748,8 @@ if active_page == 2:
 
         # Initialize selected conditions in session state
         if "selected_conditions" not in st.session_state:
-            st.session_state["selected_conditions"] = condition_candidates[:] if condition_candidates else []
+            st.session_state["selected_conditions"] = _default_condition_selection(
+                preview, enhanced_analysis, condition_candidates or [])
 
         # Get current custom conditions
         custom_conditions = st.session_state.get("custom_conditions", [])
@@ -13484,6 +13561,14 @@ if active_page == 3:
         available_scales = [s.get("name", "Main_DV") for s in scales] if scales else ["Main_DV"]
         available_factors = [f.get("name", "Condition") for f in factors] if factors else ["Condition"]
 
+        # v1.3.0.6: values restored from the page-switch mirror must still be options of the
+        # widgets they feed (the DVs/conditions may have changed meanwhile); a stale one is dropped.
+        for _ek, _eopts in (("effect_variable", available_scales), ("effect_factor", available_factors)):
+            if _ek in st.session_state and st.session_state[_ek] not in _eopts:
+                st.session_state.pop(_ek, None)
+        _ecd = st.session_state.get("effect_cohens_d")
+        if _ecd is not None and not (isinstance(_ecd, (int, float)) and 0.0 <= float(_ecd) <= 1.5):
+            st.session_state.pop("effect_cohens_d", None)
         add_effect = st.checkbox("Add an expected effect size", value=False, key="add_effect_checkbox")
 
         if add_effect:
@@ -13518,6 +13603,8 @@ if active_page == 3:
                 # Ensure we have at least some levels to work with
                 if not factor_levels:
                     factor_levels = ["Control", "Treatment"]  # Fallback defaults
+                if st.session_state.get("effect_level_high") not in factor_levels:
+                    st.session_state.pop("effect_level_high", None)
 
             with eff_col2:
                 # Effect direction and magnitude
@@ -13558,6 +13645,8 @@ if active_page == 3:
                     )
                 with lev_col2:
                     other_levels = [l for l in factor_levels if l != level_high]
+                    if st.session_state.get("effect_level_low") not in (other_levels or factor_levels):
+                        st.session_state.pop("effect_level_low", None)
                     level_low = st.selectbox(
                         "Lower-scoring condition",
                         options=other_levels if other_levels else factor_levels,

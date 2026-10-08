@@ -225,6 +225,13 @@ class QSFPreviewResult:
     block_questions: Dict[str, List[str]] = field(default_factory=dict)  # block_id -> list of question_ids
     # v1.0.0: Questions that ALL conditions see (shared questions like demographics)
     shared_questions: List[str] = field(default_factory=list)  # question_ids visible to all conditions
+    # v1.3.0.6: where detected_conditions came from: 'randomizer' (arms of a
+    # between-subjects Randomizer/BlockRandomizer), 'embedded' / 'branch' (flow
+    # evidence without a usable randomizer), 'name' (block-name heuristic) or ''.
+    condition_evidence: str = ""
+    # v1.3.0.6: block names recognised as survey SECTIONS (consent, demographics,
+    # feedback, ...) - never conditions, whatever the app offers as candidates.
+    section_blocks: List[str] = field(default_factory=list)
 
 
 # v1.2.6.9: Tight pattern for attention-check INSTRUCTION items ("Please select
@@ -695,6 +702,7 @@ class QSFPreviewParser:
         self.log_entries = []
         self.errors = []
         self.warnings = []
+        self._condition_evidence = ''
 
         self._log(LogLevel.INFO, "PARSE_START", f"Beginning QSF file parsing (parser v{__version__})")
 
@@ -847,6 +855,9 @@ class QSFPreviewParser:
             condition_blocks=visibility_result.get('condition_blocks', {}),
             block_questions=visibility_result.get('block_questions', {}),
             shared_questions=visibility_result.get('shared_questions', []),
+            condition_evidence=getattr(self, '_condition_evidence', '') or '',
+            section_blocks=[b.block_name for b in blocks
+                            if self._is_section_block_name(b.block_name)],
         )
 
     def _parse_blocks(self, element: Dict, blocks_map: Dict):
@@ -2021,6 +2032,183 @@ class QSFPreviewParser:
 
         return False
 
+    # v1.3.0.6: survey SECTION vocabulary.  A block named like this is a part of
+    # the questionnaire every participant passes through, not an experimental arm.
+    _SECTION_NAME_RE = re.compile(
+        r"(?:^|[^a-z])(?:consent|informed|demograph\w*|instruction\w*|direction\w*|"
+        r"feedback|debrief\w*|check ?point\w*|practice|attention|intro(?:duction)?|"
+        r"conclu\w*|thank\w*|welcome|captcha|screen(?:er|ing)|prolific|mturk|"
+        r"worker ?id|payment|compensation|comprehension|post[- ]?(?:exp\w*|survey|study|test)|"
+        r"pre[- ]?(?:exp\w*|survey|study)|questionnaire|background|general|timer|timing|"
+        r"closing|opening|ending|end of|final|additional|comments?|open[- ]ended|"
+        r"individual differences|bot ?check|quality ?check|filler|"
+        r"manipulation ?check|exit|completion|code|id)(?:$|[^a-z])",
+        re.IGNORECASE,
+    )
+    _GENERIC_BLOCK_RE = re.compile(
+        r"^\s*(?:block|blk|bl|b|q|qid|question|page|part|section|screen)\s*[-_#]?\s*\d+[a-z]?\s*$"
+        r"|^\s*q\s*\d+\s*(?:[-\u2013]\s*q?\s*\d+)?\b"
+        r"|^\s*new (?:block|branch)\b|^\s*default question block\s*$",
+        re.IGNORECASE,
+    )
+    _NUMERIC_CONTENT_TYPES = frozenset({'validnumber', 'validdecimal', 'validinteger', 'validcurrency', 'validpercent'})
+    _ORDER_FIELD_RE = re.compile(r"order|sequence|counter ?balanc|position|presentation|rotation", re.IGNORECASE)
+
+    def _is_section_block_name(self, block_name: str) -> bool:
+        """True when a block name is a survey SECTION rather than an experimental arm.
+
+        v1.3.0.6: used on the NAME-based paths only (candidate lists, fallbacks).
+        Blocks inside a between-subjects randomizer are arms by construction
+        and are never run through this filter.
+        """
+        if not block_name or not block_name.strip():
+            return True
+        name = block_name.strip()
+        if self._GENERIC_BLOCK_RE.search(name):
+            return True
+        if self._is_excluded_block_name(name):
+            return True
+        # A name that carries explicit condition vocabulary stays a candidate
+        # ("Control Instructions" is an arm, "General Instructions" is not).
+        if re.search(r"\b(?:control|treatment|condition|experimental|baseline)\b", name, re.IGNORECASE):
+            return False
+        return bool(self._SECTION_NAME_RE.search(name))
+
+    def _collect_randomizer_arms(
+        self,
+        flow_data: Optional[Any],
+        blocks_by_id: Dict[str, str],
+    ) -> List[Dict[str, Any]]:
+        """Return the between-subjects randomizers of the flow with their arm labels.
+
+        v1.3.0.6: the QSF flow itself is the primary evidence for conditions.  An
+        arm is one child of a ``Randomizer`` / ``BlockRandomizer`` that shows
+        ``SubSet`` of its children to each participant: with ``SubSet`` 1 each
+        child is a condition; ``SubSet`` equal to the child count only shuffles
+        order.  A child is a Block (its name), a Group (its description), a
+        Branch (the block inside it, else its embedded-data value) or a bare
+        EmbeddedData element (its value).
+        """
+        found: List[Dict[str, Any]] = []
+
+        def arm_label(child: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+            ctype = child.get('Type', '')
+            fields: List[str] = []
+            if ctype in ('Standard', 'Block'):
+                bid = child.get('ID', '')
+                return ([blocks_by_id.get(bid, bid)] if bid else []), fields
+            if ctype == 'Group':
+                return ([child.get('Description', '')] if child.get('Description') else []), fields
+            if ctype == 'EmbeddedData':
+                labels = []
+                for fld in child.get('EmbeddedData', []) or []:
+                    if isinstance(fld, dict) and fld.get('Value') not in (None, ''):
+                        fields.append(str(fld.get('Field', '')))
+                        val = str(fld.get('Value'))
+                        labels.append(f"{fld.get('Field', '')} {val}".strip() if val.isdigit() else val)
+                return labels, fields
+            if ctype in ('Branch', 'Block', 'Randomizer', 'BlockRandomizer'):
+                inner = self._normalize_flow(child.get('Flow', []))
+                names: List[str] = []
+                for sub in inner:
+                    if sub.get('Type') in ('Standard', 'Block') and sub.get('ID'):
+                        names.append(blocks_by_id.get(sub['ID'], sub['ID']))
+                if names:
+                    return names[:1], fields
+                for sub in inner:
+                    if sub.get('Type') == 'EmbeddedData':
+                        labels, fields = arm_label(sub)
+                        if labels:
+                            return labels[:1], fields
+                desc = str(child.get('Description', '') or '').strip()
+                if desc and not re.match(r'^new (?:branch|block)', desc, re.IGNORECASE):
+                    return [desc], fields
+            return [], fields
+
+        def visit(flow: List[Dict[str, Any]], depth: int) -> None:
+            for item in flow:
+                if not isinstance(item, dict):
+                    continue
+                ftype = item.get('Type', '')
+                sub_flow = self._normalize_flow(item.get('Flow', []))
+                if ftype in ('Randomizer', 'BlockRandomizer') and sub_flow:
+                    try:
+                        subset = int(item.get('SubSet', 1) or 1)
+                    except (ValueError, TypeError):
+                        subset = 1
+                    arms: List[str] = []
+                    ed_fields: List[str] = []
+                    for child in sub_flow:
+                        labels, flds = arm_label(child)
+                        ed_fields.extend(flds)
+                        for lab in labels:
+                            lab = self._normalize_condition_label(lab)
+                            if lab and not self._is_trash_block_name(lab):
+                                arms.append(lab)
+                    arms = list(dict.fromkeys(arms))
+                    order_only = bool(ed_fields) and all(self._ORDER_FIELD_RE.search(f) for f in ed_fields)
+                    if (len(arms) >= 2 and subset == 1 and subset < len(sub_flow)
+                            and not order_only):
+                        found.append({'arms': arms, 'subset': subset, 'depth': depth,
+                                      'type': ftype, 'n_children': len(sub_flow)})
+                if sub_flow:
+                    visit(sub_flow, depth + 1)
+
+        visit(self._extract_flow_payload(flow_data), 0)
+        return found
+
+    def _collect_branch_arms(
+        self,
+        flow_data: Optional[Any],
+        blocks_by_id: Dict[str, str],
+    ) -> List[str]:
+        """Arms from sibling Branch elements that test an embedded-data field.
+
+        v1.3.0.6: surveys that assign a condition into embedded data (for
+        example with a SubSet = n randomizer of EmbeddedData elements) and then
+        show one block per value through ``Branch`` elements carry their
+        conditions in the branches.  Two or more sibling branches whose logic
+        reads an EmbeddedField, each holding a block, are the arms.  Branches
+        that test a survey answer (screeners, consent routing) are ignored.
+        """
+        def reads_embedded(branch: Dict[str, Any]) -> bool:
+            logic = branch.get('BranchLogic')
+            stack = [logic]
+            while stack:
+                cur = stack.pop()
+                if isinstance(cur, dict):
+                    if cur.get('LogicType') == 'EmbeddedField':
+                        return True
+                    stack.extend(cur.values())
+                elif isinstance(cur, list):
+                    stack.extend(cur)
+            return False
+
+        best: List[str] = []
+
+        def visit(flow: List[Dict[str, Any]]) -> None:
+            nonlocal best
+            arms: List[str] = []
+            for item in flow:
+                if not isinstance(item, dict):
+                    continue
+                sub = self._normalize_flow(item.get('Flow', []))
+                if item.get('Type') == 'Branch' and reads_embedded(item):
+                    for sb in sub:
+                        if sb.get('Type') in ('Standard', 'Block') and sb.get('ID'):
+                            lab = self._normalize_condition_label(blocks_by_id.get(sb['ID'], ''))
+                            if lab and not self._is_trash_block_name(lab):
+                                arms.append(lab)
+                            break
+                if sub:
+                    visit(sub)
+            arms = list(dict.fromkeys(arms))
+            if len(arms) >= 2 and len(arms) > len(best):
+                best = arms
+
+        visit(self._extract_flow_payload(flow_data))
+        return best
+
     def _has_condition_keywords(self, block_name: str) -> bool:
         """Check if a block name contains positive condition indicators.
 
@@ -2154,6 +2342,7 @@ class QSFPreviewParser:
         - They have generic names like 'Block 1', 'Block 2'
         """
         conditions: List[str] = []
+        embedded_for_conditions: List[Dict[str, Any]] = []
         blocks_by_id = {block.block_id: block.block_name for block in blocks}
 
         # Use the comprehensive pattern detector
@@ -2188,6 +2377,7 @@ class QSFPreviewParser:
                     {'patterns': [p.get('type') for p in result.get('patterns', [])]}
                 )
 
+            embedded_for_conditions = list(result.get('embedded_conditions') or [])
             # Store embedded conditions for later use
             if result.get('embedded_conditions'):
                 self._log(
@@ -2198,6 +2388,45 @@ class QSFPreviewParser:
         # v1.0.0: Filter out only truly trash blocks from conditions
         # Use less aggressive filter since conditions from randomizers are valid
         conditions = [c for c in conditions if not self._is_trash_block_name(c)]
+
+        # v1.3.0.6: the flow's own randomizers are the primary evidence.  When the
+        # survey has a between-subjects Randomizer / BlockRandomizer, its arms ARE
+        # the conditions; everything else the pattern detector collected (embedded
+        # data values anywhere in the flow, first words of branch descriptions) is
+        # side noise next to that.  Without a randomizer the detector output is
+        # kept only when it is not made of survey-section names.
+        self._condition_evidence = ''
+        _rz = self._collect_randomizer_arms(flow_data, blocks_by_id) if flow_data else []
+        if _rz:
+            conditions = [a for r in _rz for a in r['arms']]
+            self._condition_evidence = 'randomizer'
+            self._log(
+                LogLevel.INFO, "CONDITIONS",
+                f"Using the arms of {len(_rz)} between-subjects randomizer(s) as conditions",
+                {'arms': conditions[:40]},
+            )
+        elif flow_data and len(self._collect_branch_arms(flow_data, blocks_by_id)) >= 2:
+            conditions = self._collect_branch_arms(flow_data, blocks_by_id)
+            self._condition_evidence = 'branch'
+            self._log(LogLevel.INFO, "CONDITIONS",
+                      "Using embedded-data Branch arms as conditions", {'arms': conditions})
+        elif conditions:
+            # No randomizer or embedded-data branch: only embedded-data fields whose
+            # NAME says condition/treatment/group/... count (an "Excluded" field
+            # holding "Custom Value" is not an arm).
+            _field_re = re.compile(r"cond|treat|group|arm|manip|scenario|stimul|version|grp|variant|frame", re.IGNORECASE)
+            _emb = [str(e.get('value', '')) for e in (embedded_for_conditions or [])
+                    if _field_re.search(str(e.get('field', '')))]
+            conditions = [c for c in conditions if c in _emb]
+            _kept = [c for c in conditions if not self._is_section_block_name(c)]
+            if len(_kept) != len(conditions):
+                self._log(
+                    LogLevel.INFO, "CONDITIONS",
+                    f"Dropped {len(conditions) - len(_kept)} section-like names from flow-derived conditions"
+                )
+            conditions = _kept
+            if conditions:
+                self._condition_evidence = 'embedded'
 
         # v1.0.0: Safety heuristic - if condition count is very high (>30),
         # the parser likely picked up stimulus iterations / within-subjects
@@ -2237,7 +2466,24 @@ class QSFPreviewParser:
                 if self._looks_like_condition(desc):
                     self._add_condition(desc, conditions)
 
-        conditions = self._dedupe_conditions(conditions)
+        conditions = self._dedupe_conditions(
+            conditions, keep_numeric=(self._condition_evidence in ('randomizer', 'branch')))
+
+        # v1.3.0.6: the pattern output can be non-empty yet consist only of
+        # placeholders ("${rand://int/...}", digits) that the dedupe step drops;
+        # the block-name fallback must still get its turn in that case.
+        if not conditions:
+            for block in blocks:
+                desc = block.block_name.strip()
+                if (self._is_excluded_block_name(desc)
+                        or str(getattr(block, 'block_type', 'Standard')).lower() in ('trash', 'default')):
+                    continue
+                if self._looks_like_condition(desc):
+                    self._add_condition(desc, conditions)
+            conditions = self._dedupe_conditions(conditions)
+            self._condition_evidence = ''
+        if conditions and not self._condition_evidence:
+            self._condition_evidence = 'name'
 
         if not conditions:
             self._log(
@@ -2420,13 +2666,14 @@ class QSFPreviewParser:
         # Check for weaker keywords with additional context
         # e.g., "treatment group" is good, but "age group" is not
         for keyword in weak_keywords:
-            if keyword in lowered:
+            # v1.3.0.6: whole word only ("warm message" contains "arm")
+            if re.search(rf'\b{keyword}\b', lowered):
                 # Check if it has condition-related context
                 condition_context = ("treatment", "control", "experimental", "test", "condition")
                 if any(ctx in lowered for ctx in condition_context):
                     return True
                 # Check if it follows pattern like "Group A", "Group 1", etc.
-                if re.search(rf'{keyword}\s*[a-z0-9]', lowered, re.IGNORECASE):
+                if re.search(rf'\b{keyword}\s*[a-z0-9]', lowered, re.IGNORECASE):
                     return True
 
         return False
@@ -2770,7 +3017,7 @@ class QSFPreviewParser:
                                         if other_cond != cond and question_id not in visibility_map[other_cond]:
                                             visibility_map[other_cond][question_id] = False
 
-    def _dedupe_conditions(self, conditions: List[str]) -> List[str]:
+    def _dedupe_conditions(self, conditions: List[str], keep_numeric: bool = False) -> List[str]:
         """Deduplicate conditions and filter out invalid entries.
 
         v1.0.0: Enhanced to filter out embedded data placeholders and piped text.
@@ -2797,6 +3044,8 @@ class QSFPreviewParser:
             # Skip if matches invalid pattern
             is_invalid = False
             for pattern in invalid_patterns:
+                if keep_numeric and pattern == r'^\d+$':
+                    continue  # numeric block names inside a randomizer are real arms
                 if re.search(pattern, cond, re.IGNORECASE):
                     is_invalid = True
                     self._log(
@@ -3099,7 +3348,18 @@ class QSFPreviewParser:
             # v1.2.0: Also check export_tag for better variable naming
             var_name = q_info.export_tag if q_info.export_tag else q_id
             match = re.match(r'^(.+?)[-_]?(\d+)$', var_name)
-            if match:
+            # v1.3.0.6: a text box whose Qualtrics validation says "number" (or that
+            # declares a numeric range) is a numeric input with its OWN declared
+            # range, even when its export tag ends in a digit.  Folding such boxes
+            # into a numbered Likert group gave them a 1-7 range and a second,
+            # numeric definition of the same columns further down the pipeline.
+            _validated_numeric_te = (
+                'Text Entry' in q_info.question_type
+                and (q_info.number_min is not None or q_info.number_max is not None
+                     or str(q_info.content_type or '').lower() in self._NUMERIC_CONTENT_TYPES)
+            )
+            _numbered_validated_te = bool(match) and _validated_numeric_te
+            if match and not _validated_numeric_te:
                 base_name = match.group(1).rstrip('_-')
                 item_num = int(match.group(2))
                 if base_name not in scale_patterns:
@@ -3153,7 +3413,9 @@ class QSFPreviewParser:
                 numeric_keywords = ['how much', 'how many', 'amount', 'price', 'cost',
                                     'willing to pay', 'wtp', 'bid', 'offer', 'payment',
                                     'rating', 'score', 'number', 'percentage', '%']
-                if any(kw in q_text_lower for kw in numeric_keywords):
+                # Boxes that used to be folded into a numbered group are registered here with their own
+                # validated range; other validated boxes keep their previous route (recovered by the app).
+                if _numbered_validated_te or any(kw in q_text_lower for kw in numeric_keywords):
                     # v1.2.0: Use export_tag for variable name
                     variable_name = q_info.export_tag if q_info.export_tag else q_id
                     name_key = variable_name.lower()
