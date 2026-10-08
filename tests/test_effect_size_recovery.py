@@ -204,8 +204,13 @@ def test_condition_names_do_not_create_effects(hi, lo):
 def test_control_sits_between_levels_of_configured_effect():
     """A condition matching neither level of a configured effect is the reference
     level: it must sit near the midpoint, not receive keyword effects."""
-    df = _named_run("Version A", "Version B", 0.6, extra_conds=("Control",))
-    ac, cb = _pair_d(df, "Version A", "Control"), _pair_d(df, "Control", "Version B")
+    # v1.3.0.6: averaged over three seeds. A single run's |A-C minus C-B| has SD ~0.15 at
+    # n = 400 per arm (8 seeds), so the 0.22 bound failed ~13% of seeds by sampling noise alone;
+    # any change to the random stream (e.g. the careless-persona share) moved seed 3 across it.
+    runs = [_named_run("Version A", "Version B", 0.6, extra_conds=("Control",), seed=s)
+            for s in (3, 7, 13)]
+    ac = float(np.mean([_pair_d(df, "Version A", "Control") for df in runs]))
+    cb = float(np.mean([_pair_d(df, "Control", "Version B") for df in runs]))
     assert abs(ac - cb) < 0.22, f"control not centred: A-C={ac:.2f}, C-B={cb:.2f}"
     assert ac > 0.1 and cb > 0.1
 

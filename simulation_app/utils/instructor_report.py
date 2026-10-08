@@ -1255,8 +1255,9 @@ def _speed_flag_lines(df: "pd.DataFrame", metadata: Dict[str, Any]) -> List[str]
 
     The generator sets ``Flag_Speed`` when the completion time it drew for a participant is below the
     minimum or above the maximum of the exclusion window (``completion_time_min_seconds`` and
-    ``completion_time_max_seconds``; 60 s and 1,800 s unless changed). It later moves the recorded
-    ``Completion_Time_Seconds`` into a plausible human range without recomputing the flag, so a count
+    ``completion_time_max_seconds``; 60 s and 1,800 s unless changed), and since v1.3.0.6 the flag is
+    recomputed from the exported ``Completion_Time_Seconds``. Older runs moved the recorded time into a
+    plausible human range without recomputing the flag, so a count
     of recorded times against fixed limits can disagree with the flag. Both are reported, and a note
     appears when the data prove a disagreement: a flagged participant whose recorded time lies
     between the times of unflagged participants cannot have been flagged by the rule, whatever the
@@ -3403,9 +3404,9 @@ class InstructorReportGenerator:
                 "Attention_Pass_Rate": "Proportion of attention checks passed (0-1)",
                 "Max_Straight_Line": "Longest run of identical consecutive responses",
                 "Flag_Speed": "Speed flag: 1=completion time outside the exclusion window (too fast or too slow)",
-                "Flag_Attention": "Attention flag: 1=attention-check pass rate below the threshold",
+                "Flag_Attention": "Attention flag: 1=failed at least one attention check (pass rate below the threshold; a threshold of 0 means any failure)",
                 "Flag_StraightLine": "Straight-line flag: 1=repetitive pattern detected",
-                "Exclude_Recommended": "Recommended exclusion: 1=exclude, 0=retain",
+                "Exclude_Recommended": "Recommended exclusion: 1 if Flag_Speed, Flag_Attention or Flag_StraightLine is 1, else 0",
                 "SIMULATION_MODE": "Simulation mode (pilot/full)",
                 "SIMULATION_SEED": "Random seed used for reproducibility",
             }

@@ -86,9 +86,12 @@ class HBSValidator:
 
     BENCHMARKS: Dict[str, Dict[str, Any]] = {
         "completion_time": {
-            "human_min_seconds": 480,
-            "human_max_seconds": 1500,
-            "target_pct_in_range": 0.80,
+            # v1.3.0.6: only IMPOSSIBLE durations are corrected. The old 480-1500 s
+            # window rewrote every genuinely fast (speeder) completion time into a normal
+            # range, so Flag_Speed could never fire for careless participants.
+            "human_min_seconds": 10,
+            "human_max_seconds": 14400,
+            "target_pct_in_range": 1.00,
         },
         "attention_checks": {
             "overall_pass_rate_range": (0.82, 0.96),
@@ -233,7 +236,7 @@ class HBSValidator:
             if check_name == "completion_time":
                 df = self._correct_completion_time(df)
                 corrections.append(
-                    "Re-sampled timing values within [480, 1500] seconds."
+                    "Replaced impossible timing values (<10 s or >4 h) only; speeders are kept."
                 )
 
             elif check_name == "straightlining":
@@ -288,7 +291,7 @@ class HBSValidator:
     # ==================================================================
 
     def _check_completion_time(self, df: Any) -> Dict[str, Any]:
-        """Check whether 80%+ of completion times fall within [480, 1500]s."""
+        """Check that completion times are possible ([10, 14400] s); fast speeders are legitimate."""
         timing_col = self._find_timing_column(df)
         if timing_col is None:
             return {
@@ -627,7 +630,7 @@ class HBSValidator:
     # ==================================================================
 
     def _correct_completion_time(self, df: Any) -> Any:
-        """Re-sample out-of-range timing values within [480, 1500] seconds."""
+        """Replace impossible timing values (<10 s or >14,400 s); never touches plausible speeders."""
         timing_col = self._find_timing_column(df)
         if timing_col is None:
             return df
@@ -646,8 +649,8 @@ class HBSValidator:
                 continue
 
             if val < lo or val > hi:
-                # Re-sample with a log-normal-ish distribution centred on ~720s
-                new_val = self._rng.gauss(mu=720, sigma=200)
+                # Replace an impossible value with a typical completion time (~5 min)
+                new_val = self._rng.gauss(mu=300, sigma=90)
                 new_val = max(lo, min(hi, new_val))
                 self._set_cell(df, row_idx, timing_col, round(new_val, 1))
 
