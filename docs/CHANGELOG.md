@@ -35,6 +35,10 @@ lookup) is untouched; only the text post-processing after a response is drawn ch
   observed d) and `level_high` / `level_low` in `effect_sizes_configured`; `effect_sizes_observed`
   is recomputed from the data that is actually returned. The instructor report's "Condition Effects
   Strategy" now describes this instead of a table of hard-coded keyword magnitudes.
+- Reference arms are recognised by whole words. "Unusual outcome", "Standardized message" and "Uncontrolled
+  spending" were taken for control arms (substring match) and skipped their literature effect; "Wait_List",
+  "NoTreatment" and "ControlGroup" are now recognised. No verdict changed over the 475 condition labels of the
+  example surveys.
 
 **Open-ended text**
 - Flagged defects per 1,000 answers: 447 -> 0.5 (24 corpus files, 24k answers, same seeds; baseline `main` 1.2.9.0, whose offline text engine 1.3.0.3 did not change; re-measured on the merged tree). Gone:
@@ -97,6 +101,18 @@ lookup) is untouched; only the text post-processing after a response is drawn ch
   mailbox) and per app (100 a day).
 - One broken optional module (`email_delivery`, `html_safety`, `correlation_matrix`) can no longer take
   the whole app down, whatever exception it raises at import.
+- Deployment secrets are read from the environment first and then from `st.secrets` (the order the deployment
+  docs promise). SMTP settings, the instructor address and the email limits set only as environment variables
+  were ignored, so the instructor mail was silently not sent; a quoted `SMTP_USE_TLS = "false"` is no longer
+  truthy in the fallback sender. An explicit `USER_EMAIL_MAX_* = 0` now blocks student mail (it used to fall
+  back to the default when given as a number).
+- The top-level import layout of `llm_response_generator` took two helpers fewer from `text_cleanup` than it
+  uses (a NameError at the first post-processed answer); the root README no longer lists the removed Cerebras
+  and Mistral keys.
+- Documentation lines that the merge with `main` had reverted to older wording were restored where the code
+  contradicts them (alpha control is two-sided, 113 of 116 template sets are selectable, the export is a
+  Qualtrics-style file, plotly is a requirement, `META_ANALYTIC_DB` is used at runtime), and the `file:line`
+  references in the four reference documents were re-derived.
 - New root README, `docs/guide/how-effects-work.md`, `docs/guide/limitations.md`, `LICENSE`
   (PolyForm Noncommercial 1.0.0) and `CITATION.cff`.
 
