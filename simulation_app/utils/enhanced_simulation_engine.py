@@ -8302,6 +8302,12 @@ class EnhancedSimulationEngine:
         _is_econ_game = any(kw in var_lower for kw in _econ_kws) or any(
             kw in condition_lower for kw in ['dictator', 'trust game', 'ultimatum',
                                               'public good', 'prisoner'])
+        if not _is_econ_game and 'prisoner' in (
+                (self.study_title or "") + " " + (self.study_description or "")).lower():
+            # v1.3.0.5: a prisoner's-dilemma DV is usually named "cooperate"/"defect",
+            # which no allocation keyword matches ("cooperat" alone is too broad: it
+            # also names Likert cooperation scales). Require the game in the study text.
+            _is_econ_game = any(kw in var_lower for kw in ('cooperat', 'defect'))
         if _is_econ_game:
             # Detect specific game type for precise calibration
             _full_ctx = var_lower + " " + condition_lower + " " + (
@@ -8310,11 +8316,21 @@ class EnhancedSimulationEngine:
             # v1.0.8.7: Try structured knowledge base FIRST for game calibrations
             if HAS_KNOWLEDGE_BASE:
                 _kb_game = None
+                # v1.3.0.5: the loop keys are underscored, but study text says
+                # "public goods game" / "prisoner's dilemma", so those two games never
+                # matched and fell through to the generic branch (a one-shot public
+                # goods game came out at a 64% mean contribution, a prisoner's dilemma at
+                # 70% cooperation, against 40% and 47% in the knowledge base).
+                _gt_aliases = {
+                    'public_good': ('public good', 'public-good', 'voluntary contribution'),
+                    'prisoner': ("prisoner's dilemma", 'prisoners dilemma', 'prisoners\' dilemma',
+                                 'prisoner dilemma'),
+                }
                 for _gt in ['dictator', 'trust', 'ultimatum', 'public_good',
                             'prisoner', 'auction', 'bargain', 'gift_exchange',
                             'stag_hunt', 'common_pool', 'holt_laury',
                             'beauty_contest', 'die_roll', 'bribery']:
-                    if _gt in _full_ctx:
+                    if _gt in _full_ctx or any(a in _full_ctx for a in _gt_aliases.get(_gt, ())):
                         _variant = 'standard'
                         if _gt == 'dictator' and any(kw in _full_ctx for kw in ['tak', 'steal', 'negative']):
                             _variant = 'taking'
@@ -8323,6 +8339,8 @@ class EnhancedSimulationEngine:
                         elif _gt == 'public_good' and 'punish' in _full_ctx:
                             _variant = 'punishment'
                         _gt_clean = _gt.replace('_good', '_goods')
+                        if _gt == 'prisoner':
+                            _gt_clean = 'prisoners_dilemma'
                         _kb_game = get_game_calibration(_gt_clean, _variant)
                         if _kb_game is None:
                             _kb_game = get_game_calibration(_gt, _variant)
