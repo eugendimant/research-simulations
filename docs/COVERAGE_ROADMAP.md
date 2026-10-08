@@ -188,21 +188,22 @@ Ordered by (frequency of need × value ÷ risk). These are larger, mostly
     outside its own module only the registry's audit listing reads it
     (`empirical_registry.py:367`). Either wire it or drop the import — an unused
     import of a table reads as a live feature.
-12d. **Three template sets are still never selected.** `DOMAIN_TEMPLATES` holds
-    116 keys. v1.2.8.9 made seven of the ten former orphans reachable: four became
-    `StudyDomain` members outright (`forgiveness`, `moral_cleansing`, `nostalgia`,
-    `sleep_quality`), and three are reached through `_DOMAIN_TEMPLATE_ALIASES`
-    (`response_library.py:4673`, 15 source keys): `artificial_intelligence`,
-    `climate_change`, `narrative_transportation`. The other three — `ethical_dilemma`,
-    `gratitude_experience`, `gratitude_intervention` — stay unreachable: the lookup
-    (`response_library.py:8666`) consults the alias map only when `domain.value`
-    is not itself a `DOMAIN_TEMPLATES` key, and their only alias sources,
-    `moral_dilemma` and `gratitude`, are keys with sets of their own. Calling the
-    lookup for every `StudyDomain` value returns 113 of the 116 sets.
-    `test_every_domain_template_bank_is_reachable` passes anyway because it only
-    checks that each key is a `StudyDomain` value or an alias target, not that the
-    lookup reaches it. Either give the three sets `StudyDomain` members of their
-    own or merge them into `moral_dilemma` and `gratitude`.
+12d. **Template sets that were never selected (fixed v1.3.0.5).** `DOMAIN_TEMPLATES`
+    holds 116 keys and all 116 are now reachable. v1.2.8.9 made seven of the ten
+    former orphans reachable: four became `StudyDomain` members outright
+    (`forgiveness`, `moral_cleansing`, `nostalgia`, `sleep_quality`), and three are
+    reached through `_DOMAIN_TEMPLATE_ALIASES` (`response_library.py:4673`, 15
+    source keys): `artificial_intelligence`, `climate_change`,
+    `narrative_transportation`. The last three, `ethical_dilemma`,
+    `gratitude_experience` and `gratitude_intervention`, stayed dead because the
+    lookup (`:8675`) consults the alias map only when `domain.value` is not itself
+    a `DOMAIN_TEMPLATES` key, and their only alias sources, `moral_dilemma` and
+    `gratitude`, have sets of their own. `_DOMAIN_TEMPLATE_EXTENSIONS` (`:4695`)
+    now pools those three banks into the two domains' sets; seeded output for
+    every other domain is unchanged. `test_every_domain_template_bank_is_reachable`
+    drives the real lookup for every `StudyDomain` and asserts every key is drawn
+    from at least once (it used to check only that each key was a domain value or
+    alias target, which is why it passed while three banks were dead).
 13. **Sample-source profiles** (MTurk / Prolific / undergrad / nat-rep) — careless
     base-rate, attention-pass, demographic skew, effect-size attenuation. Meta-DB
     `sample` moderators exist, unused.

@@ -351,16 +351,17 @@ The response generation system has been trained on **hundreds of scientific insi
 **277 research domains** are keyword-detectable, via 3,473 keyword patterns.
 **189** of them are grouped into the 23 categories below (191 memberships — two
 domains, `social_media` and `algorithmic_fairness`, are cross-listed); the other
-88 are detectable but ungrouped. 113 of the 116 `DOMAIN_TEMPLATES` keys carry a
+88 are detectable but ungrouped. All 116 `DOMAIN_TEMPLATES` keys carry a
 selectable open-ended template set, 68 of them inside these categories: 110 are
 `StudyDomain` values, and three more — `artificial_intelligence`,
 `climate_change`, `narrative_transportation` — are reached through
 `_DOMAIN_TEMPLATE_ALIASES` (`response_library.py:4673`, 15 source keys). The
-lookup (`:8666`) consults that map only when `domain.value` is not itself a
+lookup (`:8675`) consults that map only when `domain.value` is not itself a
 `DOMAIN_TEMPLATES` key, so the other three alias targets — `ethical_dilemma`,
-`gratitude_experience`, `gratitude_intervention` — can never be selected: their
+`gratitude_experience`, `gratitude_intervention` are reached differently: their
 only alias sources, `moral_dilemma` and `gratitude`, have template sets of their
-own (`docs/COVERAGE_ROADMAP.md` item 12d). Before v1.2.8.9 ten keys were
+own, so `_DOMAIN_TEMPLATE_EXTENSIONS` (`:4695`) pools the three banks into those
+two sets (`docs/COVERAGE_ROADMAP.md` item 12d). Before v1.2.8.9 ten keys were
 unreachable; four of them (`forgiveness`, `moral_cleansing`, `nostalgia`,
 `sleep_quality`) have since become `StudyDomain` members outright. Four
 `StudyDomain` values have no keyword list and so are not detectable — `general`,

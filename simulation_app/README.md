@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.3.0.4** — a Streamlit app that turns a Qualtrics survey export into a realistic synthetic pilot dataset.
+**Version 1.3.0.5** — a Streamlit app that turns a Qualtrics survey export into a realistic synthetic pilot dataset.
 
 ## What it does
 
@@ -31,7 +31,7 @@ Note which engine covers the remainder: picking Built-in AI or Your API Key sets
 
 Built-in provider chain, tried in order until one responds: Google Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Gemini 2.5 Flash Lite → Groq GPT-OSS 120B → Groq Qwen3.6 27B → SambaNova Llama 3.3 70B → OpenRouter Mistral Small 3.1.
 
-## The behavioral engine (v1.3.0.4)
+## The behavioral engine (v1.3.0.5)
 
 **Numeric responses.** Each participant is one person with a persistent identity: eight response-style traits and a latent attitude vector, which together drive their answers. Condition effects are applied as deterministic mean shifts; individual variance is applied separately.
 
@@ -54,7 +54,7 @@ Alongside these, census-weighted demographics are written to `Simulation_Diagnos
 | Acquiescent Responder | 0.08 | Billiet & McClendon (2000) |
 | Careless Responder | 0.05 | Meade & Craig (2012) |
 
-**Open-ended text.** Compositional assembly (opener + core + elaboration + coda) over 113 reachable domain template sets (the table holds 116 keys; three are shadowed by other keys and never selected, see Research domains), 8 structural archetypes, and domain vocabulary banks, with per-participant stylometric fingerprinting (vocabulary richness, filler and hedge words, contractions, capitalization, typos) held constant across all of a participant's answers. Text is coherent with that participant's numeric responses: straight-liners write short, positive raters don't write negative text. Text boxes that expect a number (Qualtrics numeric validation, or wording such as age, how many, amount) and ID boxes (MTurk, Prolific, participant ID) are answered with numbers or IDs, and a text box that repeats a numeric question already in the data is skipped. All post-processing of generated text (stylometry, validation, variation) edits only at grammatical positions through `utils/text_cleanup.py`.
+**Open-ended text.** Compositional assembly (opener + core + elaboration + coda) over 116 reachable domain template sets (every key in the table can be selected, see Research domains), 8 structural archetypes, and domain vocabulary banks, with per-participant stylometric fingerprinting (vocabulary richness, filler and hedge words, contractions, capitalization, typos) held constant across all of a participant's answers. Text is coherent with that participant's numeric responses: straight-liners write short, positive raters don't write negative text. Text boxes that expect a number (Qualtrics numeric validation, or wording such as age, how many, amount) and ID boxes (MTurk, Prolific, participant ID) are answered with numbers or IDs, and a text box that repeats a numeric question already in the data is skipped. All post-processing of generated text (stylometry, validation, variation) edits only at grammatical positions through `utils/text_cleanup.py`.
 
 **Realism layers.** Survey fatigue drift, reverse-item failure that is trait-like within session (Woods 2006), domain-sensitive social desirability (Nederhof 1985), typing-error rates calibrated to education, ex-Gaussian response times, inter-item α targeting and cross-DV correlation.
 
@@ -122,7 +122,7 @@ Pick row and column factors and the app crosses them. A 2×3 — {Dictator game,
 
 ## Research domains
 
-**277 research domains** are keyword-detectable, via 3,473 keyword patterns. 189 of them are grouped into the 23 categories below; the remaining 88 are detectable but ungrouped. 113 of the 116 `DOMAIN_TEMPLATES` keys carry a selectable open-ended template set, 68 of them inside the 23 categories — 110 are `StudyDomain` values and three more (`artificial_intelligence`, `climate_change`, `narrative_transportation`) are reached through `_DOMAIN_TEMPLATE_ALIASES` (`response_library.py:4673`, resolved in the lookup at `:8666`, which consults it only when `domain.value` is not itself a key). The other three (`ethical_dilemma`, `gratitude_experience`, `gratitude_intervention`) can never be selected, because their alias sources `moral_dilemma` and `gratitude` have template sets of their own (`docs/COVERAGE_ROADMAP.md` item 12d). The categories, as named in `DOMAIN_CATEGORIES`: behavioral economics, social psychology, political science, consumer & marketing, organizational behavior, technology & AI, AI alignment & ethics, ethics & moral psychology, clinical psychology, personality psychology, health psychology, health disparities, education, environmental, financial psychology, decision science, trust & credibility, gaming & entertainment, social media research, innovation & creativity, risk & safety, future of work, digital society.
+**277 research domains** are keyword-detectable, via 3,473 keyword patterns. 189 of them are grouped into the 23 categories below; the remaining 88 are detectable but ungrouped. all 116 `DOMAIN_TEMPLATES` keys carry a selectable open-ended template set, 68 of them inside the 23 categories — 110 are `StudyDomain` values and three more (`artificial_intelligence`, `climate_change`, `narrative_transportation`) are reached through `_DOMAIN_TEMPLATE_ALIASES` (`response_library.py:4673`, resolved in the lookup at `:8675`, which consults it only when `domain.value` is not itself a key). The last three (`ethical_dilemma`, `gratitude_experience`, `gratitude_intervention`) are pooled into the `moral_dilemma` and `gratitude` sets by `_DOMAIN_TEMPLATE_EXTENSIONS`, because those two domains have template sets of their own and the alias map is not consulted for them (`docs/COVERAGE_ROADMAP.md` item 12d). The categories, as named in `DOMAIN_CATEGORIES`: behavioral economics, social psychology, political science, consumer & marketing, organizational behavior, technology & AI, AI alignment & ethics, ethics & moral psychology, clinical psychology, personality psychology, health psychology, health disparities, education, environmental, financial psychology, decision science, trust & credibility, gaming & entertainment, social media research, innovation & creativity, risk & safety, future of work, digital society.
 
 Calibration knowledge base: 187 meta-analytic effect entries, 68 economic-game calibrations, 201 construct norms, 12 cultural adjustments. Of these the meta-analytic effect entries, game calibrations, construct norms and response-time norms are queried during generation (the meta-analytic entries through the literature anchoring described under Condition effects); the cultural adjustments are a table that nothing in generation calls yet (tracked in `docs/COVERAGE_ROADMAP.md`).
 
@@ -184,6 +184,6 @@ Every run sends the instructor notification (the statistical report, the detaile
 Created by Dr. Eugen Dimant. Licensed under the [PolyForm Noncommercial License 1.0.0](../LICENSE): noncommercial use, including research and teaching, is free; commercial use needs the author's permission.
 
 ```
-Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 1.3.0.4) [Computer software].
+Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 1.3.0.5) [Computer software].
 https://github.com/eugendimant/research-simulations
 ```
