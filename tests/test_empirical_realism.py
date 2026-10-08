@@ -59,7 +59,7 @@ def test_adjust_effect_preserves_sign_and_never_inflates():
     for d in (0.2, 0.8, -0.5):
         out = reg.adjust_effect(d, kind="meta", key="unknown_key", rng=rng, tau=0.0)
         # v1.3.0.6: the tier weight and the replication shrinkage are one discount, the stronger
-        # (0.55 against 0.60 here); the 0.35 floor no longer binds for an unknown key
+        # (0.55 against the installed shrinkage here); the 0.35 floor no longer binds for an unknown key
         expected = d * min(reg.TIER_WEIGHT[reg.UNVERIFIED], reg.shrinkage_factor())
         assert out == pytest.approx(expected, rel=1e-6)
         assert (out > 0) == (d > 0)
