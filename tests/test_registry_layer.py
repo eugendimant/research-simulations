@@ -158,10 +158,17 @@ def test_shrinkage_refuses_tau_on_another_scale():
         R.set_shrinkage(0.6, 0.2, prov, tau_scale="fisher_z")
 
 
-def test_no_shrinkage_is_installed_by_default():
-    """Nothing has been verified, so nothing is corrected. The honest default."""
-    assert R.shrinkage_factor() == 1.0
-    assert R.default_tau() == 0.0
+def test_only_a_recall_labelled_shrinkage_is_installed_by_default():
+    """v1.3.0.5: the default correction is active but rests on recall, and says so.
+
+    The old default (no correction, because nothing could be verified) is still what
+    happens when the recall record is absent; what must never happen is a correction
+    that claims a source. The full policy tests are in test_lit_shrinkage_v1305.py.
+    """
+    assert R.shrinkage_verified() is False
+    assert R.shrinkage_tier() in R.RECALL_TIERS
+    assert R.shrinkage_factor() == pytest.approx(0.60)
+    assert R.default_tau() == pytest.approx(0.15)
 
 
 # --------------------------------------------------------------------------

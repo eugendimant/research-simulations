@@ -55,7 +55,8 @@ different things and the difference has to be visible.
   showing verbatim next to any literature claim in the UI.
 * **Replication adjustment** — `EffectPolicy` + `adjust_effect()` apply
   publication-bias shrinkage and a between-study heterogeneity draw, so each run
-  can differ the way two real labs differ. **Currently inert**: see below.
+  can differ the way two real labs differ. **Active since v1.3.0.5 on a recalled
+  figure**: see "Consequences".
 
 ## State of verification: 1 of 484 source-verified
 
@@ -150,17 +151,33 @@ unsourced regardless of tier.
 
 ### Consequences, deliberately
 
-* `shrinkage_factor()` returns **1.0** — no publication-bias correction is
-  applied. The candidate figures for how far published effects exceed replication
-  effects differ by definition (ratio of pooled means vs median of per-pair ratios
-  vs regression slope) by enough to change every effect in the system, and the
-  comparison baseline differs too (single original studies vs published
-  meta-analyses). Applying an unverified correction to every effect would be worse
-  than applying none.
-* `default_tau()` returns **0.0** — no heterogeneity draw, for the same reason:
-  τ is reported on different scales (*d*, Fisher's *z*, log odds) and is not
-  comparable across them, and an I² is a proportion of observed variance, not an
-  absolute magnitude that can be used as a perturbation SD.
+* `shrinkage_factor()` returns **0.60** and `default_tau()` **0.15** since v1.3.0.5, but
+  both rest on **recall, not on a source** (`policy:publication_bias` is tiered
+  `recall_uncertain`; `shrinkage_verified()` is False and `honesty_notice()` says
+  so). They are installed through `set_recalled_shrinkage()`, which writes only to the
+  recall band and refuses to overwrite a verified record; `set_shrinkage()` still
+  accepts only a checked source. Recalled evidence, with the spread that made 0.60 a
+  judgement and not a measurement (ratio = replication / original effect):
+  Open Science Collaboration 2015 about 0.5; Camerer et al. 2018 about 0.5 (0.45-0.75
+  by summary); Camerer et al. 2016 (economics) about 0.66; Many Labs 1 and 2 about
+  half; Kvarven et al. 2020 meta-analyses exceed preregistered replications by d
+  0.2-0.3, a ratio near 0.3-0.6; Mertens et al. 2022 nudges 0.43 before and near zero
+  after bias correction. 0.60 is the top of that range on purpose, so that a real
+  effect is not erased. The per-evidence-type table (`single_original_study` 0.50,
+  `meta_analysis` 0.60, `preregistered_replication` 1.00) is documentation; only the
+  meta-analysis figure is applied, because every inferred path draws on
+  `META_ANALYTIC_DB`. τ 0.15 d is the recalled 0.1-0.25 range for social-psychology
+  meta-analyses and is used where an entry reports none (entries report 0.05-0.20).
+* **Where it applies.** Only to effects the tool *infers*: the paradigm anchor
+  (`_match_meta_entry` -> `_shrink_inferred_meta_effect`) and the literature
+  fallback (`literature_effects.lookup`). Never to a user-specified effect, the
+  `auto_effects=False` null, economic-game calibrations or the generic keyword
+  (STEP 2) domain effects, which are not published d values. `adjust_effect` keeps
+  the sign, and in replication-adjusted mode the result never falls below
+  `min_retained` (0.35) of the published magnitude. Each run's draw is seeded by the
+  engine's stable RNG, so a seeded run reproduces. The fallback additionally keeps its
+  per-entry tier weighting (0.55-0.68 for recall tiers), so a fallback effect lands
+  near the 0.35 floor; the anchor path has no tier weighting.
 * The verified distribution shapes in `empirical_marginals.py` are gated on
   provenance, so `marginal_for()` returns `None` for everything unsourced and **no
   economic-game marginal is active**. The machinery, the mixture solver and its
@@ -180,7 +197,8 @@ In order of preference:
 Once either is in place the work is mechanical: fetch, quote, register. The
 priority order is the entries the engine actually consults — the four economic-game
 meta-analyses (dictator, trust, ultimatum, public goods), the careless-responding
-and response-style norms, and the publication-bias shrinkage factor.
+and response-style norms; the publication-bias shrinkage factor, which is
+installed from recall and still needs a source check.
 
 ## What *is* verified
 

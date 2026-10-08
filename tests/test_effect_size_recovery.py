@@ -212,10 +212,16 @@ def test_control_sits_between_levels_of_configured_effect():
 
 def test_automatic_valence_effect_is_literature_sized():
     """With no d configured, a positive-vs-negative valence manipulation should give
-    a moderate effect (~0.6; Balliet/valence literature), not the old ~1.3."""
+    a moderate effect (~0.6; Balliet/valence literature), not the old ~1.3.
+
+    v1.3.0.5: this study's title names "framing", so the effect is the framing
+    meta-analysis (published d 0.31) and, like every inferred paradigm effect, it is
+    shrunk toward the replication effect (x0.60, with a between-study draw, never
+    below 0.35 x published). The lower bound drops from 0.3 to 0.1 for that reason
+    alone; the upper bound still catches a return to the old inflated magnitude."""
     df = _named_run("Positive feedback", "Negative feedback", 0.0, with_spec=False)
     d = _pair_d(df, "Positive feedback", "Negative feedback")
-    assert 0.3 <= d <= 0.9, f"automatic valence effect d={d:.2f}"
+    assert 0.1 <= d <= 0.9, f"automatic valence effect d={d:.2f}"
 
 
 @pytest.mark.parametrize("target", [0.5, 0.8])
@@ -401,9 +407,18 @@ def _auto_d(title, conds, dv, n=1600, seed=7):
     ("Mindfulness-based intervention and distress", ["Mindfulness", "Waitlist control"], "Distress", -0.55),
 ])
 def test_meta_anchored_effect_magnitude(title, conds, dv, expected):
-    """A named paradigm gets its published magnitude (and the right sign)."""
+    """A named paradigm gets its published magnitude, replication-shrunk (and the right sign).
+
+    v1.3.0.5: ``expected`` stays the PUBLISHED d. An inferred effect is multiplied by 0.60
+    and given a between-study draw (SD about 0.1-0.15 d), so the target is 0.60 x published
+    with a band of max(30%, 0.12) -- wide enough for the draw, narrow enough to fail if
+    the shrinkage were removed (the published value would sit outside it for the large
+    effects, which are also asserted to be clearly below the published d)."""
     d = _auto_d(title, conds, dv)
-    assert 0.7 * abs(expected) <= abs(d) <= 1.3 * abs(expected), f"d={d:.2f} vs meta {expected}"
+    target = 0.60 * abs(expected)
+    assert abs(abs(d) - target) <= max(0.30 * target, 0.12), f"d={d:.2f} vs shrunk {target:.2f}"
+    if abs(expected) >= 0.5:
+        assert abs(d) < 0.85 * abs(expected), f"d={d:.2f} is not below the published {expected}"
     assert np.sign(d) == np.sign(expected)
 
 
