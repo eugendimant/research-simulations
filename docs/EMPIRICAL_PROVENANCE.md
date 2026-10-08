@@ -171,13 +171,23 @@ unsourced regardless of tier.
 * **Where it applies.** Only to effects the tool *infers*: the paradigm anchor
   (`_match_meta_entry` -> `_shrink_inferred_meta_effect`) and the literature
   fallback (`literature_effects.lookup`). Never to a user-specified effect, the
-  `auto_effects=False` null, economic-game calibrations or the generic keyword
-  (STEP 2) domain effects, which are not published d values. `adjust_effect` keeps
+  `auto_effects=False` null, economic-game calibrations or relational / intergroup
+  (STEP 0) effects. The generic keyword (STEP 1-2) effects are hand-set, not
+  published d values, and since v1.3.0.6 take the same 0.60 factor directly (no
+  heterogeneity draw, no tier weight) because their magnitudes were set from original
+  rather than replicated findings. `adjust_effect` keeps
   the sign, and in replication-adjusted mode the result never falls below
   `min_retained` (0.35) of the published magnitude. Each run's draw is seeded by the
-  engine's stable RNG, so a seeded run reproduces. The fallback additionally keeps its
-  per-entry tier weighting (0.55-0.68 for recall tiers), so a fallback effect lands
-  near the 0.35 floor; the anchor path has no tier weighting.
+  engine's stable RNG, so a seeded run reproduces. The fallback also has a
+  per-entry tier weight (0.55-0.68 for recall tiers). Until v1.3.0.5 it was multiplied
+  with the 0.60 shrinkage, so a fallback effect landed near the 0.35 floor: two
+  discounts for one doubt. Since v1.3.0.6 the STRONGER of the two applies
+  (`min(tier weight, shrinkage)`): doubt about the value is two-sided, so it is a reason
+  for an unchecked number never to push harder than a checked one (a verified entry gets
+  the shrinkage alone, an unverified one at most that), not a second reason to shrink.
+  The anchor path has no tier weighting. A literature-routed arm is applied against the
+  zero-point reference arm with a gap of `2 x 0.109 x d` on every route, so the applied d
+  is what the composite shows (the fallback used to deliver about d/2).
 * The verified distribution shapes in `empirical_marginals.py` are gated on
   provenance, so `marginal_for()` returns `None` for everything unsourced and **no
   economic-game marginal is active**. The machinery, the mixture solver and its

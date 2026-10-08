@@ -372,8 +372,8 @@ def adjust_effect(
     """Turn a literature effect size into the effect a fresh study would see.
 
     Order of operations:
-      1. tier weighting  — an unverified entry's deviation from zero is damped.
-      2. publication-bias shrinkage (replication_adjusted mode only).
+      1. discount: the STRONGER of the tier weight (an unverified entry is damped) and the
+         publication-bias shrinkage (replication_adjusted mode), not their product (v1.3.0.6).
       3. between-study heterogeneity draw, so runs vary like real labs do.
 
     The sign of `effect_d` is always preserved, the magnitude never grows beyond
@@ -386,15 +386,26 @@ def adjust_effect(
     if d == 0.0:
         return 0.0
 
-    # 1. Tier weighting: only applied when we actually know the key.
-    if key:
-        d *= confidence_weight(kind, key)
-
-    # 2. Publication-bias shrinkage.
+    # 1+2. Tier weighting and publication-bias shrinkage -- ONE discount, not two.
+    #
+    # v1.3.0.6: both factors answer the same worry, that the published number is larger than
+    # what a fresh study would find. The tier weight says "this number was recalled, not read, so
+    # trust it less"; the shrinkage says "published effects are inflated by selective reporting".
+    # Applied as a product (0.55-0.68 x 0.60 = 0.33-0.41) the two compounded on one doubt and
+    # most unverified entries fell onto the 0.35 floor, so the floor, not either evidence, set
+    # the size. Doubt about the VALUE is two-sided (a recalled d is as likely too small as too
+    # large), so it is not a reason to shrink in expectation; it is a reason not to let an
+    # unchecked number push HARDER than a checked one. The stronger of the two discounts therefore
+    # applies: a verified entry gets the shrinkage alone, an unverified one never more than that,
+    # and never less discount than its tier asks for. As published (no shrinkage) the tier weight
+    # applies alone, as before.
+    weight = confidence_weight(kind, key) if key else 1.0
     if pol.mode == "replication_adjusted":
         f = pol.shrinkage if pol.shrinkage is not None else shrinkage_factor()
         f = max(pol.min_retained, min(1.0, float(f)))
-        d *= f
+        d *= min(weight, f)
+    else:
+        d *= weight
 
     # 3. Heterogeneity draw.
     if pol.heterogeneity_draw:

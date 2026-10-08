@@ -398,11 +398,17 @@ def test_deferred_effect_is_recorded_deterministic_and_valid():
     json.dumps(meta["effect_sizes_applied"], allow_nan=False)
 
 
-def test_a_lone_scale_keeps_the_calibrated_in_generator_route():
-    """The single-scale calibration (docs/guide/how-effects-work.md) is untouched: nothing is deferred."""
-    e = _engine(["Group 1", "Group 2"], [_scale("Trust")], [_spec("Trust", "Group 1", "Group 2", 0.5)], n=100, seed=3)
-    _, meta = e.generate()
-    assert meta["effect_sizes_applied"]["applied_after_generation"] == [] and not e._deferred_effect_vars
+def test_a_lone_short_scale_keeps_the_calibrated_in_generator_route():
+    """The single-scale calibration (docs/guide/how-effects-work.md) is untouched for one- and two-item scales.
+
+    v1.3.0.6: a lone block of three or more items IS built in after the reliability steps
+    (see tests/test_effects_v1306.py), because alpha injection / attenuation changes its item noise after a
+    generator shift is built in. One- and two-item scales have no such step and stay bit-identical."""
+    for items in (1, 2):
+        e = _engine(["Group 1", "Group 2"], [_scale("Trust", items=items)], [_spec("Trust", "Group 1", "Group 2", 0.5)],
+                    n=100, seed=3)
+        _, meta = e.generate()
+        assert meta["effect_sizes_applied"]["applied_after_generation"] == [] and not e._deferred_effect_vars
 
 
 def test_factorial_marginal_d_with_two_scales():

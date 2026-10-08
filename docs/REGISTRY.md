@@ -131,8 +131,9 @@ The recalled-figure route is separate: `set_recalled_shrinkage()` installs a fac
 through `register_recall()`, so it is tiered `recall_uncertain`, can never claim a source,
 and cannot overwrite a verified record. Since v1.3.0.5 it is how the active default is
 installed: `shrinkage_factor()` is **0.60** and `default_tau()` **0.15**, applied to
-effects the tool infers (paradigm anchor, literature fallback) and never to an effect you
-specify. `coverage_summary()["shrinkage_verified"]` stays False and `honesty_notice()`
+effects the tool infers (paradigm anchor, literature fallback, and since v1.3.0.6 the generic
+keyword effects) and never to an effect you specify. Where an entry also has a recall-tier
+weight, the stronger of the weight and the shrinkage applies, not their product. `coverage_summary()["shrinkage_verified"]` stays False and `honesty_notice()`
 says the factor is recalled and unchecked. See `docs/EMPIRICAL_PROVENANCE.md` for the
 evidence behind the figure. Promote it by reading the sources and calling `set_shrinkage()`
 with a quote.
