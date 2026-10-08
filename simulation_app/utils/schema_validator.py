@@ -182,7 +182,8 @@ def validate_schema(
     # Check data types — exclude known text columns (OE responses, metadata, persona)
     # v1.0.6.1: Expanded exclusion list to avoid false positive warnings
     _known_text_cols = {'CONDITION', 'RUN_ID', 'Task_Summary', 'Gender',
-                        'SIMULATION_MODE', '_PERSONA', 'EXCLUSION_REASON'}
+                        'SIMULATION_MODE', '_PERSONA', 'EXCLUSION_REASON',
+                        'Order'}  # v1.3.0.6: presentation order of a repeated-measures design ("A>B>C")
     _oe_names = {s.get('variable_name', s.get('name', '')) for s in expected_scales
                  if str(s.get('type', '')).lower() in ('text', 'open_ended', 'open-ended')}
     numeric_issues = []
