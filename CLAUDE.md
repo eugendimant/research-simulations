@@ -559,10 +559,13 @@ https://claude.ai/code/[session-id]
 (Narrative transportation's STEP 2 domain shipped in v1.0.4.9, and matrix
 detection already exists. Its `narrative_transportation` template set used to be
 unreachable; as of v1.2.8.9 it resolves through `_DOMAIN_TEMPLATE_ALIASES`
-(`response_library.py:4673`, consulted at `:8666`). Three other `DOMAIN_TEMPLATES`
-keys (`ethical_dilemma`, `gratitude_experience`, `gratitude_intervention`) are
-still never selected, because the alias map is consulted only when `domain.value`
-is not itself a key — see `docs/COVERAGE_ROADMAP.md` item 12d.)
+(`response_library.py:4673`, consulted at `:8675`). Three other `DOMAIN_TEMPLATES`
+keys (`ethical_dilemma`, `gratitude_experience`, `gratitude_intervention`) were
+dead until v1.3.0.5 because the alias map is consulted only when `domain.value`
+is not itself a key; `_DOMAIN_TEMPLATE_EXTENSIONS` now pools them into `gratitude`
+and `moral_dilemma`. All 116 keys are reachable, enforced by
+`test_every_domain_template_bank_is_reachable`; see `docs/COVERAGE_ROADMAP.md`
+item 12d.)
 
 ### Business Roadmap
 Phase 1 (Foundation): User accounts + persistent workspaces + billing infrastructure

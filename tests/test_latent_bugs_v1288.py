@@ -212,11 +212,44 @@ def test_composites_equal_mean_of_delivered_items_and_dropouts_match(seed):
 
 
 def test_every_domain_template_bank_is_reachable():
-    """A DOMAIN_TEMPLATES key that is neither a StudyDomain value nor aliased can never be selected."""
-    from utils.response_library import DOMAIN_TEMPLATES, StudyDomain, _DOMAIN_TEMPLATE_ALIASES
-    values = {d.value for d in StudyDomain}
-    aliased = {a for targets in _DOMAIN_TEMPLATE_ALIASES.values() for a in targets}
-    unreachable = sorted(k for k in DOMAIN_TEMPLATES if k not in values and k not in aliased)
+    """Every DOMAIN_TEMPLATES key must be returned by the real lookup for some StudyDomain.
+
+    Resolves keys exactly as ``_get_template_response`` does (empty question text/context/name so
+    the domain-template path runs) and records which template list ``rng.choice`` drew from.
+    """
+    import random
+    from utils.response_library import (
+        DOMAIN_TEMPLATES, ComprehensiveResponseGenerator, QuestionType, StudyDomain,
+        _DOMAIN_TEMPLATE_ALIASES, _DOMAIN_TEMPLATE_EXTENSIONS,
+    )
+
+    drawn_from = []
+
+    class _SpyRandom(random.Random):
+        def choice(self, seq):
+            drawn_from.append(tuple(seq))
+            return super().choice(seq)
+
+    def _contains_run(seq, run):
+        n = len(run)
+        return any(seq[i:i + n] == run for i in range(len(seq) - n + 1))
+
+    gen = ComprehensiveResponseGenerator()
+    for domain in StudyDomain:
+        for q_type in QuestionType:
+            for sentiment in ("very_positive", "positive", "neutral", "negative", "very_negative"):
+                gen._get_template_response(domain, q_type, sentiment, _SpyRandom(1), "", "", "", "")
+
+    unreachable = sorted(
+        key for key, bank in DOMAIN_TEMPLATES.items()
+        if not any(
+            _contains_run(seq, tuple(sent_list))
+            for qt_map in bank.values() for sent_list in qt_map.values() if sent_list
+            for seq in drawn_from
+        )
+    )
     assert not unreachable, unreachable
-    for alias_source in _DOMAIN_TEMPLATE_ALIASES:
+
+    values = {d.value for d in StudyDomain}
+    for alias_source in list(_DOMAIN_TEMPLATE_ALIASES) + list(_DOMAIN_TEMPLATE_EXTENSIONS):
         assert alias_source in values, alias_source

@@ -63,7 +63,7 @@ association, impression, perception, feedback, comment, observation, general
 Version: 1.8.5 - Improved domain detection with weighted scoring and disambiguation
 """
 
-__version__ = "1.3.0.4"
+__version__ = "1.3.0.5"
 
 import random
 import re
@@ -4688,6 +4688,15 @@ _DOMAIN_TEMPLATE_ALIASES: Dict[str, Tuple[str, ...]] = {
     "climate_justice": ("climate_change",),
 }
 
+# StudyDomain values that own a DOMAIN_TEMPLATES set AND have a sibling set no other path can
+# reach. Their lookup pools the sibling sets with their own, so the sibling sets are selectable.
+# Deliberately narrower than _DOMAIN_TEMPLATE_ALIASES: other aliased domains that own a set keep
+# using only that set, so their seeded output does not change.
+_DOMAIN_TEMPLATE_EXTENSIONS: Dict[str, Tuple[str, ...]] = {
+    "gratitude": ("gratitude_experience", "gratitude_intervention"),
+    "moral_dilemma": ("ethical_dilemma",),
+}
+
 DOMAIN_KEYWORDS: Dict[StudyDomain, List[str]] = {
     # ========== BEHAVIORAL ECONOMICS ==========
     StudyDomain.DICTATOR_GAME: [
@@ -8672,9 +8681,21 @@ class ComprehensiveResponseGenerator:
         # Try to find domain-specific templates with question type routing
         if domain_key in DOMAIN_TEMPLATES:
             templates = DOMAIN_TEMPLATES[domain_key]
+            _extra_banks = [
+                DOMAIN_TEMPLATES[_x]
+                for _x in _DOMAIN_TEMPLATE_EXTENSIONS.get(domain_key, ())
+                if _x in DOMAIN_TEMPLATES
+            ]
             for _tkey in _type_chain:
                 if _tkey in templates:
                     sentiment_templates = templates[_tkey].get(sentiment, templates[_tkey].get("neutral", []))
+                    if _extra_banks:
+                        # Pool the sibling banks so their templates can be drawn too.
+                        sentiment_templates = list(sentiment_templates)
+                        for _bank in _extra_banks:
+                            if _tkey in _bank:
+                                sentiment_templates += _bank[_tkey].get(
+                                    sentiment, _bank[_tkey].get("neutral", []))
                     if sentiment_templates:
                         return rng.choice(sentiment_templates)
 

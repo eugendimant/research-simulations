@@ -34,7 +34,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.3.0.4"  # v1.3.0.4: pass Qualtrics numeric validation through to the engine
+__version__ = "1.3.0.5"  # v1.3.0.4: pass Qualtrics numeric validation through to the engine
 
 
 def _finite_float(value: Any, default: Optional[float] = None) -> Optional[float]:

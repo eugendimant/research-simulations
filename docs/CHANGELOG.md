@@ -1,3 +1,17 @@
+## 2026-10-07 — v1.3.0.5
+### Three open-ended template banks could never be selected
+
+- `DOMAIN_TEMPLATES` holds 116 keys, but 113 were reachable.
+  `_DOMAIN_TEMPLATE_ALIASES` is consulted only when a domain has no template set
+  of its own, and `gratitude` and `moral_dilemma` do have one, so
+  `gratitude_experience`, `gratitude_intervention` and `ethical_dilemma` were
+  dead. A new `_DOMAIN_TEMPLATE_EXTENSIONS` table pools those banks into the two
+  domains' sets. Seeded output for every other domain is byte-identical
+  (checked against the previous release across all domains, question types,
+  sentiments and 8 seeds); only `gratitude` and `moral_dilemma` change.
+- `test_every_domain_template_bank_is_reachable` now calls the real lookup for
+  every `StudyDomain` and asserts every `DOMAIN_TEMPLATES` key is drawn from.
+
 ## 2026-10-07 — v1.3.0.4
 ### Effect fidelity, grammar-safe text, honest copy, hardened survey collection
 
