@@ -36,7 +36,7 @@ streamlit run simulation_app/app.py     # http://localhost:8501
 
 Python 3.11 or newer (CI runs 3.11 and 3.12). Optional packages are listed in `simulation_app/requirements-optional.txt`.
 
-The free built-in AI mode needs provider keys in the environment or in Streamlit secrets (`GOOGLE_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `SAMBANOVA_API_KEY`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`); you can also paste your own key into the app. With no key, open-ended text comes from the template engine.
+The free built-in AI mode needs provider keys in the environment or in Streamlit secrets (`GOOGLE_API_KEY`, `GROQ_API_KEY`, `SAMBANOVA_API_KEY`, `OPENROUTER_API_KEY`; setup steps in `docs/PROVIDER_SETUP.md`); you can also paste your own key into the app. With no key, open-ended text comes from the template engine.
 
 ## Documentation
 
