@@ -52,12 +52,12 @@ except Exception:  # pragma: no cover
 
 try:
     from .empirical_registry import (  # type: ignore
-        EffectPolicy, adjust_effect, status_of, provenance_of,
+        EffectPolicy, adjust_effect, status_of, provenance_of, policy_factor,
     )
 except Exception:  # pragma: no cover
     try:
         from empirical_registry import (  # type: ignore
-            EffectPolicy, adjust_effect, status_of, provenance_of,
+            EffectPolicy, adjust_effect, status_of, provenance_of, policy_factor,
         )
     except Exception:
         EffectPolicy = None  # type: ignore
@@ -70,6 +70,9 @@ except Exception:  # pragma: no cover
 
         def provenance_of(kind: str, key: str):  # type: ignore
             return None
+
+        def policy_factor(policy: Any = None) -> float:  # type: ignore
+            return 1.0
 
 
 try:
@@ -97,6 +100,7 @@ class EffectMatch:
     rule: str = ""
     #: The engine flips the sign of a polarity-aware match for symptom-type DVs.
     polarity_aware: bool = False
+    shrinkage: float = 1.0       # publication-bias factor the policy applied
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -108,6 +112,7 @@ class EffectMatch:
             "construct": self.construct,
             "paradigm": self.paradigm,
             "verification": self.status,
+            "shrinkage_factor": round(self.shrinkage, 4),
             "matched_tokens": list(self.matched_tokens),
             **({"rule": self.rule} if self.rule else {}),
         }
@@ -300,7 +305,8 @@ def lookup(
         if abs(published) < 0.02:
             continue           # a marginal, not a contrast
         status = status_of("meta", key)
-        tau = float(getattr(entry, "heterogeneity_tau", 0.0) or 0.0)
+        # An entry that reports no tau gets the policy's default, not "no draw".
+        tau = float(getattr(entry, "heterogeneity_tau", 0.0) or 0.0) or None
         adjusted = adjust_effect(published, kind="meta", key=key,
                                  policy=policy, rng=rng, tau=tau)
         return EffectMatch(
@@ -309,6 +315,7 @@ def lookup(
             construct=getattr(entry, "construct", "") or "",
             paradigm=getattr(entry, "paradigm", "") or "",
             status=status, matched_tokens=shared,
+            shrinkage=policy_factor(policy),
         )
     return None
 

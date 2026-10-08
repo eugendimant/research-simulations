@@ -246,13 +246,16 @@ class EffectPolicy:
 
 
 #: Publication-bias shrinkage factor and default heterogeneity, with provenance.
-#: Populated by the verification pass; until a record is registered the policy
-#: falls back to NO shrinkage (1.0), because applying an unverified correction
-#: would be the same mistake this module exists to prevent.
+#: Two ways in. `set_shrinkage` takes a SOURCE-VERIFIED figure (MEASURED, VERIFIED
+#: or CORRECTED provenance). `set_recalled_shrinkage` takes a figure recalled from
+#: the replication literature and installs it in the recall band, so the tier says
+#: "recalled, unchecked" for as long as nobody has read the sources. With neither
+#: called the policy falls back to NO shrinkage (1.0).
 _SHRINKAGE: Dict[str, Any] = {
     "factor": None,          # ratio replication_d / published_d
     "default_tau": None,     # typical between-study SD on the d scale
     "provenance_key": "policy:publication_bias",
+    "by_evidence": {},       # evidence type -> ratio, for the audit surface only
 }
 
 
@@ -292,8 +295,50 @@ def set_shrinkage(factor: float, default_tau: float, prov: Provenance,
     register(_SHRINKAGE["provenance_key"], prov)
 
 
+def set_recalled_shrinkage(factor: float, default_tau: float, note: str, *,
+                           by_evidence: Optional[Dict[str, float]] = None,
+                           source: str = "", audited_on: str = "") -> bool:
+    """Install a publication-bias shrinkage figure that rests on RECALL.
+
+    The recall-band counterpart of `set_shrinkage`. It is honest about what it is:
+    the record is written through `register_recall` as `RECALL_UNCERTAIN` (the
+    figure is a judgement across sources whose estimates differ by definition, so
+    it is the weakest recall tier that still carries a note), with no DOI, URL or
+    quote. `shrinkage_verified()` stays False, `coverage_summary()` reports the
+    tier, and `honesty_notice()` says the factor is recalled and unchecked.
+
+    Unlike `set_shrinkage` it is refused when a source-verified record is already
+    installed, so a recall figure can never overwrite a checked one.
+    """
+    existing = PROVENANCE.get(_SHRINKAGE["provenance_key"])
+    if existing is not None and existing.status not in RECALL_TIERS:
+        return False
+    if not (0.0 < float(factor) <= 1.0) or float(default_tau) < 0.0:
+        return False
+    if not register_recall(_SHRINKAGE["provenance_key"], RECALL_UNCERTAIN, note,
+                           source=source, checked_fields=("shrinkage", "default_tau"),
+                           audited_on=audited_on):
+        return False
+    _SHRINKAGE["factor"] = float(factor)
+    _SHRINKAGE["default_tau"] = float(default_tau)
+    _SHRINKAGE["by_evidence"] = {str(k): float(v) for k, v in (by_evidence or {}).items()}
+    return True
+
+
+def shrinkage_verified() -> bool:
+    """True only when the installed factor rests on a source or a dataset."""
+    rec = PROVENANCE.get(_SHRINKAGE["provenance_key"])
+    return bool(_SHRINKAGE.get("factor")) and rec is not None and rec.status not in RECALL_TIERS
+
+
+def shrinkage_tier() -> str:
+    """Tier of the installed shrinkage figure; UNVERIFIED when none is installed."""
+    rec = PROVENANCE.get(_SHRINKAGE["provenance_key"])
+    return rec.status if (rec and _SHRINKAGE.get("factor")) else UNVERIFIED
+
+
 def shrinkage_factor() -> float:
-    """Verified shrinkage factor, or 1.0 (no correction) when unverified."""
+    """Installed shrinkage factor (source-verified or recalled; see shrinkage_tier), or 1.0 when none."""
     f = _SHRINKAGE.get("factor")
     return float(f) if f else 1.0
 
@@ -301,6 +346,19 @@ def shrinkage_factor() -> float:
 def default_tau() -> float:
     t = _SHRINKAGE.get("default_tau")
     return float(t) if t else 0.0
+
+
+def policy_factor(policy: Optional["EffectPolicy"] = None) -> float:
+    """The multiplicative shrinkage `adjust_effect` applies under `policy`.
+
+    1.0 in as_published mode. Exposed so callers can report the factor they used
+    without re-deriving the clamp.
+    """
+    pol = policy or EffectPolicy()
+    if pol.mode != "replication_adjusted":
+        return 1.0
+    f = pol.shrinkage if pol.shrinkage is not None else shrinkage_factor()
+    return max(pol.min_retained, min(1.0, float(f)))
 
 
 def adjust_effect(
@@ -318,8 +376,10 @@ def adjust_effect(
       2. publication-bias shrinkage (replication_adjusted mode only).
       3. between-study heterogeneity draw, so runs vary like real labs do.
 
-    The sign of `effect_d` is always preserved, and the magnitude never grows
-    beyond the input magnitude under shrinkage.
+    The sign of `effect_d` is always preserved, the magnitude never grows beyond
+    the input magnitude under shrinkage (the heterogeneity draw can), and in
+    replication_adjusted mode the result never falls below
+    `min_retained * |effect_d|`.
     """
     pol = policy or EffectPolicy()
     d = float(effect_d)
@@ -344,6 +404,13 @@ def adjust_effect(
             drawn = _rng.gauss(d, _tau)
             # Keep the sign: a heterogeneity draw should not flip a real effect.
             d = drawn if (drawn * d) > 0 else d * 0.25
+
+    # 4. Floor. Neither the shrinkage nor the draw may erase a real effect: the
+    #    result keeps at least `min_retained` of the input magnitude.
+    if pol.mode == "replication_adjusted" and pol.min_retained > 0:
+        floor = abs(float(effect_d)) * float(pol.min_retained)
+        if abs(d) < floor:
+            d = floor if effect_d > 0 else -floor
     return d
 
 
@@ -424,7 +491,9 @@ def coverage_summary() -> Dict[str, Any]:
         "recall_uncertain_entries": by_status.get(RECALL_UNCERTAIN, 0),
         "unrecognized_entries": by_status.get(UNRECOGNIZED, 0),
         "shrinkage_factor": shrinkage_factor(),
-        "shrinkage_verified": bool(_SHRINKAGE.get("factor")),
+        "shrinkage_verified": shrinkage_verified(),
+        "shrinkage_active": bool(_SHRINKAGE.get("factor")),
+        "shrinkage_tier": shrinkage_tier(),
         "default_tau": default_tau(),
     }
 
@@ -433,11 +502,18 @@ def honesty_notice() -> str:
     """One paragraph the app can show verbatim next to any literature claim."""
     s = coverage_summary()
     pct = 100.0 * s["sourced_fraction"]
-    bias = ("No publication-bias correction is applied, because the correction "
-            "factor itself has not been verified."
-            if not s["shrinkage_verified"] else
-            f"Literature effects are shrunk by {s['shrinkage_factor']:.2f} toward "
-            "what a replication would find.")
+    if s["shrinkage_verified"]:
+        bias = (f"Literature effects are shrunk by {s['shrinkage_factor']:.2f} toward "
+                "what a replication would find.")
+    elif s["shrinkage_active"]:
+        bias = (f"Effects the tool infers from the literature are shrunk by "
+                f"{s['shrinkage_factor']:.2f} toward what a replication would find, "
+                "because published estimates are inflated by selective reporting. That "
+                "factor is recalled from the replication literature and has NOT been "
+                "checked against the sources; it never applies to an effect you specify.")
+    else:
+        bias = ("No publication-bias correction is applied, because no correction "
+                "factor has been installed.")
     recall = ""
     if s.get("recall_audited_entries"):
         recall = (
@@ -760,6 +836,16 @@ try:
     _install_provenance(register, set_shrinkage, Provenance,
                         VERIFIED, PARTIAL, CITED_UNCHECKED, CORRECTED, UNVERIFIED)
 except Exception:  # pragma: no cover - registry degrades to "everything unverified"
+    pass
+
+# The shrinkage policy rests on recall, so it is installed through the recall band.
+# Guarded like the provenance import: without it the policy is simply 1.0 (off).
+try:
+    from .empirical_provenance_data import RECALLED_SHRINKAGE as _RS  # type: ignore
+    set_recalled_shrinkage(_RS["factor"], _RS["default_tau"], _RS["note"],
+                           by_evidence=_RS.get("by_evidence"), source=_RS.get("source", ""),
+                           audited_on="2026-10-08")
+except Exception:  # pragma: no cover
     pass
 
 

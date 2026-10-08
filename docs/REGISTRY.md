@@ -127,10 +127,15 @@ effect the simulator produces. It refuses:
 - a publication-derived record with no verbatim quote;
 - a τ on any scale other than *d*.
 
-Nothing is installed today, so `shrinkage_factor()` is **1.0** and `default_tau()` is
-**0.0** — no correction at all. That is the honest default: applying an unverified
-correction to every effect in the system would be the same mistake this layer exists to
-prevent.
+The recalled-figure route is separate: `set_recalled_shrinkage()` installs a factor
+through `register_recall()`, so it is tiered `recall_uncertain`, can never claim a source,
+and cannot overwrite a verified record. Since v1.3.0.5 it is how the active default is
+installed: `shrinkage_factor()` is **0.60** and `default_tau()` **0.15**, applied to
+effects the tool infers (paradigm anchor, literature fallback) and never to an effect you
+specify. `coverage_summary()["shrinkage_verified"]` stays False and `honesty_notice()`
+says the factor is recalled and unchecked. See `docs/EMPIRICAL_PROVENANCE.md` for the
+evidence behind the figure. Promote it by reading the sources and calling `set_shrinkage()`
+with a quote.
 
 ## Reading a run
 

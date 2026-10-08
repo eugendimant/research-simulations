@@ -3622,18 +3622,19 @@ def _meta_index() -> List[Tuple[str, float, Tuple[Any, ...]]]:
     return out
 
 
-def _match_meta_effect(text: str) -> Optional[float]:
-    """Return the meta-analytic |d| for the paradigm named in ``text``, or None.
+def _match_meta_entry(text: str) -> Optional[Tuple[Tuple[str, ...], float]]:
+    """Return ``(knowledge-base keys, published |d|)`` for the paradigm named in ``text``, or None.
 
     The paradigm with the most specific (longest) match wins. When several
     different paradigms match equally well and disagree by more than 0.15 the
-    text is ambiguous and no anchoring is applied.
+    text is ambiguous and no anchoring is applied. Equally good, agreeing
+    matches are averaged and all their keys are returned.
 
     "_" and "-" read as spaces ("loss_frame", "foot-in-the-door"), so snake_case condition
     labels reach the same phrases as prose does.
     """
     text = re.sub(r"[_\-]+", " ", str(text).lower())
-    hits: List[Tuple[int, float, str]] = []
+    hits: List[Tuple[int, str, float]] = []
     for _key, d, pats in _meta_index():
         best = 0
         for pat in pats:
@@ -3641,22 +3642,32 @@ def _match_meta_effect(text: str) -> Optional[float]:
             if m:
                 best = max(best, len(m.group(0)))
         if best:
-            hits.append((best, d, _key))
+            hits.append((best, _key, d))
     if not hits:
         return None
     top = max(h[0] for h in hits)
-    group = [(d, k) for n, d, k in hits if n >= top * 0.999]
+    group = [(k, d) for n, k, d in hits if n >= top * 0.999]
     if _paradigm_coverage is not None and len(group) > 1:
         # a more specific reading of the same words beats the older, broader one unless the
         # text carries the older paradigm's own vocabulary (see paradigm_coverage.TIE_PREFER)
         for _pref, _other, _guard in _paradigm_coverage.TIE_PREFER:
-            _gk = {k for _d, k in group}
+            _gk = {k for k, _d in group}
             if _pref in _gk and _other in _gk and not re.search(_guard, text):
-                group = [(d, k) for d, k in group if k != _other]
-    ds = [d for d, _k in group]
+                group = [(k, d) for k, d in group if k != _other]
+    ds = [d for _k, d in group]
     if max(ds) - min(ds) > 0.15:
         return None
-    return float(sum(ds) / len(ds))
+    return tuple(sorted(k for k, _d in group)), float(sum(ds) / len(ds))
+
+
+def _match_meta_effect(text: str) -> Optional[float]:
+    """Return the PUBLISHED meta-analytic |d| for the paradigm named in ``text``, or None.
+
+    This is the knowledge-base value, before the replication shrinkage that the
+    engine applies to inferred effects (see ``_shrink_inferred_meta_effect``).
+    """
+    hit = _match_meta_entry(text)
+    return None if hit is None else hit[1]
 
 
 class EnhancedSimulationEngine:
@@ -4884,6 +4895,7 @@ class EnhancedSimulationEngine:
                 variable=str(variable),
                 study_context=f"{self.study_title or ''} {self.study_description or ''}",
                 rng=self._stable_rng("literature-effect", str(condition), str(variable)),
+                **({"policy": self._INFERRED_EFFECT_POLICY} if self._INFERRED_EFFECT_POLICY is not None else {}),
             )
         except Exception:
             return _auto * _effect_scale
@@ -4948,6 +4960,14 @@ class EnhancedSimulationEngine:
         self._literature_effect_log.append(
             dict(condition=str(condition), variable=str(variable), **_lit.as_dict())
         )
+        if not hasattr(self, "_inferred_effect_log"):
+            self._inferred_effect_log = []
+        self._inferred_effect_log.append({
+            "path": "literature_fallback", "condition": str(condition), "variable": str(variable),
+            "key": _lit.key, "published_d": round(float(_lit.published_d), 4),
+            "shrinkage_factor": round(float(getattr(_lit, "shrinkage", 1.0)), 4),
+            "applied_d": round(float(_lit.effect_d), 4), "verification": _lit.status,
+        })
         return _normalized
 
     def _compute_effect_for_condition(self, condition: str, variable: str) -> float:
@@ -7586,8 +7606,11 @@ class EnhancedSimulationEngine:
         # size of the design's main contrast (relational/economic-game designs keep their
         # own calibrated scaling).
         if not _raw and not _handled_by_relational and not _is_economic_game_dv:
-            _meta_d = _match_meta_effect(_study_text + " " + _all_conds_text + " " + _cond_desc_text)
-            if _meta_d is not None:
+            _meta_hit = _match_meta_entry(_study_text + " " + _all_conds_text + " " + _cond_desc_text)
+            if _meta_hit is not None:
+                # v1.3.0.5: the published d is shrunk toward the replication effect (and given
+                # its between-study draw) before it sizes the contrast.
+                _meta_d = self._shrink_inferred_meta_effect(_meta_hit[0], _meta_hit[1], variable)
                 return self._meta_anchored_effect(condition, variable, _meta_d)
 
         # Apply Cohen's d scaling with domain-aware multiplier
@@ -7634,6 +7657,51 @@ class EnhancedSimulationEngine:
         _key = "|".join(str(p) for p in parts).encode("utf-8", "replace")
         _digest = hashlib.sha256(_key).digest()[:8]
         return random.Random(int(self.seed) ^ int.from_bytes(_digest, "big"))
+
+    #: Policy for effects the tool infers (None = the registry default: replication-adjusted
+    #: with the recalled shrinkage and heterogeneity draw). Set an
+    #: ``empirical_registry.EffectPolicy(mode="as_published", heterogeneity_draw=False)`` to
+    #: reproduce raw published d. Never consulted for a user-specified effect.
+    _INFERRED_EFFECT_POLICY: Any = None
+
+    def _shrink_inferred_meta_effect(self, keys: Tuple[str, ...], published_d: float, variable: str) -> float:
+        """Replication-adjusted size for a paradigm-anchored (inferred) effect.
+
+        Same ``adjust_effect`` the literature fallback uses, minus the tier weighting (the anchor
+        never had it, and the paradigm match is not a per-entry verification claim). The
+        heterogeneity draw is seeded by (paradigm, variable) only, so every arm of one contrast
+        sees the same effect and a rerun with the same seed gives the same number; there is no
+        per-participant randomness here, so memoisation stays valid.
+        """
+        published_d = float(published_d)
+        if not HAS_EMPIRICAL_REGISTRY:
+            return published_d
+        cache = getattr(self, "_meta_shrink_cache", None)
+        if cache is None:
+            cache = self._meta_shrink_cache = {}
+        ck = (tuple(keys), str(variable), round(published_d, 6))
+        if ck in cache:
+            return cache[ck]
+        taus = [float(getattr(META_ANALYTIC_DB.get(k), "heterogeneity_tau", 0.0) or 0.0) for k in keys] if HAS_KNOWLEDGE_BASE else []
+        taus = [t for t in taus if t > 0]
+        tau = float(sum(taus) / len(taus)) if taus else None
+        pol = self._INFERRED_EFFECT_POLICY
+        applied = float(_empirical_registry.adjust_effect(
+            published_d, kind="meta", key="", policy=pol,
+            rng=self._stable_rng("meta-anchor", "|".join(keys), str(variable)), tau=tau))
+        cache[ck] = applied
+        if not hasattr(self, "_inferred_effect_log"):
+            self._inferred_effect_log = []
+        self._inferred_effect_log.append({
+            "path": "paradigm_anchor", "variable": str(variable), "key": "|".join(keys),
+            "published_d": round(published_d, 4),
+            "shrinkage_factor": round(float(_empirical_registry.policy_factor(pol)), 4),
+            "applied_d": round(applied, 4),
+            "verification": _empirical_registry.shrinkage_tier(),
+        })
+        self._log(f"Paradigm anchor '{'|'.join(keys)}' for '{variable}': published d={published_d:.3f}, "
+                  f"applied d={applied:.3f}")
+        return applied
 
     def _meta_anchored_effect(self, condition: str, variable: str, meta_d: float) -> float:
         """Effect for ``condition`` when the study names a paradigm with a published estimate.
@@ -15832,6 +15900,7 @@ class EnhancedSimulationEngine:
         import itertools
 
         applied = getattr(self, "_applied_effects", {}) or {}
+        inferred_log = list(getattr(self, "_inferred_effect_log", []) or [])
         by_var: Dict[str, Dict[str, Dict[str, Any]]] = {}
         for (cond, var), info in applied.items():
             by_var.setdefault(var, {})[cond] = info
@@ -15867,14 +15936,27 @@ class EnhancedSimulationEngine:
                         observed = -reverse if reverse is not None else None
                     if observed is not None:
                         break
-                rows.append({
+                row = {
                     "variable": var, "condition_1": c1, "condition_2": c2, "source": source,
                     "intended_d": None if intended is None else round(float(intended), 3),
                     "observed_d": None if observed is None else round(float(observed), 3),
-                })
+                }
+                if source in ("inferred", "mixed"):
+                    # v1.3.0.5: published d, the replication shrinkage and the d that sized the contrast
+                    for ent in inferred_log:
+                        if ent["variable"] == var and (ent["path"] == "paradigm_anchor"
+                                                       or ent.get("condition") in (c1, c2)):
+                            row.update(published_d=ent["published_d"],
+                                       shrinkage_factor=ent["shrinkage_factor"],
+                                       applied_d=ent["applied_d"], inferred_from=ent["key"])
+                            break
+                rows.append(row)
         return {
             "inferred_effects_enabled": bool(getattr(self, "auto_effects", True)),
             "contrasts": rows,
+            # v1.3.0.5: how literature-inferred effects were turned into targets
+            "inferred_effect_policy": self._inferred_policy_summary(),
+            "inferred_effect_sources": inferred_log,
             # v1.2.9.1: one entry per effect you specified: did it reach a variable and a condition?
             "specs": self._effect_spec_diagnostics()["specs"],
             # scales whose effect was built into the finished item responses (several scales in the design)
@@ -15882,6 +15964,24 @@ class EnhancedSimulationEngine:
             "note": ("Each contrast is condition_1 minus condition_2, in the order of the conditions. "
                      "intended_d is given only for effects you specified. Inferred effects are a "
                      "heuristic read of the condition names and are not calibrated to a target d."),
+        }
+
+    def _inferred_policy_summary(self) -> Dict[str, Any]:
+        """The replication policy applied to inferred (never to user-specified) effects."""
+        if not HAS_EMPIRICAL_REGISTRY:
+            return {"mode": "as_published", "shrinkage_factor": 1.0}
+        pol = self._INFERRED_EFFECT_POLICY or _empirical_registry.EffectPolicy()
+        tier = _empirical_registry.shrinkage_tier()
+        return {
+            "mode": pol.mode,
+            "shrinkage_factor": round(float(_empirical_registry.policy_factor(pol)), 4),
+            "default_tau": round(float(pol.default_tau or _empirical_registry.default_tau()), 4),
+            "heterogeneity_draw": bool(pol.heterogeneity_draw),
+            "min_retained": float(pol.min_retained),
+            "evidence_tier": tier,
+            "source_verified": bool(_empirical_registry.shrinkage_verified()),
+            "applies_to": "inferred effects only (paradigm anchoring and literature fallback); "
+                          "never to effects you specify, the true null, or economic-game baselines",
         }
 
     def _compute_observed_effect_sizes(self, df: pd.DataFrame) -> List[Dict[str, Any]]:

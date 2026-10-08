@@ -42,16 +42,28 @@ def test_audit_table_covers_every_knowledge_base_entry():
 
 
 def test_no_shrinkage_is_applied_while_the_factor_is_unverified():
-    """An unverified correction must never be applied silently."""
-    if not reg.coverage_summary()["shrinkage_verified"]:
-        assert reg.shrinkage_factor() == 1.0
+    """An unverified correction must never be applied silently.
+
+    v1.3.0.5: a correction resting on recall may be applied, but only in the open: its
+    tier is in the recall band, the summary says it is not verified, and the notice
+    tells the reader. Otherwise there is no correction at all.
+    """
+    s = reg.coverage_summary()
+    if not s["shrinkage_verified"] and reg.shrinkage_factor() != 1.0:
+        assert s["shrinkage_tier"] in reg.RECALL_TIERS
+        assert "NOT been checked" in reg.honesty_notice()
 
 
 def test_adjust_effect_preserves_sign_and_never_inflates():
     rng = random.Random(0)
     for d in (0.2, 0.8, -0.5):
         out = reg.adjust_effect(d, kind="meta", key="unknown_key", rng=rng, tau=0.0)
-        assert out == pytest.approx(d * reg.TIER_WEIGHT[reg.UNVERIFIED], rel=1e-6)
+        # tier weight, then the replication shrinkage (0.55 x 0.60 = 0.33), then the
+        # min_retained floor (0.35 x input): the floor binds for an unknown key
+        expected = max(d * reg.TIER_WEIGHT[reg.UNVERIFIED] * reg.shrinkage_factor(),
+                       0.35 * d) if d > 0 else min(d * reg.TIER_WEIGHT[reg.UNVERIFIED]
+                                                   * reg.shrinkage_factor(), 0.35 * d)
+        assert out == pytest.approx(expected, rel=1e-6)
         assert (out > 0) == (d > 0)
     assert reg.adjust_effect(0.0) == 0.0
 
