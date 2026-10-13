@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.0.6"  # v1.3.0.4: report describes the effects actually built in (report-facing version stamp)
+__version__ = "1.3.0.7"  # v1.3.0.4: report describes the effects actually built in (report-facing version stamp)
 
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -1056,7 +1056,7 @@ def _configured_effect_summary(df: Optional["pd.DataFrame"], metadata: Dict[str,
     matching DV or no computable d keep ``observed = None``.
     """
     metadata = metadata or {}
-    if is_repeated_design(metadata):  # v1.3.0.6: within contrasts are checked in d_av (see within_report)
+    if is_repeated_design(metadata):  # v1.3.0.7: within contrasts are checked in d_av (see within_report)
         from .within_report import effect_check_rows
         return [{"variable": r["variable"], "high": str(r["contrast"]).split(" - ")[0], "low": str(r["contrast"]).split(" - ")[-1],
                  "intended": r["intended_d"], "scale": r["variable"], "prefix": r["variable"], "observed": r["observed_d_av"],
@@ -1279,7 +1279,7 @@ def _speed_flag_lines(df: "pd.DataFrame", metadata: Dict[str, Any]) -> List[str]
 
     The generator sets ``Flag_Speed`` when the completion time it drew for a participant is below the
     minimum or above the maximum of the exclusion window (``completion_time_min_seconds`` and
-    ``completion_time_max_seconds``; 60 s and 1,800 s unless changed), and since v1.3.0.6 the flag is
+    ``completion_time_max_seconds``; 60 s and 1,800 s unless changed), and since v1.3.0.7 the flag is
     recomputed from the exported ``Completion_Time_Seconds``. Older runs moved the recorded time into a
     plausible human range without recomputing the flag, so a count
     of recorded times against fixed limits can disagree with the flag. Both are reported, and a note
@@ -2433,7 +2433,7 @@ class InstructorReportGenerator:
         # Describe the approach
         approach_points = []
 
-        _rm_info = design_from_metadata(metadata)  # v1.3.0.6: repeated-measures runs
+        _rm_info = design_from_metadata(metadata)  # v1.3.0.7: repeated-measures runs
         if _rm_info:
             _rm_k = len(_rm_info.get("cells") or [])
             approach_points.append(
@@ -3167,7 +3167,7 @@ class InstructorReportGenerator:
         lines.append("   - Check `Attention_Pass_Rate` (< 50% warrants exclusion)")
         lines.append("")
         lines.append("2. **Descriptive Statistics**")
-        _rm_design = is_repeated_design(metadata)  # v1.3.0.6: within / mixed runs get paired and repeated-measures guidance
+        _rm_design = is_repeated_design(metadata)  # v1.3.0.7: within / mixed runs get paired and repeated-measures guidance
         lines.append("   - Calculate means and SDs " + ("for each measure in each condition" if _rm_design else "by condition"))
         lines.append("   - Check for outliers (beyond 3 SD from mean)")
         lines.append("   - Check how many participants finished every condition (`Conditions_Completed`) and whether the presentation orders are balanced (`Order`)"
@@ -3177,7 +3177,7 @@ class InstructorReportGenerator:
 
         # Statistical Test Recommendations
         # v1.4.3.1: Enhanced Statistical Test Recommendations with design-specific detail
-        _rm_mark = len(lines)  # v1.3.0.6: replaced below for within / mixed runs
+        _rm_mark = len(lines)  # v1.3.0.7: replaced below for within / mixed runs
         lines.append("### Statistical Test Recommendations")
         lines.append("")
         has_ordinal = any(s.get('scale_points', 7) <= 5 for s in scales)
@@ -3373,7 +3373,7 @@ class InstructorReportGenerator:
         lines.append("*80% power is generally considered adequate. If power < 80% for your expected effect, consider increasing sample size.*")
         lines.append("")
 
-        if _rm_design:  # v1.3.0.6: the between-subjects tests, code and power above do not apply to repeated measures
+        if _rm_design:  # v1.3.0.7: the between-subjects tests, code and power above do not apply to repeated measures
             from .within_report import summary_sections as _rm_summary_sections
             del lines[_rm_mark:]
             lines.extend(_rm_summary_sections(metadata, df))

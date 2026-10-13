@@ -55,14 +55,55 @@ from html import escape as html_escape  # v1.2.9.1: escape user/QSF text before 
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.0.6"
-BUILD_ID = "20261008-v13006-literature-defaults"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.0.7"
+BUILD_ID = "20261013-v13007-stale-module-heal"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
 # concurrent sessions imported the same modules simultaneously.  Removed in
 # v1.4.3.1 — the version-check on line ~103 already warns on mismatch, and
 # BUILD_ID changes handle cache invalidation safely.
+
+
+def _refresh_stale_utils_modules(required_version: str) -> List[str]:
+    """Reload every ``utils.*`` module left in memory by the previous release (v1.3.0.7).
+
+    Streamlit keeps imported modules alive across a redeploy. ``app.py`` is re-read, but
+    ``utils.enhanced_simulation_engine`` and its siblings can stay at the old release, and the old
+    version check only reloaded the ``utils`` package itself: its version string matched again while
+    the engine class was still the old one, so the new app passed arguments the old engine did not
+    know ("got an unexpected keyword argument 'auto_effects'"). This runs BEFORE the ``from utils...``
+    imports below, so every name the app binds comes from the reloaded modules. Modules are reloaded
+    in place, dependencies first (reverse import order), never removed from ``sys.modules`` (purging
+    them crashed concurrent sessions in v1.4.3.1). Returns the names that were reloaded.
+    """
+    import importlib
+    import logging
+
+    pkg = sys.modules.get("utils")
+    if pkg is None or getattr(pkg, "__version__", required_version) == required_version:
+        return []
+    reloaded: List[str] = []
+    for name in reversed([n for n in list(sys.modules) if n.startswith("utils.")]):
+        module = sys.modules.get(name)
+        if module is None or getattr(module, "__file__", None) is None:
+            continue
+        try:
+            importlib.reload(module)
+            reloaded.append(name)
+        except Exception as exc:  # noqa: BLE001 - one module that fails to reload must not stop the rest
+            logging.getLogger("simulation_app").warning("Could not reload stale module %s: %s", name, exc)
+    try:
+        importlib.reload(pkg)
+        reloaded.append("utils")
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("simulation_app").warning("Could not reload the utils package: %s", exc)
+    logging.getLogger("simulation_app").warning(
+        "Reloaded %d utils modules left over from the previous release.", len(reloaded))
+    return reloaded
+
+
+_STALE_UTILS_RELOADED = _refresh_stale_utils_modules(REQUIRED_UTILS_VERSION)
 
 from utils.group_management import GroupManager, APIKeyManager
 # v1.2.8.2 (PRODUCTION-DOWN GUARD): import the private atomic-write helper
@@ -189,7 +230,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.3.0.6"  # v1.3.0.6: every open-ended template bank is reachable. Before: v1.3.0.4: reliable instructor email, exact instructor analysis, detected DVs on the Design page, effects that hold next to other scales, hardened HTML/scripts/collection
+APP_VERSION = "1.3.0.7"  # v1.3.0.7: every open-ended template bank is reachable. Before: v1.3.0.4: reliable instructor email, exact instructor analysis, detected DVs on the Design page, effects that hold next to other scales, hardened HTML/scripts/collection
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -278,7 +319,7 @@ def _decrypt_api_key(ciphertext_hex: str) -> str:
 
 MAX_SIMULATED_N = 10000
 MAX_FREE_LLM_N = 100  # v1.2.1.9: Cap free LLM generation to prevent API exhaustion
-# v1.3.0.6: within-subjects and mixed designs are generated for real (utils/within_design.py): the design
+# v1.3.0.7: within-subjects and mixed designs are generated for real (utils/within_design.py): the design
 # type chosen on the pages is written to Metadata.json (``design``) and shapes the data. What is still not
 # modelled is clustering, so a clustered / non-randomized assignment keeps a note.
 DESIGN_STRUCTURE_NOTE = (
@@ -310,7 +351,7 @@ def _detect_design_from_condition_names(names: Any) -> str:
     return "between"
 
 # ---------------------------------------------------------------------------------------------
-# v1.3.0.6: within-subjects / mixed design setup shared by the builder and the QSF Design page
+# v1.3.0.7: within-subjects / mixed design setup shared by the builder and the QSF Design page
 # ---------------------------------------------------------------------------------------------
 _REPEATED_ORDER_OPTIONS = {
     "random": "Random order for each participant",
@@ -407,6 +448,43 @@ def _repeated_scale_specs(metadata: Dict[str, Any], scales: List[Dict[str, Any]]
         return scales
 
 
+def _construct_engine(**kwargs: Any) -> Any:
+    """Build the simulation engine, healing a stale engine module instead of failing (v1.3.0.7).
+
+    If the in-memory engine class is older than this app (it rejects an argument the app passes), the
+    engine module is reloaded once and the fresh class is used. If that still fails, arguments the
+    class does not accept are dropped with a logged warning, so the run proceeds with defaults rather
+    than stopping with "unexpected keyword argument".
+    """
+    import importlib
+    import inspect
+    import logging
+
+    try:
+        return EnhancedSimulationEngine(**kwargs)
+    except TypeError as exc:
+        if "unexpected keyword argument" not in str(exc):
+            raise
+        log = logging.getLogger("simulation_app")
+        log.warning("Engine rejected an argument (%s); reloading the engine module.", exc)
+        module = sys.modules.get("utils.enhanced_simulation_engine")
+        engine_cls = EnhancedSimulationEngine
+        if module is not None:
+            try:
+                engine_cls = importlib.reload(module).EnhancedSimulationEngine
+            except Exception as reload_exc:  # noqa: BLE001
+                log.warning("Reloading the engine module failed: %s", reload_exc)
+        try:
+            return engine_cls(**kwargs)
+        except TypeError as exc2:
+            if "unexpected keyword argument" not in str(exc2):
+                raise
+            accepted = inspect.signature(engine_cls.__init__).parameters
+            dropped = sorted(k for k in kwargs if k not in accepted)
+            log.warning("Engine still rejects %s; continuing without them.", dropped)
+            return engine_cls(**{k: v for k, v in kwargs.items() if k in accepted})
+
+
 def _generate_repeated_preview(conditions: List[str], scales: List[Any], design: Dict[str, Any], n_rows: int = 5) -> pd.DataFrame:
     """A few rows of a within / mixed dataset: a small run of the real engine (offline, template text), wide layout."""
     design = dict(design)
@@ -414,7 +492,7 @@ def _generate_repeated_preview(conditions: List[str], scales: List[Any], design:
     conds = [str(c) for c in (levels or conditions)]
     factors = [{"name": "Condition", "levels": conds}] if design.get("type") == "within" else [
         {"name": "Group", "levels": conds}]
-    engine = EnhancedSimulationEngine(
+    engine = _construct_engine(
         study_title="Preview", study_description="Preview of the repeated-measures layout.", sample_size=max(8, int(n_rows)),
         conditions=conds, factors=factors, scales=_normalize_scale_specs(list(scales or [])), additional_vars=[],
         demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12}, seed=7, design=design, allow_template_fallback=True)
@@ -5302,7 +5380,7 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
             scales.append(_dv)
             _n_recovered += 1
 
-    # v1.3.0.6: every output column is defined once, and no DV is lost doing it.  A single-item
+    # v1.3.0.7: every output column is defined once, and no DV is lost doing it.  A single-item
     # numeric/slider whose name is one of the columns "<scale>_<i>" of a multi-item scale (an
     # export-tag collision in the source survey: Qualtrics would rename one of them on export) is
     # renamed with its own question id, "<tag>_<QID>"; the multi-item scale keeps its column names.
@@ -7448,7 +7526,7 @@ _QSF_DERIVED_STATE_KEYS: Tuple[str, ...] = (
     "qsf_identifiers", "confirmed_attention_checks", "confirmed_manipulation_checks",
     "confirmed_comprehension_checks", "confirmed_mediators", "variable_review_rows",
     "_checks_version", "_med_version", "enhanced_analysis",
-    # v1.3.0.6: the advanced effect widgets name this survey's DVs and conditions
+    # v1.3.0.7: the advanced effect widgets name this survey's DVs and conditions
     "add_effect_checkbox", "effect_variable", "effect_factor", "effect_cohens_d",
     "effect_level_high", "effect_level_low",
     "_p_add_effect_checkbox", "_p_effect_variable", "_p_effect_factor", "_p_effect_cohens_d",
@@ -7468,7 +7546,7 @@ def _clear_qsf_derived_state() -> None:
         _reset_generation_state()
 
 
-# v1.3.0.6: widget keys mirrored to ``_p_<key>`` on every page switch.  Streamlit drops a widget's
+# v1.3.0.7: widget keys mirrored to ``_p_<key>`` on every page switch.  Streamlit drops a widget's
 # key once the widget is no longer rendered, so anything the user typed on a page they leave would
 # come back at its default.  The first four are Setup-page text boxes; the rest are the Generate
 # page's advanced "Expected Effect Sizes" widgets (restored through ``_restore_persisted_widgets``).
@@ -9906,7 +9984,7 @@ def _get_condition_candidates(
 
     candidates: List[str] = []
 
-    # v1.3.0.6: the conditions the parser derived from the QSF flow itself (arms
+    # v1.3.0.7: the conditions the parser derived from the QSF flow itself (arms
     # of a between-subjects randomizer, embedded-data/branch evidence) come first
     # and are always selectable, even when a generic name such as "Block 1" would
     # be filtered out below.
@@ -9950,7 +10028,7 @@ def _default_condition_selection(
 ) -> List[str]:
     """Conditions to pre-select on the Design page.
 
-    v1.3.0.6: the candidate list offers every plausible block, but only what the
+    v1.3.0.7: the candidate list offers every plausible block, but only what the
     QSF flow itself marks as an experimental arm is pre-selected: the parser's
     ``detected_conditions`` (arms of a between-subjects randomizer first), then
     the enhanced identifier's randomizer-sourced conditions.  Section blocks
@@ -13566,7 +13644,7 @@ if active_page == 3:
     conditions = inferred.get('conditions', [])
     scales = st.session_state.get('confirmed_scales', []) or inferred.get('scales', [])
     factors = inferred.get('factors', [])
-    # v1.3.0.6: a within design set up on the QSF Design page names its own conditions
+    # v1.3.0.7: a within design set up on the QSF Design page names its own conditions
     _gen_rm_cfg = st.session_state.get("design_config") or {}
     if _active_design_type() == "within" and _gen_rm_cfg.get("levels_from_widget"):
         _gen_within_levels = _parse_level_list(_gen_rm_cfg.get("within_levels"))
@@ -13751,7 +13829,7 @@ if active_page == 3:
         # Use builder effect sizes if available, validating against current conditions
         builder_effects = st.session_state.get("builder_effect_sizes", [])
         effect_sizes: List[EffectSizeSpec] = []
-        scoped_effects: List[Dict[str, Any]] = []  # v1.3.0.6: mixed-design effects tied to one within-level / within factor
+        scoped_effects: List[Dict[str, Any]] = []  # v1.3.0.7: mixed-design effects tied to one within-level / within factor
         _current_conds = set(conditions) | _within_effect_levels()
         _invalid_effects = []
         for be in builder_effects:
@@ -13862,7 +13940,7 @@ if active_page == 3:
         st.session_state["_auto_effects"] = bool(_auto_effects_on)
 
         effect_sizes = []
-        scoped_effects = []  # v1.3.0.6: mixed-design effects tied to one within-level / within factor
+        scoped_effects = []  # v1.3.0.7: mixed-design effects tied to one within-level / within factor
 
         # Pre-populate from builder if available, validating conditions
         builder_effects = st.session_state.get("builder_effect_sizes", [])
@@ -13891,7 +13969,7 @@ if active_page == 3:
         available_scales = [s.get("name", "Main_DV") for s in scales] if scales else ["Main_DV"]
         available_factors = [f.get("name", "Condition") for f in factors] if factors else ["Condition"]
 
-        # v1.3.0.6: values restored from the page-switch mirror must still be options of the
+        # v1.3.0.7: values restored from the page-switch mirror must still be options of the
         # widgets they feed (the DVs/conditions may have changed meanwhile); a stale one is dropped.
         for _ek, _eopts in (("effect_variable", available_scales), ("effect_factor", available_factors)):
             if _ek in st.session_state and st.session_state[_ek] not in _eopts:
@@ -15454,7 +15532,7 @@ if active_page == 3:
                     "If your study has multiple conditions, go back to **Design** and configure them."
                 )
 
-            # v1.3.0.6: within-subjects / mixed designs. For a within design the conditions ARE what every
+            # v1.3.0.7: within-subjects / mixed designs. For a within design the conditions ARE what every
             # participant experiences; for a mixed design they are the between-subjects groups and the
             # within-subject factor comes from the repeated-measures setup.
             _design_cfg, _design_problems = _design_config_for_engine([str(c) for c in _engine_conditions])
@@ -15591,7 +15669,7 @@ if active_page == 3:
                 design=_design_cfg,
             )
             # v1.2.5.0: ABE 3.0 — always use EnhancedSimulationEngine (HBS merged in)
-            engine = EnhancedSimulationEngine(**_engine_kwargs)
+            engine = _construct_engine(**_engine_kwargs)
         except Exception as _init_exc:
             import traceback as _init_tb
             _init_error_tb = _init_tb.format_exc()
@@ -16492,7 +16570,7 @@ if active_page == 3:
             except Exception as _e:
                 _log(f"Explainer generation failed: {_e}", level="warning")
                 explainer = f"# Explainer generation failed: {_e}\n# See metadata for study details"
-            try:  # v1.3.0.6: how to read the wide / long layout of a repeated-measures run
+            try:  # v1.3.0.7: how to read the wide / long layout of a repeated-measures run
                 from utils.within_scripts import codebook_addendum as _codebook_addendum
                 explainer += _codebook_addendum(metadata)
             except Exception as _e:
@@ -16628,7 +16706,7 @@ if active_page == 3:
 
             if diagnostics_bytes is not None:
                 files["Simulation_Diagnostics.csv"] = diagnostics_bytes
-            # v1.3.0.6: repeated-measures data also come as one row per participant and condition
+            # v1.3.0.7: repeated-measures data also come as one row per participant and condition
             try:
                 from utils.within_design import build_long_format as _build_long, design_from_metadata as _design_meta
                 _rm_design = _design_meta(metadata)
