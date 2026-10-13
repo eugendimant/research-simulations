@@ -34,7 +34,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.3.0.6"  # v1.3.0.4: pass Qualtrics numeric validation through to the engine
+__version__ = "1.3.0.7"  # v1.3.0.4: pass Qualtrics numeric validation through to the engine
 
 
 def _finite_float(value: Any, default: Optional[float] = None) -> Optional[float]:
@@ -225,11 +225,11 @@ class QSFPreviewResult:
     block_questions: Dict[str, List[str]] = field(default_factory=dict)  # block_id -> list of question_ids
     # v1.0.0: Questions that ALL conditions see (shared questions like demographics)
     shared_questions: List[str] = field(default_factory=list)  # question_ids visible to all conditions
-    # v1.3.0.6: where detected_conditions came from: 'randomizer' (arms of a
+    # v1.3.0.7: where detected_conditions came from: 'randomizer' (arms of a
     # between-subjects Randomizer/BlockRandomizer), 'embedded' / 'branch' (flow
     # evidence without a usable randomizer), 'name' (block-name heuristic) or ''.
     condition_evidence: str = ""
-    # v1.3.0.6: block names recognised as survey SECTIONS (consent, demographics,
+    # v1.3.0.7: block names recognised as survey SECTIONS (consent, demographics,
     # feedback, ...) - never conditions, whatever the app offers as candidates.
     section_blocks: List[str] = field(default_factory=list)
 
@@ -2032,7 +2032,7 @@ class QSFPreviewParser:
 
         return False
 
-    # v1.3.0.6: survey SECTION vocabulary.  A block named like this is a part of
+    # v1.3.0.7: survey SECTION vocabulary.  A block named like this is a part of
     # the questionnaire every participant passes through, not an experimental arm.
     _SECTION_NAME_RE = re.compile(
         r"(?:^|[^a-z])(?:consent|informed|demograph\w*|instruction\w*|direction\w*|"
@@ -2057,7 +2057,7 @@ class QSFPreviewParser:
     def _is_section_block_name(self, block_name: str) -> bool:
         """True when a block name is a survey SECTION rather than an experimental arm.
 
-        v1.3.0.6: used on the NAME-based paths only (candidate lists, fallbacks).
+        v1.3.0.7: used on the NAME-based paths only (candidate lists, fallbacks).
         Blocks inside a between-subjects randomizer are arms by construction
         and are never run through this filter.
         """
@@ -2081,7 +2081,7 @@ class QSFPreviewParser:
     ) -> List[Dict[str, Any]]:
         """Return the between-subjects randomizers of the flow with their arm labels.
 
-        v1.3.0.6: the QSF flow itself is the primary evidence for conditions.  An
+        v1.3.0.7: the QSF flow itself is the primary evidence for conditions.  An
         arm is one child of a ``Randomizer`` / ``BlockRandomizer`` that shows
         ``SubSet`` of its children to each participant: with ``SubSet`` 1 each
         child is a condition; ``SubSet`` equal to the child count only shuffles
@@ -2164,7 +2164,7 @@ class QSFPreviewParser:
     ) -> List[str]:
         """Arms from sibling Branch elements that test an embedded-data field.
 
-        v1.3.0.6: surveys that assign a condition into embedded data (for
+        v1.3.0.7: surveys that assign a condition into embedded data (for
         example with a SubSet = n randomizer of EmbeddedData elements) and then
         show one block per value through ``Branch`` elements carry their
         conditions in the branches.  Two or more sibling branches whose logic
@@ -2389,7 +2389,7 @@ class QSFPreviewParser:
         # Use less aggressive filter since conditions from randomizers are valid
         conditions = [c for c in conditions if not self._is_trash_block_name(c)]
 
-        # v1.3.0.6: the flow's own randomizers are the primary evidence.  When the
+        # v1.3.0.7: the flow's own randomizers are the primary evidence.  When the
         # survey has a between-subjects Randomizer / BlockRandomizer, its arms ARE
         # the conditions; everything else the pattern detector collected (embedded
         # data values anywhere in the flow, first words of branch descriptions) is
@@ -2469,7 +2469,7 @@ class QSFPreviewParser:
         conditions = self._dedupe_conditions(
             conditions, keep_numeric=(self._condition_evidence in ('randomizer', 'branch')))
 
-        # v1.3.0.6: the pattern output can be non-empty yet consist only of
+        # v1.3.0.7: the pattern output can be non-empty yet consist only of
         # placeholders ("${rand://int/...}", digits) that the dedupe step drops;
         # the block-name fallback must still get its turn in that case.
         if not conditions:
@@ -2666,7 +2666,7 @@ class QSFPreviewParser:
         # Check for weaker keywords with additional context
         # e.g., "treatment group" is good, but "age group" is not
         for keyword in weak_keywords:
-            # v1.3.0.6: whole word only ("warm message" contains "arm")
+            # v1.3.0.7: whole word only ("warm message" contains "arm")
             if re.search(rf'\b{keyword}\b', lowered):
                 # Check if it has condition-related context
                 condition_context = ("treatment", "control", "experimental", "test", "condition")
@@ -3348,7 +3348,7 @@ class QSFPreviewParser:
             # v1.2.0: Also check export_tag for better variable naming
             var_name = q_info.export_tag if q_info.export_tag else q_id
             match = re.match(r'^(.+?)[-_]?(\d+)$', var_name)
-            # v1.3.0.6: a text box whose Qualtrics validation says "number" (or that
+            # v1.3.0.7: a text box whose Qualtrics validation says "number" (or that
             # declares a numeric range) is a numeric input with its OWN declared
             # range, even when its export tag ends in a digit.  Folding such boxes
             # into a numbered Likert group gave them a 1-7 range and a second,

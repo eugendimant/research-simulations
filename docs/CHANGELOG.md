@@ -1,3 +1,16 @@
+## 2026-10-13 — v1.3.0.7
+### A redeploy can no longer leave an old engine behind ("unexpected keyword argument 'auto_effects'")
+
+- Streamlit keeps imported modules alive across a redeploy. The version check reloaded only the `utils`
+  package, so its version string matched again while `utils.enhanced_simulation_engine` stayed at the
+  previous release; the new app then passed `auto_effects` (and `design`) to the old engine class and
+  generation stopped with "Adaptive Behavioral Engine 3.0 failed to initialize".
+- `app.py` now reloads every stale `utils.*` module in place, dependencies first, before it imports from
+  them (`_refresh_stale_utils_modules`; never removes modules from `sys.modules`). Engine construction goes
+  through `_construct_engine`, which reloads the engine module once if the class rejects an argument and,
+  as a last resort, drops arguments the class does not accept instead of failing the run.
+- Guard: `tests/test_stale_modules_v1307.py` recreates the stale state in a fresh interpreter.
+
 ## 2026-10-08 — v1.3.0.6
 ### Within-subjects and mixed designs, literature-informed defaults, data-quality flags, cleaner survey parsing
 
