@@ -58,13 +58,29 @@ def _d_av(df, meta, dv, a, b):
 # ---------------------------------------------------------------------------------------------
 # 1. between-subjects designs are untouched
 # ---------------------------------------------------------------------------------------------
-# md5 (first 12 hex digits) of df.to_csv and of the metadata JSON (without the timestamp), measured on the integration head eecf4c7 (the same configurations gave the pre-integration hashes on 6d97a95)
+# md5 (first 12 hex digits) of df.to_csv and of the metadata JSON (without the timestamp).
+#
+# Re-recorded in v1.3.0.9. These hashes exist to catch an ACCIDENTAL change to the
+# between-subjects path while repeated measures are worked on; they are not a promise that the
+# between path never changes on purpose. Three of the audit's required fixes change it deliberately
+# and are why the previous set (eecf4c7: basic_1 f29a321a06b4/9efd3ec0dcb5, basic_2
+# 0dda120ad65e/fc684765385f, basic_3 66e61ce23c71/fcfb79dde944, effects_4 f98161e88664/0ee5f9cc0f68,
+# factorial_oe_5 12b3a5a6725a/b953fbe58479) no longer holds:
+#
+#   * declare-first inference (P0-1): a condition NAME no longer moves an outcome whose direction
+#     nobody declared, so "Version A" vs "Version B" and "Gain"/"Loss" carry no wording effect.
+#   * per-outcome provenance (P0-2): every metadata hash changes, because every run now exports
+#     calibration_provenance and a per-contrast effect_source.
+#   * calibration routing (P1-8): "Trust" and "Donation" no longer reach the norms they reached by
+#     substring accident, so their marginals differ.
+#
+# A diff here that is NOT one of those three is a regression: find it before re-recording.
 BASELINE_HASHES = {
-    "basic_1": ["f29a321a06b4", "9efd3ec0dcb5"],
-    "basic_2": ["0dda120ad65e", "fc684765385f"],
-    "basic_3": ["66e61ce23c71", "fcfb79dde944"],
-    "effects_4": ["f98161e88664", "0ee5f9cc0f68"],
-    "factorial_oe_5": ["12b3a5a6725a", "b953fbe58479"],
+    "basic_1": ["abfff79a18b5", "d225eab371ea"],
+    "basic_2": ["0dda120ad65e", "1ae71e414cf4"],
+    "basic_3": ["168f0915cb12", "01f6580c1205"],
+    "effects_4": ["089896472a2c", "57f9bff2f6dd"],
+    "factorial_oe_5": ["3edc5783e085", "66a8a2641daf"],
 }
 
 
@@ -337,15 +353,28 @@ def test_true_null_has_no_condition_effect():
 
 
 def test_inferred_effects_work_and_the_reference_level_is_the_zero_point():
+    """v1.3.0.9: a condition name moves a within-condition only once the outcome's direction is
+    declared (declare-first, audit P0-1). The reference level stays the zero point either way.
+    """
     levels = ["Control", "Positive message"]
-    e = _within(levels, n=300, seed=15, scales=[_scale("Attitude", 4)])
-    df, md = e.generate()
+    scales = [dict(_scale("Attitude", 4), higher_means="+1")]
+    df, md = _within(levels, n=300, seed=15, scales=scales).generate()
     offs = {r["cell"]: r["offset_d"] for r in md["effect_sizes_applied"]["cell_offsets_d"]}
     assert offs["Control"] == 0.0
     assert offs["Positive message"] != 0.0
     assert {r["source"] for r in md["effect_sizes_applied"]["cell_offsets_d"]} == {"inferred"}
-    off_run = _within(levels, n=300, seed=15, scales=[_scale("Attitude", 4)], auto_effects=False).generate()[1]
+
+    off_run = _within(levels, n=300, seed=15, scales=scales, auto_effects=False).generate()[1]
     assert {r["source"] for r in off_run["effect_sizes_applied"]["cell_offsets_d"]} == {"none"}
+
+
+def test_an_undeclared_outcome_gets_no_inferred_within_effect():
+    """The same design with nothing declared is a true null, not a confidently signed guess."""
+    md = _within(["Control", "Positive message"], n=300, seed=15,
+                 scales=[_scale("Attitude", 4)]).generate()[1]
+    rows = md["effect_sizes_applied"]["cell_offsets_d"]
+    assert all(abs(float(r["offset_d"])) < 1e-9 for r in rows), rows
+    assert {r["source"] for r in rows} <= {"none", "not_inferred"}, rows
 
 
 def test_a_spec_that_reaches_nothing_is_reported():

@@ -189,6 +189,21 @@ def _index() -> Optional[_Index]:
 #: Minimum score for a match to be used. Set so that a single shared common word
 #: never qualifies, but one distinctive construct word (or an acronym) does.
 MATCH_THRESHOLD = 1.4
+# v1.3.0.9 (P1-8): a content match needs this many shared tokens, unless its single token is
+# distinctive (see MAX_DISTINCTIVE_DF). Measured on the audit's examples: "behavior" is shared by
+# 4 norms and "brand" by 3, so neither can carry a match alone; "sleep", "insomnia" and "psqi"
+# are shared by one norm each and still do.
+MIN_CONTENT_TOKENS = 2
+MAX_DISTINCTIVE_DF = 1
+# Words that name no construct on their own, whatever their document frequency in the table.
+# "behavior" happens to appear in exactly one norm's text (helping_behavior_hbs), so frequency
+# alone still let `Behavior_Score` inherit that norm's published mean and shape.
+GENERIC_CONTENT_TOKENS = frozenset({
+    "behavior", "behaviour", "behavi", "score", "scores", "rating", "ratings", "quality", "qual",
+    "attitude", "attitud", "intention", "intent", "total", "overall", "general", "response",
+    "responses", "respons", "choice", "task", "item", "items", "level", "levels", "index",
+    "measure", "measures", "scale", "survey", "question", "questions", "self", "report",
+})
 
 
 def match(
@@ -279,6 +294,16 @@ def match(
     best = ranked[0]
     if best.score < thr:
         return None
+    # v1.3.0.9 (P1-8): ONE shared generic word is not a construct match. `Behavior_Score` reached
+    # the helping-behaviour norm on "behavior" alone and `Brand_Satisfaction` reached brand loyalty
+    # on "brand" alone, and the matched norm's published mean and shape were then applied to a DV
+    # about something else. A single token has to be distinctive -- present in exactly one of the
+    # 201 norms -- to carry a match by itself; otherwise two shared tokens are required.
+    if len(best.matched_tokens) < MIN_CONTENT_TOKENS:
+        _tok = best.matched_tokens[0] if best.matched_tokens else ""
+        _df = sum(1 for _toks in idx.doc_tokens.values() if _tok in _toks)
+        if _df > MAX_DISTINCTIVE_DF or _tok in GENERIC_CONTENT_TOKENS:
+            return None
     # require a clear winner: an ambiguous tie is no match at all
     if len(ranked) > 1 and ranked[1].score > best.score * 0.92:
         if not set(best.matched_tokens) - set(ranked[1].matched_tokens):

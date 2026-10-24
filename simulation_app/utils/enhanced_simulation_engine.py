@@ -46,7 +46,10 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.0.9.5"  # v1.0.9.5: ABE 3.0 — 5 consistency improvements + HBS merge
+__version__ = "1.3.0.9"  # kept in step with utils/__init__.py by scripts/check_version_sync.py
+# NOTE: this stamp was frozen at 1.0.9.5 for 30 releases because it is not one of the ten locations
+# the version check enforces. A stamp nobody checks is worse than no stamp: it tells a reader the
+# wrong thing with authority. It is now in the enforced set.
 
 # v1.2.7.0: DV types whose item columns are JOINTLY constrained (a permutation;
 # or an allocation summing to a fixed total). Their columns must be exempted from
@@ -686,6 +689,16 @@ _POLARITY_NEGATIVE_WORDS = frozenset({
     "higher_is_worse", "higher_means_less", "less", "down", "reverse", "reversed",
     "reverse_keyed", "opposite", "inverted",
 })
+
+
+# v1.3.0.9 (P1-8): published norms whose INSTRUMENT scores the deficit while the norm's key names
+# the positive pole. The PSQI global score runs 0 (slept well) to 21 (slept badly), so its
+# published mean is a statement about sleep PROBLEMS; applied to an item called "Sleep_Quality" it
+# put the baseline at the bad end of a scale on which higher means better. Which way the DV runs is
+# not guessable from its name (P0-1), so a norm in this set is used only once the analyst has said
+# what higher values mean: declared "higher is less" it applies as published, declared "higher is
+# more" it is reflected, and undeclared it is not applied at all.
+_REVERSE_SCORED_NORMS = frozenset({"sleep_quality_psqi"})
 
 
 def _dv_key(name: Any) -> str:
@@ -2231,50 +2244,11 @@ CULTURAL_RESPONSE_STYLES = {
 }
 
 
-def _apply_cultural_response_style(
-    base_response: float,
-    scale_points: int,
-    cultural_style: str,
-    rng: np.random.RandomState
-) -> int:
-    """
-    Apply cultural response style adjustments to a base response.
-
-    Args:
-        base_response: Base response (0-1 scale)
-        scale_points: Number of scale points
-        cultural_style: Key from CULTURAL_RESPONSE_STYLES
-        rng: Random number generator
-
-    Returns:
-        Adjusted response as integer scale point
-    """
-    style = CULTURAL_RESPONSE_STYLES.get(cultural_style, CULTURAL_RESPONSE_STYLES['western_individualist'])
-
-    # Transform base response to scale
-    raw = base_response * (scale_points - 1) + 1
-
-    # Apply acquiescence bias (shift toward agreement/positive)
-    acquiescence_shift = (style['acquiescence_bias'] - 0.5) * (scale_points - 1) * 0.2
-    raw += acquiescence_shift
-
-    # Apply extreme responding tendency
-    midpoint = (scale_points + 1) / 2
-    if rng.random() < style['extreme_responding']:
-        # Push toward extremes
-        if raw > midpoint:
-            raw = raw + (scale_points - raw) * 0.4
-        else:
-            raw = raw - (raw - 1) * 0.4
-
-    # Apply midpoint avoidance
-    if style['midpoint_avoidance'] > 0.5 and abs(raw - midpoint) < 0.5:
-        if rng.random() < style['midpoint_avoidance'] - 0.5:
-            # Shift away from midpoint
-            raw += rng.choice([-0.5, 0.5])
-
-    return int(np.clip(round(raw), 1, scale_points))
-
+# v1.3.0.9 (P1-8): `_apply_cultural_response_style` was removed here. It had no caller anywhere
+# in the package -- it was written, documented in docs/COVERAGE_ROADMAP.md as unreached, and never
+# wired in. CULTURAL_RESPONSE_STYLES above is kept because it is published reference data, but
+# nothing in the generation path consults it; tests/test_unwired_knowledge_v1309.py records that,
+# so no document can claim it runs without failing CI.
 
 # =============================================================================
 # ITERATION 6: OPEN-ENDED RESPONSE DIVERSITY ENHANCEMENT
@@ -3712,8 +3686,11 @@ def _meta_index() -> List[Tuple[str, float, Tuple[Any, ...]]]:
             if key in _damped:
                 if _signed < 0:
                     continue  # a harm-type effect needs its sign from the label rule, not the study text
-                if HAS_EMPIRICAL_REGISTRY:
-                    d *= float(_empirical_registry.confidence_weight("meta", key))
+                # v1.3.0.9 (P1-7): the tier weight used to be applied HERE and then the replication
+                # shrinkage again inside adjust_effect, so these 17 paradigms were discounted twice
+                # (0.47 -> 0.32 -> 0.14, i.e. effectively null) -- exactly the compounding
+                # adjust_effect was changed to avoid. The tier now applies once, where every other
+                # route applies it, because _shrink_inferred_meta_effect passes the paradigm key.
             toks = [t for t in re.split(r"[^a-z]+", key.lower()) if t and t not in _META_GENERIC_TOKENS]
             _als = _META_ALIASES.get(key, ())
             if not toks or not (any(len(t) >= 5 for t in toks) or _als):
@@ -3862,7 +3839,7 @@ class EnhancedSimulationEngine:
         # a heuristic guess and has not been validated; it is labelled as such everywhere it is
         # reported. Declared polarity is always used when present, with or without this flag.
         infer_effects_without_polarity: bool = False,
-        # v1.3.0.8 (P1-5): analyst-supplied base rate for binary / low-cardinality outcomes,
+        # v1.3.0.9 (P1-5): analyst-supplied base rate for binary / low-cardinality outcomes,
         # {variable: proportion of the HIGH category}. Without it a binary outcome keeps the
         # uninformed 0.50 and the run carries a "base rate undeclared" flag. May also be given
         # per scale as scales[i]["base_rate"].
@@ -7933,6 +7910,24 @@ class EnhancedSimulationEngine:
         cache[key] = result
         return result
 
+    def _declared_base_rate_for(self, variable: str) -> Optional[float]:
+        """The analyst's base rate for a binary / low-cardinality outcome, or None (P1-5).
+
+        The engine used to put every binary outcome through the Likert pipeline, which lands on a
+        tendency near 0.62 whatever the study: measured against a human outcome with a base rate of
+        0.11 that is 1.63 human SDs out, and a plain latent-normal baseline did better. A base rate
+        is a fact about the population, not something a simulator can read off a variable name, so
+        it comes from the analyst or it is the uninformed 0.50 -- never a hidden constant.
+        """
+        declared = getattr(self, "_declared_base_rates", None) or {}
+        for cand in (_dv_key(variable), _dv_key(str(variable).replace("_", " "))):
+            if cand and cand in declared:
+                try:
+                    return float(np.clip(float(declared[cand]), 0.01, 0.99))
+                except (TypeError, ValueError):
+                    return None
+        return None
+
     def _wording_inference_allowed(self, variable: str) -> bool:
         """Whether a wording-derived (keyword / valence / domain) effect may move this outcome.
 
@@ -8001,8 +7996,8 @@ class EnhancedSimulationEngine:
     def _shrink_inferred_meta_effect(self, keys: Tuple[str, ...], published_d: float, variable: str) -> float:
         """Replication-adjusted size for a paradigm-anchored (inferred) effect.
 
-        Same ``adjust_effect`` the literature fallback uses, minus the tier weighting (the anchor
-        never had it, and the paradigm match is not a per-entry verification claim). The
+        The same ``adjust_effect`` the literature fallback uses, tier weighting included (v1.3.0.8:
+        the anchor used to pass ``key=""`` and so applied none). The
         heterogeneity draw is seeded by (paradigm, variable) only, so every arm of one contrast
         sees the same effect and a rerun with the same seed gives the same number; there is no
         per-participant randomness here, so memoisation stays valid.
@@ -8020,8 +8015,12 @@ class EnhancedSimulationEngine:
         taus = [t for t in taus if t > 0]
         tau = float(sum(taus) / len(taus)) if taus else None
         pol = self._INFERRED_EFFECT_POLICY
+        # v1.3.0.9 (P1-7): pass the paradigm key. This route used to pass key="", so `adjust_effect`
+        # forced the tier weight to 1.0 and the anchor was the ONE literature route that applied no
+        # tier at all -- while the README claimed every recalled effect is damped by its tier.
+        _anchor_key = next((k for k in keys if k), "")
         applied = float(_empirical_registry.adjust_effect(
-            published_d, kind="meta", key="", policy=pol,
+            published_d, kind="meta", key=_anchor_key, policy=pol,
             rng=self._stable_rng("meta-anchor", "|".join(keys), str(variable)), tau=tau))
         cache[ck] = applied
         if not hasattr(self, "_inferred_effect_log"):
@@ -8810,22 +8809,46 @@ class EnhancedSimulationEngine:
                 # Environmental: polarized topic, moderate variance
                 calibration['variance_adjustment'] += 0.04
 
+        # v1.3.0.9 (P1-8): the study-level priors above are added to EVERY variable of the study, so
+        # "has anything calibrated this variable yet?" must be asked against them, not against zero.
+        # Measured against zero, any study whose domain was detected set variance_adjustment for
+        # every variable, the `_already_calibrated` guard below was therefore always True, and the
+        # content-based construct matcher -- the only route to the 107 published norms the
+        # fragment map does not reach -- never ran at all. `PSS4_1`, `bfi_extra_1` and
+        # `stress_total` reached no norm for that reason.
+        _domain_baseline = dict(calibration)
+
         # ===== ECONOMIC GAME / ALLOCATION MEASURES (v1.0.4.2) =====
         # Engel (2011 meta-analysis): Dictator game mean giving ≈ 28% of endowment
         # Berg et al. (1995): Trust game mean sent ≈ 50%
         # Sally (1995 meta): Prisoner's dilemma cooperation ≈ 47%
         # Güth et al. (1982): Ultimatum offers ≈ 40-50%, rejected below 20%
         # Fehr & Gächter (2000): Public goods mean contribution ≈ 40-60%
-        _econ_kws = ['dollar', 'amount', 'allocat', 'give', 'giving', 'sent',
-                     'offer', 'share', 'split', 'endow', 'dictator',
-                     'trust game', 'ultimatum', 'public good', 'contribution',
-                     'transfer', 'payment', 'donate', 'generosity']
-        # v1.3.0.6: "sent" is a whole word ("Amount_Sent"), not the middle of "consent"/"presentation".
+        # v1.3.0.9 (P1-8): these were substring tests, so `Willingness_to_Share`,
+        # `Payment_Satisfaction` and `Offer_Attractiveness` were all classified as economic-game
+        # allocations and took the "Generic economic allocation" baseline (mean_adjustment -0.10) --
+        # which also RETURNS EARLY, so they never reached their construct norm or the content
+        # matcher. The keywords are matched as whole words (or as the stem of one) now, and the
+        # words that name a game only incidentally ("share", "offer", "payment", "transfer",
+        # "amount", "contribution") need the study, the condition or the variable to name a game.
+        _ECON_KWS_STRONG = ('allocat', 'endow', 'dictator', 'ultimatum', 'generosity', 'dollar',
+                            'give', 'giving', 'sent', 'donate', 'split')
+        _ECON_KWS_WEAK = ('offer', 'share', 'payment', 'transfer', 'amount', 'contribution')
+        _ECON_PHRASES = ('trust game', 'public good', 'prisoner', 'dictator', 'ultimatum')
         _var_tokens = set(re.split(r"[^a-z0-9]+", var_lower))
-        _is_econ_game = any(kw in var_lower for kw in _econ_kws if kw != 'sent') or (
-            'sent' in _var_tokens) or any(
-            kw in condition_lower for kw in ['dictator', 'trust game', 'ultimatum',
-                                              'public good', 'prisoner'])
+
+        def _econ_tok(kw: str) -> bool:
+            # whole word, or a word that STARTS with a stem keyword ("allocat" -> "allocation")
+            if kw in _var_tokens:
+                return True
+            return len(kw) >= 4 and any(t.startswith(kw) for t in _var_tokens)
+
+        _econ_ctx = " ".join([condition_lower, (self.study_title or "").lower(),
+                              (self.study_description or "").lower(), var_lower])
+        _game_named = any(ph in _econ_ctx for ph in _ECON_PHRASES)
+        _is_econ_game = (any(_econ_tok(kw) for kw in _ECON_KWS_STRONG)
+                         or (_game_named and any(_econ_tok(kw) for kw in _ECON_KWS_WEAK))
+                         or _game_named)
         # v1.3.0.6: games the allocation keywords never matched (stag hunt, common pool, beauty
         # contest, auctions, centipede, ...). A game must be NAMED as a whole phrase (variable name,
         # title, description or condition label); a variable named for the game is its outcome, any
@@ -8894,9 +8917,29 @@ class EnhancedSimulationEngine:
                     # mean_proportion is 0-1 scale, default midpoint is 0.5
                     # (a mean above 1, e.g. second-price overbidding at 1.05 of value, is a
                     # ratio rather than a proportion: clamp it so the tendency stays on the scale)
-                    _kb_mean = min(0.95, max(0.05, float(_kb_game.mean_proportion)))
+                    # v1.3.0.9 (P1-8): a field the registry recorded a verified CORRECTION for is
+                    # read from the correction. The registry's one source-verified correction (the
+                    # dictator-game SD, 0.31 against the stored 0.18) was never read by any code
+                    # path, so `sourced_entries = 1` described a row that changed nothing.
+                    _kb_mean, _kb_sd = float(_kb_game.mean_proportion), float(_kb_game.sd_proportion)
+                    if HAS_EMPIRICAL_REGISTRY:
+                        try:
+                            _kb_key_for_corr = f"{_kb_game.game_type}_{_kb_game.variant}"
+                            for _fld, _cur in (("mean_proportion", _kb_mean), ("sd_proportion", _kb_sd)):
+                                _corr = _empirical_registry.corrected_value("game", _kb_key_for_corr, _fld)
+                                if _corr is None and _kb_key_resolved:
+                                    _corr = _empirical_registry.corrected_value("game", _kb_key_resolved, _fld)
+                                if _corr is not None:
+                                    if _fld == "mean_proportion":
+                                        _kb_mean = float(_corr)
+                                    else:
+                                        _kb_sd = float(_corr)
+                                    calibration.setdefault('_kb_corrected', []).append(_fld)
+                        except Exception:
+                            pass
+                    _kb_mean = min(0.95, max(0.05, _kb_mean))
                     calibration['mean_adjustment'] = _kb_mean - 0.50
-                    calibration['variance_adjustment'] = max(0.08, _kb_game.sd_proportion * 0.8)
+                    calibration['variance_adjustment'] = max(0.08, _kb_sd * 0.8)
                     calibration['positivity_bias'] = -0.05 if _kb_game.mean_proportion < 0.40 else 0.0
                     calibration['_game_variant'] = f"{_kb_game.game_type}_{_kb_game.variant}"
                     calibration['_kb_source'] = _kb_game.source
@@ -8906,7 +8949,7 @@ class EnhancedSimulationEngine:
                     # shift a tendency toward the published mean.
                     calibration['_kb_dist'] = {
                         'game': _kb_game.game_type, 'variant': _kb_game.variant,
-                        'mean': _kb_game.mean_proportion, 'sd': _kb_game.sd_proportion,
+                        'mean': _kb_mean, 'sd': _kb_sd,          # v1.3.0.8: verified corrections applied
                         'subpops': dict(_kb_game.subpopulations or {}),
                     }
                     return calibration
@@ -9000,98 +9043,127 @@ class EnhancedSimulationEngine:
                 'social_anxiety': 'social_anxiety_lsas', 'lsas': 'social_anxiety_lsas',
                 'social_phobia': 'social_anxiety_lsas',
                 'ocd': 'ocd_ybocs', 'ybocs': 'ocd_ybocs', 'obsessi': 'ocd_ybocs',
-                'eating_disorder': 'eating_disorder_eat26', 'eat26': 'eating_disorder_eat26',
-                'eat_26': 'eating_disorder_eat26', 'anorexi': 'eating_disorder_eat26',
+                
+                
                 'panic': 'panic_pdss', 'pdss': 'panic_pdss', 'panic_disorder': 'panic_pdss',
                 'audit': 'alcohol_use_audit', 'alcohol': 'alcohol_use_audit',
                 'staxi': 'anger_staxi', 'anger': 'anger_staxi', 'trait_anger': 'anger_staxi',
                 'death_anxiety': 'death_anxiety_das', 'das': 'death_anxiety_das',
                 'psqi': 'sleep_quality_psqi', 'sleep_quality': 'sleep_quality_psqi',
                 'sleep': 'sleep_quality_psqi', 'insomnia': 'sleep_quality_psqi',
-                'body_image': 'body_image_satisfaction',
+                
                 'health_anxiety': 'health_anxiety_hai', 'hai': 'health_anxiety_hai',
                 'hypochondri': 'health_anxiety_hai',
                 'somatiz': 'somatization_phq15', 'phq15': 'somatization_phq15',
                 'phq_15': 'somatization_phq15',
-                'chronic_fatigue': 'chronic_fatigue',
+                'chronic_fatigue': 'chronic_fatigue_cfs',
                 # ── v1.0.9.3: Wellbeing & Positive Psychology ──
                 'flourish': 'flourishing_perma', 'perma': 'flourishing_perma',
                 'positive_affect': 'positive_affect_panas', 'panas_pos': 'positive_affect_panas',
                 'negative_affect': 'negative_affect_panas', 'panas_neg': 'negative_affect_panas',
                 'panas': 'positive_affect_panas',
                 'psych_wellbeing': 'psychological_wellbeing_pwb', 'pwb': 'psychological_wellbeing_pwb',
-                'meaning_life': 'meaning_life_mlq_presence', 'mlq': 'meaning_life_mlq_presence',
-                'meaning_search': 'meaning_life_mlq_search',
+                
+                
                 'hope': 'hope_ahs', 'ahs': 'hope_ahs', 'hopeful': 'hope_ahs',
                 'optimism': 'optimism_lotr', 'lot_r': 'optimism_lotr', 'lotr': 'optimism_lotr',
                 'happiness': 'happiness_shs', 'shs': 'happiness_shs', 'subjective_happiness': 'happiness_shs',
                 'vitality': 'vitality_svs', 'svs': 'vitality_svs',
                 'self_compass': 'self_compassion_scs', 'scs': 'self_compassion_scs',
                 # ── v1.0.9.3: Values & Ideology ──
-                'sdo': 'sdo_social_dominance', 'social_dominan': 'sdo_social_dominance',
-                'rwa': 'rwa_authoritarianism', 'authoritarian': 'rwa_authoritarianism',
+                
+                
                 'just_world': 'just_world_belief_bjw', 'bjw': 'just_world_belief_bjw',
                 'materiali': 'materialism_mvs', 'mvs': 'materialism_mvs',
                 'system_justif': 'system_justification',
                 'political_ideol': 'political_ideology',
                 # ── v1.0.9.3: Social Psychology ──
                 'social_support': 'social_support_mspss', 'mspss': 'social_support_mspss',
-                'belonging': 'belongingness', 'belongingness': 'belongingness',
+                'belonging': 'belongingness_gnbs', 'belongingness': 'belongingness_gnbs',
                 'social_compar': 'social_comparison_sco', 'sco': 'social_comparison_sco',
                 'collective_self': 'collective_self_esteem_cse', 'cse': 'collective_self_esteem_cse',
                 'empathic_concern': 'empathic_concern_iri', 'iri_ec': 'empathic_concern_iri',
                 'perspective_tak': 'perspective_taking_iri', 'iri_pt': 'perspective_taking_iri',
                 'personal_distress': 'personal_distress_iri', 'iri_pd': 'personal_distress_iri',
-                'interpersonal_trust': 'interpersonal_trust',
+                'interpersonal_trust': 'interpersonal_trust_its',
                 # ── v1.0.9.3: Cognitive & Self-Regulation ──
                 'mindful': 'mindfulness_maas', 'maas': 'mindfulness_maas',
-                'cognitive_flex': 'cognitive_flexibility',
+                'cognitive_flex': 'cognitive_flexibility_cfs',
                 'ambiguity_toler': 'tolerance_of_ambiguity',
-                'locus_control': 'locus_of_control',
+                'locus_control': 'locus_of_control_rotter',
                 'self_regulat': 'self_regulation_srs', 'srs': 'self_regulation_srs',
                 'cognitive_reflect': 'cognitive_reflection_crt', 'crt': 'cognitive_reflection_crt',
-                'growth_mindset': 'growth_mindset', 'mindset': 'growth_mindset',
-                'grit': 'grit', 'perseveran': 'grit',
+                'growth_mindset': 'growth_mindset_itis', 'mindset': 'growth_mindset_itis',
+                'grit': 'grit_scale', 'perseveran': 'grit_scale',
                 'ruminat': 'rumination_rrs', 'rrs': 'rumination_rrs',
                 'worry': 'worry_pswq', 'pswq': 'worry_pswq', 'penn_worry': 'worry_pswq',
-                'reappraisal': 'emotion_regulation_erq_reappraisal', 'erq': 'emotion_regulation_erq_reappraisal',
-                'suppress': 'emotion_regulation_erq_suppression',
+                
+                
                 # ── v1.0.9.3: Motivation & Achievement ──
                 'intrinsic_motiv': 'intrinsic_motivation_imi', 'imi': 'intrinsic_motivation_imi',
                 'self_efficacy': 'self_efficacy_gse', 'gse': 'self_efficacy_gse',
-                'work_engage': 'work_engagement_uwes', 'uwes': 'work_engagement_uwes',
-                'flow': 'flow_experience', 'procrastinat': 'procrastination',
+                'work_engage': 'work_engagement_uwes', 'uwes': 'work_engagement_uwes', 'procrastinat': 'procrastination_gps',
                 'test_anxiety': 'test_anxiety_tai', 'tai': 'test_anxiety_tai',
                 # ── v1.0.9.3: Interpersonal & Relationships ──
                 'forgiv': 'forgiveness_tfs', 'tfs': 'forgiveness_tfs',
                 'relation_satisf': 'relationship_satisfaction_ras', 'ras': 'relationship_satisfaction_ras',
-                'jealous': 'jealousy', 'romantic_love': 'romantic_love',
-                'emotional_intellig': 'emotional_intelligence_eq', 'eq_score': 'emotional_intelligence_eq',
+                'jealous': 'jealousy_mrs', 'romantic_love': 'romantic_love_pls',
+                
                 # ── v1.0.9.3: Work & Organizational ──
                 'job_satisf': 'job_satisfaction_msq', 'msq': 'job_satisfaction_msq',
                 'org_commit': 'organizational_commitment_ocq', 'ocq': 'organizational_commitment_ocq',
                 'lmx': 'leader_member_exchange_lmx',
                 'psycap': 'psychological_capital_psycap',
-                'turnover_intent': 'turnover_intention',
-                'work_family': 'work_family_conflict', 'wfc': 'work_family_conflict',
+                'turnover_intent': 'turnover_intention_tis',
+                'work_family': 'work_family_conflict_wfc', 'wfc': 'work_family_conflict_wfc',
                 # ── v1.0.9.3: Technology & Media ──
-                'tech_accept': 'technology_acceptance_tam', 'tam': 'technology_acceptance_tam',
+                'tech_accept': 'technology_acceptance_tam_pu', 'tam': 'technology_acceptance_tam_pu',
                 'internet_addict': 'internet_addiction_iat',
-                'social_media_intens': 'social_media_intensity',
+                'social_media_intens': 'social_media_intensity_smi',
                 'privacy_concern': 'privacy_concern_iuipc', 'iuipc': 'privacy_concern_iuipc',
-                'ai_attitude': 'ai_attitudes',
+                'ai_attitude': 'ai_attitudes_gaais',
                 # ── v1.0.9.3: Consumer & Marketing ──
-                'brand_loyal': 'brand_loyalty', 'purchase_intent': 'purchase_intention',
+                'brand_loyal': 'brand_loyalty_bl', 'purchase_intent': 'purchase_intention_pi',
                 'customer_satisf': 'customer_satisfaction_acsi', 'acsi': 'customer_satisfaction_acsi',
-                'perceived_value': 'perceived_value', 'brand_trust': 'brand_trust',
+                'perceived_value': 'perceived_value_pv', 'brand_trust': 'brand_trust_bt',
             }
+            # v1.3.0.9 (P1-8): the fragments are matched at a WORD boundary, not anywhere inside the
+            # name. As a bare substring, `sco` (3 chars) routed `Behavior_Score`, `Total_Score` and
+            # `Scope_Rating` to a social-comparison norm; `hope` routed `Hopelessness` to a hope
+            # scale with the polarity inverted; `anger` routed `Danger_Perception` to STAXI; `das`,
+            # `ras` and `eq` did the same from inside unrelated words. 39 of the fragments are three
+            # characters or fewer, which is what drove it. An unmatched variable now falls through
+            # to the flagged generic default instead of to a specific norm by accident.
+            _name_tokens = [t for t in re.split(r"[^a-z0-9]+", var_lower) if t]
+
+            def _norm_token_hit(kw: str) -> bool:
+                # a word that STARTS with a stem keyword counts ("satisf" -> "satisfaction"), but
+                # not when the suffix NEGATES it: "hopelessness" is not the hope scale, and
+                # "meaningless" is not the meaning-in-life scale.
+                for t in _name_tokens:
+                    if t == kw:
+                        return True
+                    if len(kw) >= 4 and t.startswith(kw) and not t[len(kw):].startswith("less"):
+                        return True
+                return False
+
             for _kw, _norm_key in _construct_map.items():
-                if _kw in var_lower:
+                if _norm_token_hit(_kw):
+                    _may, _reflect = self._reverse_scored_norm_use(_norm_key, variable_name)
+                    if not _may:
+                        calibration['_marginal_source'] = 'generic_default'
+                        calibration['_marginal_note'] = (
+                            f"{_norm_key} is scored as a deficit; declare what higher values of "
+                            f"{variable_name} mean to use it."
+                        )
+                        return calibration
                     _norm = get_construct_norm(_norm_key, target_scale_points=7)
                     if _norm:
                         # Convert published norm to calibration adjustment
                         # Published mean on 7-point → deviation from neutral (4.0)
                         _dev = (_norm['mean'] - 4.0) / 3.0  # Normalize to [-1, 1]
+                        if _reflect:
+                            _dev = -_dev
                         calibration['mean_adjustment'] = _dev * 0.15  # Scale to adjustment range
                         calibration['positivity_bias'] = max(-0.10, min(0.12, _dev * 0.10))
                         if _norm.get('skewness', 0) > 0.3:
@@ -9460,11 +9532,11 @@ class EnhancedSimulationEngine:
         # because d is gap over SD and the SD had been quietly narrowed. A
         # last-resort rule that pre-empts the rules it is a fallback for is not a
         # fallback. It now fires only where nothing else did.
-        _already_calibrated = (
+        _already_calibrated = bool(
             calibration.get('_kb_source')
-            or calibration['mean_adjustment'] != 0.0
-            or calibration['variance_adjustment'] != 0.0
-            or calibration['positivity_bias'] != 0.0
+            or calibration['mean_adjustment'] != _domain_baseline['mean_adjustment']
+            or calibration['variance_adjustment'] != _domain_baseline['variance_adjustment']
+            or calibration['positivity_bias'] != _domain_baseline['positivity_bias']
         )
         if HAS_CONSTRUCT_MATCHER and not _already_calibrated:
             try:
@@ -9477,9 +9549,19 @@ class EnhancedSimulationEngine:
             except Exception:
                 _m = None
             if _m is not None:
+                _may, _reflect = self._reverse_scored_norm_use(_m.key, variable_name)
+                if not _may:
+                    calibration['_marginal_note'] = (
+                        f"{_m.key} is scored as a deficit; declare what higher values of "
+                        f"{variable_name} mean to use it."
+                    )
+                    _m = None
+            if _m is not None:
                 _norm = get_construct_norm(_m.key, target_scale_points=7)
                 if _norm:
                     _dev = (_norm['mean'] - 4.0) / 3.0
+                    if _reflect:
+                        _dev = -_dev
                     calibration['mean_adjustment'] = _dev * 0.15
                     calibration['positivity_bias'] = max(-0.10, min(0.12, _dev * 0.10))
                     if _norm.get('skewness', 0) > 0.3:
@@ -9496,10 +9578,7 @@ class EnhancedSimulationEngine:
         # and a DV nothing matched can be told apart in the export.
         if '_marginal_source' not in calibration:
             calibration['_marginal_source'] = (
-                'construct_keyword'
-                if (calibration['mean_adjustment'] or calibration['variance_adjustment']
-                    or calibration['positivity_bias'])
-                else 'generic_default'
+                'construct_keyword' if _already_calibrated else 'generic_default'
             )
         return calibration
 
@@ -10127,6 +10206,14 @@ class EnhancedSimulationEngine:
         # =====================================================================
         _kb_dist = domain_calibration.get('_kb_dist')
         _bin_rate = _binary_game_rate(_kb_dist) if scale_range == 1 else None
+        if _bin_rate is None and scale_range == 1:
+            # v1.3.0.9 (P1-5): a two-option outcome that is not a recognised game takes the base
+            # rate the analyst declared, or the uninformed 0.50. The Likert route below produced
+            # ~0.62 for every binary outcome whatever the study (a hidden constant, and 1.63 human
+            # SDs out on a low-prevalence outcome), and its endpoint-snapping step randomised a
+            # scale with only two options.
+            _declared_rate = self._declared_base_rate_for(variable_name)
+            _bin_rate = 0.50 if _declared_rate is None else _declared_rate
         if (_bin_rate is not None and not is_reverse and not _scale_geom['is_bipolar']
                 and domain_calibration.get('_game_variant') not in ('dictator_taking', 'dictator_third_party')):
             # v1.3.0.6: a two-option game outcome is drawn at the published choice rate (prisoner's
@@ -15421,6 +15508,13 @@ class EnhancedSimulationEngine:
                               # per-cell clipping would break the permutation/total
                 col_min = issue["expected_min"]
                 col_max = issue["expected_max"]
+                # v1.3.0.9 (P1-4): pandas clip() with lower > upper returns lower for every row, so
+                # an inverted interval silently flattens the column to a constant. Never clip on
+                # one; log it as the bug it is and leave the data alone.
+                if col_max < col_min:
+                    self._log(f"  WARNING: refusing to clip {col} to inverted bounds "
+                              f"[{col_min}, {col_max}] — scale spec is inconsistent")
+                    continue
                 # Auto-correct out-of-bounds values (preserve NaN from missing data)
                 col_series = df[col]
                 mask = col_series.notna()
@@ -15963,6 +16057,36 @@ class EnhancedSimulationEngine:
             })
         return {"specs": rows, "warnings": warns}
 
+    def _binary_base_rate_warnings(self) -> List[str]:
+        """Warn when a binary outcome has no declared base rate (P1-5)."""
+        out: List[str] = []
+        names: List[str] = []
+        for sc in (self.scales or []):
+            raw = str(sc.get("variable_name") or sc.get("name") or "").strip()
+            if not raw:
+                continue
+            try:
+                lo = float(sc.get("scale_min", 1))
+                hi = float(sc.get("scale_max", sc.get("scale_points", 7)))
+            except (TypeError, ValueError):
+                continue
+            if hi - lo != 1:
+                continue
+            var = _clean_column_name(raw)
+            if self._declared_base_rate_for(var) is not None:
+                continue
+            if self._is_economic_game_context(var):
+                continue   # a recognised game brings its own published choice rate
+            names.append(var)
+        if names:
+            out.append(
+                "Base rate undeclared for the binary outcome(s) " + ", ".join(sorted(set(names)))
+                + ": they were generated at an uninformed 0.50. A base rate is a property of your "
+                "population that the tool cannot infer, so declare it per outcome (base_rate) if "
+                "you know roughly what share of people choose the high category."
+            )
+        return out
+
     def _declare_first_warnings(self) -> List[str]:
         """Warn about outcomes the declare-first rule left as a true null (P0-1).
 
@@ -15998,6 +16122,7 @@ class EnhancedSimulationEngine:
         warnings.extend(self._effect_spec_diagnostics()["warnings"])
         warnings.extend(getattr(self, "_effect_build_errors", []) or [])
         warnings.extend(self._declare_first_warnings())
+        warnings.extend(self._binary_base_rate_warnings())
         if "CONDITION" in df.columns and len(self.conditions) >= 2:
             cell_counts = df["CONDITION"].value_counts()
             min_cell = int(cell_counts.min()) if len(cell_counts) > 0 else 0
@@ -16047,6 +16172,14 @@ class EnhancedSimulationEngine:
             scale_points = _safe_numeric(scale.get("scale_points", 7), default=7, as_int=True)
             scale_points = max(2, min(1001, scale_points))
             scale_min = _safe_numeric(scale.get("scale_min", 1), default=1, as_int=True)
+            # v1.3.0.9 (P1-4): the upper bound is the scale's own MAXIMUM. This block was written
+            # for Likert scales, where scale_min == 1 and scale_max == scale_points, and used
+            # scale_points as the bound. For a numeric DV with range 60-80 (scale_points = 21) that
+            # made the bound [60, 21]; pandas clip() with lower > upper returns lower, so the
+            # auto-correction below flattened the column to 60 for all 400 participants.
+            scale_max = _safe_numeric(scale.get("scale_max", scale_points), default=scale_points, as_int=True)
+            if scale_max <= scale_min:
+                scale_max = scale_min + scale_points - 1   # legacy 1..points scales
             num_items = _safe_numeric(scale.get("num_items", 5), default=5, as_int=True)
 
             for item_num in range(1, num_items + 1):
@@ -16072,11 +16205,11 @@ class EnhancedSimulationEngine:
                 actual_max = int(col_valid.max())
 
                 # CHECK 1b: Bounds validation
-                if actual_min < scale_min or actual_max > scale_points:
+                if actual_min < scale_min or actual_max > scale_max:
                     issues.append({
                         "column": col_name,
                         "expected_min": scale_min,
-                        "expected_max": scale_points,
+                        "expected_max": scale_max,
                         "actual_min": actual_min,
                         "actual_max": actual_max,
                         "issue_type": "out_of_bounds",
@@ -16087,13 +16220,13 @@ class EnhancedSimulationEngine:
                 # only use < 30% of the range (indicates the old capping bug or similar)
                 if scale_points > 10 and len(col_data) >= 20:
                     value_range = actual_max - actual_min
-                    expected_range = scale_points - 1
+                    expected_range = max(1, scale_max - scale_min)   # v1.3.0.9 (P1-4)
                     utilization = value_range / expected_range if expected_range > 0 else 0
                     if utilization < 0.30:
                         self._log(
                             f"VALIDATION WARNING: {col_name} uses only {utilization:.0%} of "
-                            f"1-{scale_points} range (actual: {actual_min}-{actual_max}). "
-                            f"This may indicate scale_points was not respected."
+                            f"{scale_min}-{scale_max} range (actual: {actual_min}-{actual_max}). "
+                            f"This may indicate the scale bounds were not respected."
                         )
 
         # ===== CHECK 2: Cross-reference with generation log =====
@@ -16180,6 +16313,11 @@ class EnhancedSimulationEngine:
             spec_points = int(scale.get("scale_points", 7))
             spec_items = int(scale.get("num_items", 5))
             spec_min = _safe_numeric(scale.get("scale_min", 1), default=1, as_int=True)
+            # v1.3.0.9 (P1-4): a correct 60-80 column was reported as a BOUNDS_VIOLATION because
+            # the ceiling compared against scale_points (21) rather than scale_max (80).
+            spec_max = _safe_numeric(scale.get("scale_max", spec_points), default=spec_points, as_int=True)
+            if spec_max <= spec_min:
+                spec_max = spec_min + spec_points - 1
 
             scale_report: Dict[str, Any] = {
                 "name": scale_name,
@@ -16209,7 +16347,7 @@ class EnhancedSimulationEngine:
                     all_values.extend(col_values)
                     col_min = min(col_values)
                     col_max = max(col_values)
-                    if col_min < spec_min or col_max > spec_points:
+                    if col_min < spec_min or col_max > spec_max:
                         scale_report["all_values_in_bounds"] = False
                         scale_report["status"] = "BOUNDS_VIOLATION"
                 else:
@@ -16218,7 +16356,7 @@ class EnhancedSimulationEngine:
 
             if all_values and spec_points > 1:
                 observed_range = max(all_values) - min(all_values)
-                expected_range = spec_points - 1
+                expected_range = max(1, spec_max - spec_min)   # v1.3.0.9 (P1-4)
                 utilization = (observed_range / expected_range * 100) if expected_range > 0 else 0
                 scale_report["range_utilization_pct"] = round(utilization, 1)
                 _obs_min, _obs_max = min(all_values), max(all_values)
@@ -16594,6 +16732,19 @@ class EnhancedSimulationEngine:
         "generic_default": "uncalibrated default (scale midpoint)",
     }
 
+    def _reverse_scored_norm_use(self, norm_key: str, variable_name: str) -> Tuple[bool, bool]:
+        """``(may_apply, reflect)`` for a published norm on this DV (P1-8).
+
+        Returns ``(True, False)`` for every norm that is not reverse-scored relative to its own
+        name, so the common path is unchanged. See ``_REVERSE_SCORED_NORMS``.
+        """
+        if str(norm_key) not in _REVERSE_SCORED_NORMS:
+            return True, False
+        sign, _how = self._polarity_for(variable_name)
+        if sign is None:
+            return False, False
+        return True, sign > 0
+
     def _build_calibration_provenance(self) -> Dict[str, Any]:
         """One row per outcome saying exactly where its effect and its baseline came from (P0-2).
 
@@ -16646,8 +16797,7 @@ class EnhancedSimulationEngine:
             except Exception:
                 calibration = {}
             marginal_source = str(calibration.get("_marginal_source") or "generic_default")
-            if _dv_key(raw) in (getattr(self, "_declared_base_rates", None) or {}) or \
-                    _dv_key(var) in (getattr(self, "_declared_base_rates", None) or {}):
+            if self._declared_base_rate_for(var) is not None:
                 marginal_source = "user"
             sign, how = self._polarity_for(var)
             rows.append({

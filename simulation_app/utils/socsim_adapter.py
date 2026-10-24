@@ -9,7 +9,7 @@ v1.0.8.3 — OE narrative fix.
 """
 from __future__ import annotations
 
-__version__ = "1.3.0.8"
+__version__ = "1.3.0.9"
 
 import hashlib
 import json

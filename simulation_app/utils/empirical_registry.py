@@ -349,6 +349,27 @@ def default_tau() -> float:
     return float(t) if t else 0.0
 
 
+def tier_cap_binds(policy: Optional["EffectPolicy"] = None) -> Dict[str, Any]:
+    """Whether the tier weight changes anything under `policy` (v1.3.0.8, P1-7).
+
+    `adjust_effect` applies the STRONGER of the tier weight and the replication shrinkage, so the
+    tier only changes the result for tiers whose weight is BELOW the shrinkage. With the installed
+    shrinkage of 0.45 and tier weights of 0.45-1.00 that is no tier at all, which is why the claim
+    that every recalled effect is "damped by its verification tier" was not true of the magnitude.
+    The tier still scales the floor (step 4), so it is not inert. Reported rather than papered over.
+    """
+    f = policy_factor(policy)
+    binding = sorted(t for t, w in TIER_WEIGHT.items() if w < f)
+    return {
+        "shrinkage_applied": f,
+        "tiers_that_cap_the_magnitude": binding,
+        "magnitude_is_tier_sensitive": bool(binding),
+        "note": ("The tier weight caps the magnitude only for tiers weighted below the applied "
+                 "shrinkage; with none below it, the tier affects the floor (the smallest effect "
+                 "an entry may be left with) but not the headline magnitude."),
+    }
+
+
 def policy_factor(policy: Optional["EffectPolicy"] = None) -> float:
     """The multiplicative shrinkage `adjust_effect` applies under `policy`.
 
@@ -419,8 +440,15 @@ def adjust_effect(
 
     # 4. Floor. Neither the shrinkage nor the draw may erase a real effect: the
     #    result keeps at least `min_retained` of the input magnitude.
+    #
+    #    v1.3.0.8 (P1-7): the floor is scaled by the tier weight. It used to be the same for every
+    #    entry, so a row nobody has checked could be floored up to exactly the retained fraction of
+    #    a source-verified one, and on the worst tiers the FLOOR -- not the evidence -- set the
+    #    size. The tier cap above cannot bind while the installed shrinkage (0.45) is at or below
+    #    every tier weight (0.45-1.00); the floor is where the tier can still make a difference.
     if pol.mode == "replication_adjusted" and pol.min_retained > 0:
-        floor = abs(float(effect_d)) * float(pol.min_retained)
+        _floor_weight = confidence_weight(kind, key) if key else 1.0
+        floor = abs(float(effect_d)) * float(pol.min_retained) * float(_floor_weight)
         if abs(d) < floor:
             d = floor if effect_d > 0 else -floor
     return d

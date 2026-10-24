@@ -226,6 +226,16 @@ GENERIC_LABEL_TOKENS = frozenset({
 #: A distinctive label token occurs in at most this many paradigms of the table.
 MAX_DISTINCTIVE_DF = 3
 
+#: v1.3.0.8 (P1-7): how many of the shared content words must come from the CONDITION LABEL.
+#: One was not enough. "Green banner" vs "Blue banner" in an "online marketing A/B test" shared
+#: 'green' from the label and 'market' from the study context, cleared the score threshold at 2.37
+#: and took a green-CONSUMERISM meta-analysis (published d = 0.30, applied 0.135, observed -0.27)
+#: for a banner-colour manipulation -- and only one arm matched, so the asymmetry invented the
+#: contrast as well as its size. A paradigm is named by a PHRASE in the design ("descriptive norm",
+#: "mortality salience", "cognitive dissonance"), so the label itself has to carry two of the
+#: paradigm's words before this layer overrides the caller's own rules.
+MIN_CONDITION_TOKENS = 2
+
 
 def _has_qualifier(condition: str) -> bool:
     """Whether a whole word of the label is a plain / reference qualifier (see QUALIFIER_WORDS)."""
@@ -240,7 +250,9 @@ def _is_confident(idx: "_EffectIndex", shared: Tuple[str, ...], score: float,
         return False
     if REQUIRE_CONDITION_TOKEN and condition_tokens is not None:
         from_label = set(shared) & condition_tokens
-        if not from_label:
+        if len(from_label) < MIN_CONDITION_TOKENS:
+            # v1.3.0.8 (P1-7): the paradigm must be named in the design, not half in the design and
+            # half in the study context or the DV name.
             return False
         # v1.3.0.6: the label must share a DISTINCTIVE token with the paradigm -- rare in the table and
         # not a generic or qualifier word. "brand" (5 paradigms) or "default" next to "brand" is not

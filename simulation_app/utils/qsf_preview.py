@@ -34,7 +34,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.3.0.8"  # v1.3.0.4: pass Qualtrics numeric validation through to the engine
+__version__ = "1.3.0.9"  # v1.3.0.4: pass Qualtrics numeric validation through to the engine
 
 
 def _finite_float(value: Any, default: Optional[float] = None) -> Optional[float]:
@@ -232,6 +232,16 @@ class QSFPreviewResult:
     # v1.3.0.7: block names recognised as survey SECTIONS (consent, demographics,
     # feedback, ...) - never conditions, whatever the app offers as candidates.
     section_blocks: List[str] = field(default_factory=list)
+    # v1.3.0.9 (P1-6): crossed factors read from the FLOW, one entry per between-subjects
+    # randomizer, each {"name", "levels"}. Two sibling 2-arm randomizers are a 2 x 2 design; the
+    # parser used to flatten their arms into four peer conditions and the app, which could only
+    # split condition LABELS on "x"/"_", then reported one factor with four levels. Empty when the
+    # flow has fewer than two between-subjects randomizers.
+    detected_factors: List[Dict[str, Any]] = field(default_factory=list)
+    # v1.3.0.9 (P1-6): the crossed cells those factors imply ("Anxiety High x Latino", ...), offered
+    # to the user for confirmation. detected_conditions is left as the flat arm list, so nothing
+    # downstream changes until the user adopts this reading.
+    suggested_crossed_conditions: List[str] = field(default_factory=list)
 
 
 # v1.2.6.9: Tight pattern for attention-check INSTRUCTION items ("Please select
@@ -703,6 +713,8 @@ class QSFPreviewParser:
         self.errors = []
         self.warnings = []
         self._condition_evidence = ''
+        self._detected_factors = []            # v1.3.0.9 (P1-6)
+        self._suggested_crossed_conditions = []
 
         self._log(LogLevel.INFO, "PARSE_START", f"Beginning QSF file parsing (parser v{__version__})")
 
@@ -858,6 +870,9 @@ class QSFPreviewParser:
             condition_evidence=getattr(self, '_condition_evidence', '') or '',
             section_blocks=[b.block_name for b in blocks
                             if self._is_section_block_name(b.block_name)],
+            # v1.3.0.9 (P1-6): crossed factors read from the flow, and the cells they imply
+            detected_factors=list(getattr(self, '_detected_factors', []) or []),
+            suggested_crossed_conditions=list(getattr(self, '_suggested_crossed_conditions', []) or []),
         )
 
     def _parse_blocks(self, element: Dict, blocks_map: Dict):
@@ -1399,6 +1414,51 @@ class QSFPreviewParser:
             return len(choices)
 
         return None
+
+    #: v1.3.0.9 (P1-6): a binary question whose wording or whose option pair makes it an
+    #: administrative or demographic item rather than an outcome. Matched as whole words on the
+    #: question's own export tag, text and block name; the corpus holds 3,094 binary single-choice
+    #: questions, most of them consent, screening, demographics and attention checks.
+    _BINARY_NON_DV_RE = re.compile(
+        r"(?<!\w)(consent|agree to participate|informed consent|gender|sex\b|male|female|"
+        r"age\b|ethnic|race\b|hispanic|latino origin|citizen|citizenship|nationality|country|"
+        r"state of residence|zip|postal|marital|married|employ|student status|enrolled|"
+        r"income|education|degree|religio|language|native speaker|"
+        r"attention check|attention_check|screener|screening|eligib|captcha|bot\b|"
+        r"have you (?:read|understood)|do you (?:consent|agree)|debrief|"
+        r"would you like to (?:enter|receive|be entered)|prolific|mturk|"
+        r"device|mobile phone|desktop|browser|colou?r ?blind|glasses|"
+        r"preview|test question|duplicate)",
+        re.IGNORECASE)
+
+    #: Option pairs that make a question a demographic or administrative item whatever it asks.
+    _BINARY_NON_DV_CHOICE_PAIRS = frozenset({
+        frozenset({"male", "female"}),
+        frozenset({"man", "woman"}),
+        frozenset({"i consent", "i do not consent"}),
+        frozenset({"i agree", "i do not agree"}),
+        frozenset({"i agree", "i disagree"}),
+        frozenset({"true", "false"}),
+    })
+
+    def _is_admin_or_demographic_question(self, q_info: "QuestionInfo") -> bool:
+        """Whether a two-option question is an administrative / demographic item, not an outcome.
+
+        v1.3.0.9 (P1-6). Binary single-choice questions were dropped wholesale, which lost the real
+        outcomes of 39 surveys; emitting all of them would bury the DV list under consent,
+        screening and demographics instead. The question's own wording decides.
+        """
+        haystack = " ".join([
+            str(getattr(q_info, "export_tag", "") or ""),
+            str(getattr(q_info, "question_text", "") or ""),
+            str(getattr(q_info, "block_name", "") or ""),
+        ]).replace("_", " ")
+        if self._BINARY_NON_DV_RE.search(haystack):
+            return True
+        if bool(getattr(q_info, "is_comprehension_check", False)):
+            return True
+        pair = frozenset(str(c).strip().lower().rstrip(".") for c in (q_info.choices or []))
+        return pair in self._BINARY_NON_DV_CHOICE_PAIRS
 
     def _looks_like_scale_choices(self, choices: List[str]) -> bool:
         """
@@ -2054,6 +2114,49 @@ class QSFPreviewParser:
     _NUMERIC_CONTENT_TYPES = frozenset({'validnumber', 'validdecimal', 'validinteger', 'validcurrency', 'validpercent'})
     _ORDER_FIELD_RE = re.compile(r"order|sequence|counter ?balanc|position|presentation|rotation", re.IGNORECASE)
 
+    #: v1.3.0.9 (P1-6): block names that cannot hold an OUTCOME. DV detection used to skip every
+    #: block in EXCLUDED_BLOCK_NAMES -- a 644-name list built to keep survey sections out of
+    #: CONDITION detection, which also contains content names such as "First Scenario",
+    #: "Introduction" and "Pair". A stimulus or scenario block is exactly where the outcome lives,
+    #: so the DV pass needs its own, much shorter filter: only genuinely non-outcome sections.
+    _NON_OUTCOME_BLOCK_RE = re.compile(
+        r"(?<!\w)(trash|unused|old[\s_-]|deprecated|archive|backup|copy of|"
+        r"consent|assent|eligib|screener|screening|"
+        r"demograph|background info|socio[\s_-]?demo|"
+        r"debrief|thank ?you|closing|end of survey|completion code|payment info|"
+        r"attention[\s_-]?check|attn[\s_-]?check|manipulation[\s_-]?check|comprehension[\s_-]?check|"
+        r"instructions?|instruction[\s_-]?page|captcha|timer|timing|"
+        r"feedback on (?:the )?survey|survey feedback)",
+        re.IGNORECASE)
+
+    def _is_non_outcome_block_name(self, block_name: str) -> bool:
+        """Whether a block cannot hold a dependent variable (v1.3.0.9, P1-6)."""
+        name = str(block_name or "").strip()
+        if not name:
+            return False          # an unnamed block is not evidence of anything
+        return bool(self._NON_OUTCOME_BLOCK_RE.search(name))
+
+    #: v1.3.0.9 (P1-6): block names that name experimental CONTENT. These are on the 644-name
+    #: condition-exclusion list (correctly: "First Scenario" is not an arm label) but they are
+    #: exactly where a study's outcome sits, and DV detection skipped them. 39 of the 48 surveys
+    #: that yielded no outcome at all lost it this way, most often a binary choice in a block
+    #: called "First Scenario", "Message 2 Emoji" or "Pair".
+    _DV_CONTENT_BLOCK_RE = re.compile(
+        r"(?<!\w)(scenario|vignette|stimul|message|game|decision|dilemma|allocat|offer|"
+        r"round \d|trial|pair\b|partner|choice task|dv\b|outcome|measure)",
+        re.IGNORECASE)
+
+    def _is_dv_content_block_name(self, block_name: str) -> bool:
+        """Whether an excluded block name nevertheless names experimental CONTENT.
+
+        Only overrides the condition-exclusion list, never the non-outcome filter: a block called
+        "Attention Check Scenario" or "Demographics (post-game)" stays out.
+        """
+        name = str(block_name or "").strip()
+        if not name or self._is_non_outcome_block_name(name):
+            return False
+        return bool(self._DV_CONTENT_BLOCK_RE.search(name))
+
     def _is_section_block_name(self, block_name: str) -> bool:
         """True when a block name is a survey SECTION rather than an experimental arm.
 
@@ -2156,6 +2259,64 @@ class QSFPreviewParser:
 
         visit(self._extract_flow_payload(flow_data), 0)
         return found
+
+    #: v1.3.0.9 (P1-6): a crossed reading is only offered when the product of the arm counts is a
+    #: plausible number of cells. Four 3-arm randomizers would be 81 cells, which is never what a
+    #: student survey means; such a flow is left as the flat arm list.
+    _MAX_CROSSED_CELLS = 24
+
+    def _crossed_design_from_randomizers(
+        self, randomizers: List[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, Any]], List[str]]:
+        """Read a factorial design off the flow: one factor per between-subjects randomizer.
+
+        Two sibling randomizers of two arms each ARE a 2 x 2 design, and the flow says so
+        structurally. `_collect_randomizer_arms` already knows which arms belong to which
+        randomizer; the condition list throws that grouping away, and the app could only recover a
+        crossing by splitting condition LABELS on "x" / "_" / a numeric suffix -- so a 2 x 2 whose
+        blocks are called "Anxiety High", "Anxiety Low", "Latino Cue", "European Cue" was reported
+        as one factor with four levels. Measured on the 303-survey example corpus: 40 surveys have
+        two or more between-subjects randomizers and 18 of them were reported as single-factor.
+
+        Returns ``([{name, levels}, ...], [crossed cell labels])``, both empty when the flow does
+        not describe a crossed design.
+        """
+        groups = [r for r in randomizers if len(r.get('arms') or []) >= 2]
+        if len(groups) < 2:
+            return [], []
+        cells = 1
+        for g in groups:
+            cells *= len(g['arms'])
+        if cells > self._MAX_CROSSED_CELLS:
+            return [], []
+        # the same arm label in two randomizers means the flow is not describing a clean crossing
+        seen: set = set()
+        for g in groups:
+            lower = {str(a).lower() for a in g['arms']}
+            if lower & seen:
+                return [], []
+            seen |= lower
+        factors = [{"name": self._factor_name_for_arms(g['arms'], i), "levels": list(g['arms'])}
+                   for i, g in enumerate(groups)]
+        import itertools as _it
+        crossed = [" x ".join(combo) for combo in _it.product(*[f["levels"] for f in factors])]
+        self._log(LogLevel.INFO, "CONDITIONS",
+                  f"Flow describes a crossed design: {' x '.join(str(len(f['levels'])) for f in factors)}",
+                  {'factors': factors, 'cells': crossed[:24]})
+        return factors, crossed
+
+    @staticmethod
+    def _factor_name_for_arms(arms: List[str], index: int) -> str:
+        """A factor name from what the arm labels share ("Anxiety High"/"Anxiety Low" -> "Anxiety")."""
+        token_lists = [[t for t in re.split(r"[^A-Za-z0-9]+", str(a)) if t] for a in arms]
+        if token_lists and all(token_lists):
+            common = [t for t in token_lists[0]
+                      if all(any(t.lower() == u.lower() for u in other) for other in token_lists[1:])]
+            # a word every arm shares names the factor; a word only some share names a level
+            name = " ".join(common).strip()
+            if name and len(name) <= 40 and name.lower() not in ("block", "condition", "group"):
+                return name
+        return f"Factor {index + 1}"
 
     def _collect_branch_arms(
         self,
@@ -2400,6 +2561,7 @@ class QSFPreviewParser:
         if _rz:
             conditions = [a for r in _rz for a in r['arms']]
             self._condition_evidence = 'randomizer'
+            self._detected_factors, self._suggested_crossed_conditions = self._crossed_design_from_randomizers(_rz)
             self._log(
                 LogLevel.INFO, "CONDITIONS",
                 f"Using the arms of {len(_rz)} between-subjects randomizer(s) as conditions",
@@ -3116,8 +3278,13 @@ class QSFPreviewParser:
             # "Main", ...) which hold real DVs even though they're excluded from
             # CONDITION detection. (.strip() also normalizes trailing NBSP/whitespace.)
             _block_name = getattr(q_info, 'block_name', '') or ''
+            # v1.3.0.9 (P1-6): filter on names that cannot hold an OUTCOME, not on the condition
+            # exclusion list. "First Scenario" and "Message 2 Emoji" are stimulus blocks and the
+            # study's own DV sits in them; both were in EXCLUDED_BLOCK_NAMES, so their outcomes
+            # were dropped and the survey reported no DV at all.
             if (_block_name and self._is_excluded_block_name(_block_name)
-                    and _block_name.strip().lower() not in _dv_content_blocks):
+                    and _block_name.strip().lower() not in _dv_content_blocks
+                    and not self._is_dv_content_block_name(_block_name)):
                 continue
 
             # v1.0.0: Skip placeholder/template questions with generic text
@@ -3375,8 +3542,32 @@ class QSFPreviewParser:
                 continue
 
             # 5. Single choice Likert-type questions (MC with scale responses)
-            if q_info.question_type in ['Single Choice (Radio)', 'Single Choice', 'MC', 'Multiple Choice']:
+            # v1.3.0.9 (P1-6): 'Single Choice (Horizontal)' (Qualtrics selector SAHR) and 'Dropdown'
+            # (DL) were missing from this list, so every horizontal-radio and dropdown scale
+            # question was dropped from DV detection -- 484 scale-looking questions across 61 of the
+            # 303 example surveys, and 7 dropdowns across 6.
+            if q_info.question_type in ['Single Choice (Radio)', 'Single Choice', 'MC',
+                                        'Multiple Choice', 'Single Choice (Horizontal)', 'Dropdown']:
                 choices = q_info.choices if q_info.choices else []
+                # v1.3.0.9 (P1-6): a two-option outcome ("Yes"/"No", "Make the sale"/"Refuse to
+                # sell") carries none of the Likert anchor words `_looks_like_scale_choices` looks
+                # for and no leading digit, so it failed that test and the `continue` below dropped
+                # the question entirely. 3,094 binary single-choice questions in the corpus were
+                # lost that way, and they explain 39 of the 48 surveys that yielded no outcome at
+                # all. A binary question is a binary DV unless it is plainly an administrative or
+                # demographic item.
+                if len(choices) == 2 and not self._looks_like_scale_choices(choices):
+                    if not self._is_admin_or_demographic_question(q_info):
+                        single_item_dvs.append({
+                            'question_id': q_id,
+                            'export_tag': q_info.export_tag if q_info.export_tag else q_id,
+                            'question_text': q_info.question_text,
+                            'scale_points': 2,
+                            'choices': choices,
+                            'scale_anchors': q_info.scale_anchors or {},
+                            'is_binary': True,
+                        })
+                    continue
                 if 2 <= len(choices) <= 11:  # Typical Likert range
                     # Check if this looks like a scale question
                     if self._looks_like_scale_choices(choices):
@@ -3561,6 +3752,11 @@ class QSFPreviewParser:
             # v1.2.0: Get scale_anchors and extract range
             anchors = dv.get('scale_anchors', {})
             scale_min, scale_max = self._extract_scale_range(anchors, scale_pts)
+            # v1.3.0.9 (P1-6): a binary outcome is coded 0/1, not 1/2, so it analyses as a
+            # proportion and the engine's own binary route recognises it.
+            _is_binary = bool(dv.get('is_binary'))
+            if _is_binary:
+                scale_min, scale_max, scale_pts = 0, 1, 2
 
             scales.append({
                 'name': scale_name,
@@ -3569,14 +3765,17 @@ class QSFPreviewParser:
                 'question_text': dv['question_text'][:100] if dv['question_text'] else '',
                 'items': 1,
                 'scale_points': scale_pts,
-                'type': 'single_item',
+                'type': 'binary' if _is_binary else 'single_item',
                 'detected_from_qsf': True,
                 'item_names': [dv['question_text'][:80]] if dv['question_text'] else [],
                 'scale_anchors': anchors,
                 'scale_min': scale_min,
                 'scale_max': scale_max,
+                'choices': list(dv.get('choices') or []) if _is_binary else [],
             })
-            self._log(LogLevel.INFO, "SCALE", f"Detected single-item DV: {variable_name} (range {scale_min}-{scale_max})")
+            self._log(LogLevel.INFO, "SCALE",
+                      f"Detected {'binary' if _is_binary else 'single-item'} DV: {variable_name} "
+                      f"(range {scale_min}-{scale_max})")
 
         return scales
 

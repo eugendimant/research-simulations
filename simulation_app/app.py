@@ -55,8 +55,8 @@ from html import escape as html_escape  # v1.2.9.1: escape user/QSF text before 
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.0.8"
-BUILD_ID = "20261024-v13008-declare-first-provenance"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.0.9"
+BUILD_ID = "20261024-v13009-parser-structure-and-routing"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -230,7 +230,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.3.0.8"  # v1.3.0.7: every open-ended template bank is reachable. Before: v1.3.0.4: reliable instructor email, exact instructor analysis, detected DVs on the Design page, effects that hold next to other scales, hardened HTML/scripts/collection
+APP_VERSION = "1.3.0.9"  # v1.3.0.7: every open-ended template bank is reachable. Before: v1.3.0.4: reliable instructor email, exact instructor analysis, detected DVs on the Design page, effects that hold next to other scales, hardened HTML/scripts/collection
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -5211,6 +5211,24 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
 
     factors = _infer_factors_from_conditions(conditions)
 
+    # v1.3.0.9 (P1-6): the survey FLOW is structural evidence and beats splitting condition
+    # LABELS on "x" / "_" / a numeric suffix. Two sibling two-arm randomizers ARE a 2 x 2, and
+    # their arm labels need share no separator at all -- "Anxiety High", "Anxiety Low",
+    # "Latino Cue", "European Cue" came through as ONE factor with four levels, so the
+    # simulated design had no interaction to estimate. When the flow describes a crossing, the
+    # cells it implies (one per combination) are the real conditions; the Design page says which
+    # reading was used and can switch back to the flat arm list.
+    design_reading = "labels"
+    parser_factors = [
+        {"name": str(f.get("name") or f"Factor {i + 1}"), "levels": [str(x) for x in (f.get("levels") or [])]}
+        for i, f in enumerate(getattr(preview, "detected_factors", None) or [])
+    ]
+    crossed_cells = [str(c) for c in (getattr(preview, "suggested_crossed_conditions", None) or [])]
+    if len(parser_factors) > len(factors) and crossed_cells:
+        factors = [dict(f) for f in parser_factors]
+        conditions = crossed_cells[:]
+        design_reading = "crossed_from_flow"
+
     scales: List[Dict[str, Any]] = []
     seen_scale_names: set = set()  # Track to prevent duplicates
 
@@ -5415,8 +5433,11 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
                     _s["name"] = _new
 
     # Only add the generic default if NO scales were detected AND none recovered.
+    # v1.3.0.9 (P1-6): this placeholder is a 5-item 7-point Likert that exists nowhere in the user's
+    # survey. Simulating it silently produced "a table with no DV", which is worse than saying
+    # nothing was found, so the bridge marks it and the Design page says so prominently.
     if not scales:
-        scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "scale_min": 1, "scale_max": 7, "type": "likert", "reverse_items": [], "detected_from_qsf": False, "_validated": True}]
+        scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "scale_min": 1, "scale_max": 7, "type": "likert", "reverse_items": [], "detected_from_qsf": False, "_validated": True, "_is_placeholder": True}]
 
     open_ended = getattr(preview, "open_ended_questions", None) or []
 
@@ -5468,6 +5489,16 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
     return {
         "conditions": conditions,
         "factors": factors,
+        # v1.3.0.9 (P1-6): what the flow said, and which reading of it the bridge used, so the
+        # Design page can show the crossed reading for confirmation instead of switching silently.
+        "parser_factors": parser_factors,
+        "suggested_crossed_conditions": crossed_cells,
+        "design_reading": design_reading,
+        "label_factors": _infer_factors_from_conditions([str(c) for c in (preview.detected_conditions or [])] or ["Condition A"]),
+        "arm_conditions": [str(c) for c in (preview.detected_conditions or [])],
+        # True when nothing in the survey was recognised as an outcome and the placeholder below
+        # is the only "DV" -- the Design page must say so rather than show a table with no DV.
+        "no_outcome_detected": bool(scales and scales[0].get("_is_placeholder")),
         "scales": scales,
         "open_ended_questions": open_ended,
         "open_ended_details": open_ended_details,
@@ -11106,6 +11137,36 @@ if active_page == 2:
             selected = []
             st.session_state["selected_conditions"] = []
 
+        # v1.3.0.9 (P1-6): the flow can say structurally that the arms are CROSSED -- two sibling
+        # two-arm randomizers are a 2 x 2, whatever the arm labels look like. The condition list
+        # throws that grouping away, so a 2 x 2 arrived as four one-factor levels and the simulated
+        # design had no interaction to estimate. Offer the crossed cells; never switch silently.
+        _crossed_cells = [str(c) for c in (getattr(preview, "suggested_crossed_conditions", None) or [])]
+        _flow_factors = list(getattr(preview, "detected_factors", None) or [])
+        if _crossed_cells and len(_flow_factors) > 1 and not all(c in (selected or []) for c in _crossed_cells):
+            _shape = " × ".join(str(len(f.get("levels") or [])) for f in _flow_factors)
+            _fnames = ", ".join(str(f.get("name") or "Factor") for f in _flow_factors)
+            st.info(
+                f"The survey flow describes a **{_shape} factorial design** ({_fnames}): "
+                f"{len(_flow_factors)} separate randomizers, so each participant gets one arm of each. "
+                f"The {len(_crossed_cells)} conditions are the combinations, not the "
+                f"{sum(len(f.get('levels') or []) for f in _flow_factors)} arms listed above."
+            )
+            if st.button(f"Use the {_shape} reading ({len(_crossed_cells)} cells)", key="use_crossed_design_btn"):
+                _cc = st.session_state.get("custom_conditions", [])
+                for _cell in _crossed_cells:
+                    if _cell not in _cc:
+                        _cc.append(_cell)
+                st.session_state["custom_conditions"] = _cc
+                st.session_state["selected_conditions"] = []
+                st.session_state["condition_multiselect"] = []
+                st.session_state["_crossed_factors_from_flow"] = [
+                    {"name": str(f.get("name") or f"Factor {i + 1}"),
+                     "levels": [str(x) for x in (f.get("levels") or [])]}
+                    for i, f in enumerate(_flow_factors)
+                ]
+                st.rerun()
+
         # Additional ways to add conditions
         with st.expander("Add more conditions", expanded=not bool(all_possible_conditions) or not bool(selected)):
 
@@ -11247,6 +11308,13 @@ if active_page == 2:
 
         # Auto-detect factors from condition names
         auto_detected_factors = _infer_factors_from_conditions(all_conditions)
+        # v1.3.0.9 (P1-6): structural evidence beats label-splitting. When the user took the
+        # crossed reading above, the factors are the randomizers themselves -- the cell labels
+        # ("Anxiety High x Latino Cue") happen to split cleanly, but arm labels that share no
+        # separator do not, and that is exactly how a 2 x 2 came through as one four-level factor.
+        _flow_crossed = st.session_state.get("_crossed_factors_from_flow") or []
+        if _flow_crossed and len(_flow_crossed) > len(auto_detected_factors):
+            auto_detected_factors = [dict(f) for f in _flow_crossed]
         auto_num_factors = len(auto_detected_factors)
 
         # The select box key disappears while another page is shown, so the choice lives in a second key and
@@ -11730,6 +11798,27 @@ if active_page == 2:
         # ── Dependent Variables ──────────────────────────────────────────
         st.markdown("#### Dependent Variables")
 
+        # v1.3.0.9 (P1-6): when the parser recognised NOTHING as an outcome, the page used to seed
+        # a generic 5-item 7-point "Main_DV" that exists nowhere in the survey and announce
+        # "1 DV(s) detected" -- a table with no DV, which is worse than saying so. Across the
+        # 303-survey example corpus 22 surveys still end here (48 before the parser fixes).
+        if preview is not None and not _scales_from_design and not _qsf_design_scales(preview):
+            st.error(
+                "**No outcome variable was found in this survey.** Nothing in it was recognised as "
+                "a dependent variable, so the DV below is a generic placeholder, not your measure. "
+                "Add your outcomes by hand before simulating, or the numbers will describe a "
+                "variable your study does not contain."
+            )
+            _rejected = [
+                str(getattr(q, "question_text", "") or getattr(q, "question_id", "") or "").strip()
+                for q in (getattr(preview, "questions", None) or [])
+            ]
+            _rejected = [q for q in _rejected if q][:12]
+            if _rejected:
+                with st.expander(f"Questions the parser saw but did not treat as outcomes ({len(_rejected)} shown)"):
+                    for _q in _rejected:
+                        st.caption(f"• {_q[:160]}")
+
         # Initialize DV state - use a version counter to handle deletions
         dv_version = st.session_state.get("_dv_version", 0)
 
@@ -12080,7 +12169,7 @@ if active_page == 2:
                         "dv_description": scale.get("dv_description", ""),
                         # v1.3.0.8 (P0-1): declared outcome polarity ("" = undeclared)
                         "higher_means": scale.get("higher_means", ""),
-                        # v1.3.0.8 (P1-5): declared base rate for a binary outcome ("" = undeclared)
+                        # v1.3.0.9 (P1-5): declared base rate for a binary outcome ("" = undeclared)
                         "base_rate": scale.get("base_rate", ""),
                     })
         else:
@@ -13411,8 +13500,10 @@ if active_page == 2:
                     if st.session_state.get("advanced_mode", False):
                         with st.expander("Inter-scale correlation matrix (advanced)", expanded=False):
                             st.caption(
-                                "Auto-inferred from empirical meta-analytic data. "
-                                "Edit values to customize (matrix will be automatically validated)."
+                                "Starting values come from a hand-entered table of 373 construct-pair "
+                                "correlations (utils/correlation_matrix.py), not from a meta-analysis "
+                                "of your constructs. Treat them as a plausible starting point and edit "
+                                "them (the matrix is validated after every edit)."
                             )
                             # Show construct type badges inline
                             _badge_parts = []
@@ -14627,7 +14718,7 @@ if active_page == 3:
         _active_method_key = st.session_state.get("generation_method", "")
         _active_card_info = {
             "template":     {"icon": "&#9881;",  "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)", "title": "Template Engine",              "subtitle": "225+ research domains, 70+ personas, instant generation"},
-            "experimental": {"icon": "&#9889;",  "icon_bg": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)", "title": "Adaptive Behavioral Engine",    "subtitle": "60+ participant archetypes, 30+ research paradigms, literature-calibrated effects"},
+            "experimental": {"icon": "&#9889;",  "icon_bg": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)", "title": "Adaptive Behavioral Engine",    "subtitle": "60+ participant archetypes, 30+ research paradigms, recalled literature magnitudes"},
             "abe_v2":       {"icon": "&#129504;", "icon_bg": "linear-gradient(135deg, #0EA5E9 0%, #06B6D4 100%)", "title": "Adaptive Behavioral Engine 3.0", "subtitle": "225+ domains, census-weighted demographics, stylometric fingerprinting, 5 consistency layers"},
             "free_llm":     {"icon": "&#129302;", "icon_bg": "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)", "title": "Built-in AI",                   "subtitle": "Free LLM providers for AI-generated open-ended text"},
             "own_api":      {"icon": "&#128273;", "icon_bg": "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)", "title": "AI (your API key)",             "subtitle": "Your own API key for reliable AI-generated text"},
