@@ -6,7 +6,7 @@ Generates comprehensive instructor-facing reports for student simulations.
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.0.7"  # v1.3.0.4: report describes the effects actually built in (report-facing version stamp)
+__version__ = "1.3.0.8"  # v1.3.0.4: report describes the effects actually built in (report-facing version stamp)
 
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -896,6 +896,8 @@ _SOURCE_LABELS = {
     "inferred": "Inferred from condition names",
     "none": "None built in",
     "mixed": "Specified and inferred",
+    # v1.3.0.8 (P0-1): the declare-first rule refused to guess a direction for this outcome
+    "not_inferred": "None built in (direction of this outcome not declared)",
 }
 
 
@@ -4591,6 +4593,8 @@ class ComprehensiveInstructorReport(WithinReportMixin):
         lines.append("")
 
         lines.extend(self._effects_assessment_md(df, metadata))
+        # v1.3.0.8 (P0-2): per-outcome provenance, right under the effect tables
+        lines.extend(self._provenance_md(metadata))
 
     def _md_condition_balance(self, ctx: Any) -> None:
         """Section 8: participants per condition."""
@@ -4774,11 +4778,91 @@ class ComprehensiveInstructorReport(WithinReportMixin):
         if "inferred" in sources:
             notes.append("Inferred effects are heuristic differences read from the condition names; they are not "
                          "calibrated to a target d.")
+        if "not_inferred" in sources:
+            notes.append("\"None built in (direction not declared)\": you did not say what higher values of that "
+                         "outcome mean, so no effect was inferred for it from the condition wording and the "
+                         "contrast is a true null. Guessing the direction from the wording alone produced "
+                         "confidently wrong signs, so the tool no longer does it.")
         if None in sources:
             notes.append("\"Not recorded\": the generator records the source and intended d for at most 15 pairs of conditions "
                          "per DV (each condition against the first one when there are more)." if has_applied else
                          "\"Not recorded\": this run's metadata has no record of where each effect came from.")
         return notes
+
+    @staticmethod
+    def _provenance_rows(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """``calibration_provenance['variables']`` (empty for metadata written before v1.3.0.8)."""
+        prov = (metadata or {}).get("calibration_provenance")
+        if not isinstance(prov, dict):
+            return []
+        rows = prov.get("variables")
+        return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+
+    def _provenance_md(self, metadata: Dict[str, Any]) -> List[str]:
+        """Markdown: one row per outcome saying where its effect and its baseline came from.
+
+        v1.3.0.8 (P0-2). The report used to call every non-user effect "inferred", so a DV sized by
+        a recalled meta-analytic row, a DV moved by a valence keyword and a DV moved by nothing but
+        the label hash all read the same, and the registry's verification notice reached no reader.
+        """
+        rows = self._provenance_rows(metadata)
+        if not rows:
+            return []
+
+        def cell(value: Any) -> str:
+            return str("" if value is None else value).replace("|", "/").replace("\n", " ")
+
+        lines = ["### Where each outcome's numbers came from", "",
+                 "| Outcome | Effect from | Baseline from | Evidence tier | Applied d | Higher values mean |",
+                 "|---------|-------------|---------------|---------------|-----------|--------------------|"]
+        for r in rows:
+            lines.append(
+                f"| {cell(r.get('variable'))} | {cell(r.get('effect_source'))} | "
+                f"{cell(r.get('marginal_source'))} | {cell(r.get('evidence_tier')) or 'n/a'} | "
+                f"{'n/a' if r.get('applied_d') is None else r['applied_d']} | "
+                f"{cell(r.get('polarity')) or 'not declared'} |")
+        lines.append("")
+        for r in rows:
+            if r.get("status"):
+                lines.append(f"- **{cell(r.get('variable'))}**: {cell(r.get('status'))}")
+        lines.append("")
+        lines.append("This tool recovers an assumption you stated, or a value recalled from the "
+                     "literature. It does not predict behaviour. Any row whose effect does not come "
+                     "from \"user\" is a default or a recalled estimate, not a finding.")
+        notice = str(((metadata or {}).get("calibration_provenance") or {}).get("registry_notice") or "")
+        if notice:
+            lines.append("")
+            lines.append(notice)
+        lines.append("")
+        return lines
+
+    def _provenance_html(self, metadata: Dict[str, Any]) -> List[str]:
+        """HTML for the same table and the same numbers as ``_provenance_md``, escaped."""
+        rows = self._provenance_rows(metadata)
+        if not rows:
+            return []
+        parts = ["<h3>Where each outcome's numbers came from</h3>",
+                 "<table><tr><th>Outcome</th><th>Effect from</th><th>Baseline from</th>"
+                 "<th>Evidence tier</th><th>Applied d</th><th>Higher values mean</th></tr>"]
+        for r in rows:
+            parts.append(
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(
+                    _esc(str(r.get("variable", ""))), _esc(str(r.get("effect_source", ""))),
+                    _esc(str(r.get("marginal_source", ""))),
+                    _esc(str(r.get("evidence_tier") or "n/a")),
+                    "n/a" if r.get("applied_d") is None else _esc(str(r["applied_d"])),
+                    _esc(str(r.get("polarity") or "not declared"))))
+        parts.append("</table>")
+        parts.append("<ul>" + "".join(
+            f"<li><strong>{_esc(str(r.get('variable','')))}</strong>: {_esc(str(r.get('status','')))}</li>"
+            for r in rows if r.get("status")) + "</ul>")
+        parts.append("<p>This tool recovers an assumption you stated, or a value recalled from the "
+                     "literature. It does not predict behaviour. Any row whose effect does not come "
+                     "from &quot;user&quot; is a default or a recalled estimate, not a finding.</p>")
+        notice = str(((metadata or {}).get("calibration_provenance") or {}).get("registry_notice") or "")
+        if notice:
+            parts.append(f"<p>{_esc(notice)}</p>")
+        return parts
 
     def _effects_assessment_md(self, df: pd.DataFrame, metadata: Dict[str, Any]) -> List[str]:
         """Markdown for section 7: specified vs observed d, then every contrast built into the data.
@@ -8231,6 +8315,7 @@ class ComprehensiveInstructorReport(WithinReportMixin):
             html_parts.append("<a id='effect-verification'></a>")
             html_parts.append("<h2>6. Effect Size Verification</h2>")
             html_parts.extend(self._effects_assessment_html(df, metadata))
+            html_parts.extend(self._provenance_html(metadata))
 
     def _html_exclusions(self, ctx: Any) -> None:
         """Section 7: exclusion flags."""

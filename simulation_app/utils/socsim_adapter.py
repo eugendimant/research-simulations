@@ -9,7 +9,7 @@ v1.0.8.3 — OE narrative fix.
 """
 from __future__ import annotations
 
-__version__ = "1.1.0.7"
+__version__ = "1.3.0.8"
 
 import hashlib
 import json
@@ -111,6 +111,76 @@ _CONDITION_CONTEXT_MAP: Dict[str, Dict[str, Any]] = {
 }
 
 
+#: v1.3.0.8 (P0-3): games whose decision is a single discrete choice rather than an allocation.
+_BINARY_CHOICE_GAMES = frozenset({"pd", "stag_hunt"})
+#: Games whose decision is a bounded report on a small die/lottery scale.
+_SMALL_RANGE_GAMES = frozenset({"die_roll", "risk_holt_laury", "beauty_contest"})
+#: Minimum span of a bounded allocation scale (0-10, 0-100, 1-100 all qualify; a 7-point Likert
+#: does not). Measured against the DV's own declared bounds, never against the study text.
+_MIN_ALLOCATION_SPAN = 9
+
+
+def _dv_own_text(scale: Dict[str, Any]) -> str:
+    """Everything the DV itself says: its names, its question wording and its item labels.
+
+    v1.3.0.8 (P0-3): detection used to search the study title, description and condition names as
+    well, and a context-only hit (0.55) cleared the 0.5 gate -- so one word such as "donation"
+    anywhere in a study made EVERY outcome in it a game DV. A Likert `Brand_Satisfaction` in a
+    study about a "charity donation appeal" was classified as a dictator game and its item-1 mean
+    moved from 5.60 to 2.81. The study context is no longer consulted.
+    """
+    parts = [
+        str(scale.get("variable_name", "") or ""),
+        str(scale.get("name", "") or ""),
+        str(scale.get("question_text", "") or ""),
+        str(scale.get("dv_description", "") or ""),
+        " ".join(str(x) for x in (scale.get("item_names") or [])),
+    ]
+    # underscores are word characters to `re`, so "Dictator_Allocation" would not match
+    # r"\bdictator\b"; split the label into words first.
+    return re.sub(r"[^a-z0-9]+", " ", " ".join(p for p in parts if p).lower()).strip()
+
+
+def _geometry_fits_game(scale: Dict[str, Any], game_name: str) -> Tuple[bool, str]:
+    """Whether this DV's own scale geometry can BE the game's decision (P0-3).
+
+    An economic-game decision is one bounded number per participant: an allocation on a wide
+    bounded scale (0-100, 0-10), a single discrete choice (cooperate / defect), or a report on a
+    small bounded range (a die, a lottery row). A multi-item attitude matrix is none of those, and
+    overwriting its items with a rescaled game action is what probe (a) caught.
+
+    Returns ``(fits, reason)``; ``reason`` is recorded in the metadata either way.
+    """
+    try:
+        items = int(scale.get("num_items") or 1)
+    except (TypeError, ValueError):
+        items = 1
+    if items > 1:
+        return False, f"multi-item scale ({items} items) cannot be a single game decision"
+    if str(scale.get("type", "")).lower() == "matrix":
+        return False, "matrix question is not a game decision"
+    try:
+        lo = float(scale.get("scale_min", 1))
+        hi = float(scale.get("scale_max", scale.get("scale_points", 7)))
+    except (TypeError, ValueError):
+        return False, "scale bounds are not numeric"
+    span = hi - lo
+    if span <= 0:
+        return False, "scale has no range"
+    if game_name in _BINARY_CHOICE_GAMES:
+        ok = span <= 1
+        return ok, ("binary choice scale" if ok else
+                    f"{game_name} is a binary choice but the scale spans {span:g} points")
+    if game_name in _SMALL_RANGE_GAMES:
+        ok = 1 <= span <= _MIN_ALLOCATION_SPAN
+        return ok, ("small bounded report scale" if ok else
+                    f"{game_name} needs a small bounded scale, this one spans {span:g} points")
+    ok = span >= _MIN_ALLOCATION_SPAN
+    return ok, (f"bounded allocation scale {lo:g}-{hi:g}" if ok else
+                f"{game_name} needs a bounded allocation scale (span >= {_MIN_ALLOCATION_SPAN}); "
+                f"this one spans {span:g} points")
+
+
 def detect_game_dvs(
     scales: List[Dict[str, Any]],
     study_title: str = "",
@@ -120,37 +190,53 @@ def detect_game_dvs(
     """
     Detect which scales/DVs correspond to economic games that socsim can simulate.
 
+    v1.3.0.8 (P0-3): a DV qualifies only when ITS OWN name, question wording or item labels name
+    the game AND its own scale geometry can be that game's decision. ``study_title``,
+    ``study_description`` and ``conditions`` are accepted for call-site compatibility and are no
+    longer used for detection -- a study-wide keyword hit used to make every outcome a game DV.
+
     Returns a list of dicts with:
       - scale: the original scale dict
       - game_name: socsim game name (e.g., "dictator", "trust")
       - confidence: float 0-1 indicating detection confidence
+      - evidence: the pattern that matched, where it matched, and the geometry verdict
     """
     detected: List[Dict[str, Any]] = []
-    _context_text = f"{study_title} {study_description} {' '.join(conditions or [])}".lower()
 
     for scale in scales:
-        _var = str(scale.get("variable_name", scale.get("name", ""))).lower()
-        _name = str(scale.get("name", "")).lower()
-        _search_text = f"{_var} {_name} {_context_text}"
+        _search_text = _dv_own_text(scale)
+        if not _search_text:
+            continue
 
         best_game = None
-        best_conf = 0.0
+        best_pattern = ""
 
         for game_name, patterns in _GAME_KEYWORD_MAP.items():
             for pattern in patterns:
                 if re.search(pattern, _search_text, re.IGNORECASE):
-                    # Higher confidence if match is in the variable name itself
-                    conf = 0.85 if re.search(pattern, f"{_var} {_name}", re.IGNORECASE) else 0.55
-                    if conf > best_conf:
-                        best_conf = conf
-                        best_game = game_name
+                    best_game = game_name
+                    best_pattern = pattern
+                    break
+            if best_game:
+                break
 
-        if best_game and best_conf >= 0.5:
-            detected.append({
-                "scale": scale,
-                "game_name": best_game,
-                "confidence": best_conf,
-            })
+        if not best_game:
+            continue
+        fits, why = _geometry_fits_game(scale, best_game)
+        if not fits:
+            logger.info("SocSim: %r names %s but its geometry does not fit (%s)",
+                        scale.get("variable_name") or scale.get("name"), best_game, why)
+            continue
+        detected.append({
+            "scale": scale,
+            "game_name": best_game,
+            "confidence": 0.85,
+            "evidence": {
+                "matched_pattern": best_pattern,
+                "matched_in": "dv_own_text",
+                "geometry": why,
+            },
+        })
 
     return detected
 

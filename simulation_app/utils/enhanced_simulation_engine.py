@@ -675,6 +675,72 @@ def _clean_column_name(name: str) -> str:
     return clean if clean else "Variable"
 
 
+#: v1.3.0.8: tokens an analyst can use to declare that HIGHER values mean MORE of the construct
+#: the manipulation is expected to raise ("positive polarity"), or LESS of it ("negative polarity").
+_POLARITY_POSITIVE_WORDS = frozenset({
+    "+", "+1", "1", "pos", "positive", "higher", "higher_is_more", "higher_is_positive",
+    "higher_is_better", "higher_means_more", "more", "up", "same", "forward", "normal",
+})
+_POLARITY_NEGATIVE_WORDS = frozenset({
+    "-", "-1", "neg", "negative", "lower", "higher_is_less", "higher_is_negative",
+    "higher_is_worse", "higher_means_less", "less", "down", "reverse", "reversed",
+    "reverse_keyed", "opposite", "inverted",
+})
+
+
+def _dv_key(name: Any) -> str:
+    """One canonical key per outcome, so a declaration typed as "Immigration attitude" reaches the
+    column ``Immigration_attitude`` and the variable name ``immigration_attitude`` alike."""
+    return re.sub(r"[^a-z0-9]+", "_", str(name or "").lower()).strip("_")
+
+
+def _normalize_declared_polarity(value: Any) -> Tuple[Optional[int], str]:
+    """Read an analyst's ``higher_means`` declaration.
+
+    Returns ``(sign, how)``: ``sign`` is +1, -1 or None (not declared / not readable), and ``how``
+    is "sign" when the analyst gave an unambiguous direction, "label" when the direction was read
+    from a free-text description of what higher values mean (recorded as such in the provenance
+    table, because reading a label is itself a guess), or "" when nothing was declared.
+
+    A free-text label is deliberately matched against the SAME construct-valence vocabulary the
+    literature routes use (``EnhancedSimulationEngine._NEGATIVE_DV_RE``) plus the opposition words
+    that make a reverse-keyed attitude item ("opposition to immigration", "against the policy").
+    """
+    if value is None:
+        return None, ""
+    if isinstance(value, bool):
+        return (1 if value else -1), "sign"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return None, ""
+        if v > 0:
+            return 1, "sign"
+        if v < 0:
+            return -1, "sign"
+        return None, ""
+    text = str(value).strip()
+    if not text:
+        return None, ""
+    token = re.sub(r"[^a-z0-9+_-]+", "_", text.lower()).strip("_") or text.lower()
+    if token in _POLARITY_POSITIVE_WORDS:
+        return 1, "sign"
+    if token in _POLARITY_NEGATIVE_WORDS:
+        return -1, "sign"
+    # A sentence: read the construct it names. "more opposition to immigration" is reverse-keyed.
+    low = " " + text.lower() + " "
+    if re.search(r"\b(oppos|against|reject|disapprov|unfavorab|unfavourab|dislik|distrust|"
+                 r"unwilling|refus|resist|avoid|intoleran|anti)", low):
+        return -1, "label"
+    if EnhancedSimulationEngine._NEGATIVE_DV_RE.search(low):
+        return -1, "label"
+    if re.search(r"\b(more|higher|greater|stronger|increas|support|favor|favour|approv|agree|"
+                 r"willing|trust|satisf|positive|better|likelihood|intention)", low):
+        return 1, "label"
+    return None, ""
+
+
 def _safe_trait_value(value: Any, default: float = 0.5) -> float:
     """
     Safely extract a float value from a trait.
@@ -770,6 +836,10 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
                     # v1.2.7.3: preserve this DV's own question text so numeric-realism
                     # classification uses DV-specific cues, not study-level text.
                     "question_text": str(scale.get("question_text", "")),
+                    # v1.3.0.8: declared outcome polarity (P0-1) and binary base rate (P1-5);
+                    # "" means undeclared, which is NOT the same as a declared midpoint.
+                    "higher_means": scale.get("higher_means", ""),
+                    "base_rate": scale.get("base_rate", ""),
                 })
                 continue
 
@@ -822,6 +892,9 @@ def _normalize_scales(scales: Optional[List[Any]]) -> List[Dict[str, Any]]:
                     "scale_anchors": scale.get("scale_anchors", {}),
                     # v1.2.7.3: preserve this DV's own question text (see above).
                     "question_text": str(scale.get("question_text", "")),
+                    # v1.3.0.8: declared outcome polarity (P0-1) / binary base rate (P1-5)
+                    "higher_means": scale.get("higher_means", ""),
+                    "base_rate": scale.get("base_rate", ""),
                 }
             )
     return normalized
@@ -3778,11 +3851,40 @@ class EnhancedSimulationEngine:
         # bit-identical; a dict such as {"type": "within"} / {"type": "mixed", "within_factors": [...]}
         # is described in utils/within_design.py.
         design: Optional[Dict[str, Any]] = None,
+        # v1.3.0.8 (P0-1, declare-first): what HIGHER values of each outcome mean. Either a sign
+        # (+1 / "positive" / "higher_is_more_of_the_construct") or a short label ("more opposition
+        # to immigration"). Without it the tool cannot know whether a "negative tone" arm should
+        # raise or lower an outcome, so no wording-derived effect is inferred for that outcome at
+        # all (see _polarity_for). May also be given per scale as scales[i]["higher_means"].
+        dv_polarity: Optional[Dict[str, Any]] = None,
+        # v1.3.0.8 (P0-1): opt in to the pre-v1.3.0.8 behaviour, where condition WORDING alone
+        # ("negative", "high", "loss", ...) moves outcomes of undeclared polarity. The direction is
+        # a heuristic guess and has not been validated; it is labelled as such everywhere it is
+        # reported. Declared polarity is always used when present, with or without this flag.
+        infer_effects_without_polarity: bool = False,
+        # v1.3.0.8 (P1-5): analyst-supplied base rate for binary / low-cardinality outcomes,
+        # {variable: proportion of the HIGH category}. Without it a binary outcome keeps the
+        # uninformed 0.50 and the run carries a "base rate undeclared" flag. May also be given
+        # per scale as scales[i]["base_rate"].
+        dv_base_rates: Optional[Dict[str, float]] = None,
     ):
         # the arguments as given, so a repeated-measures run can build its inner single-pass engine
         self._ctor_kwargs = {k: v for k, v in locals().items() if k not in ("self", "__class__")}
         self.progress_callback = progress_callback
         self.auto_effects = bool(auto_effects)
+        # v1.3.0.8: declare-first effect inference (P0-1) and declared base rates (P1-5).
+        # Scale-level declarations are merged in after _normalize_scales below.
+        self.infer_effects_without_polarity = bool(infer_effects_without_polarity)
+        self._declared_polarity: Dict[str, Any] = {}
+        self._declared_base_rates: Dict[str, float] = {}
+        for _k, _v in (dv_polarity or {}).items():
+            if str(_k).strip():
+                self._declared_polarity[_dv_key(_k)] = _v
+        for _k, _v in (dv_base_rates or {}).items():
+            try:
+                self._declared_base_rates[_dv_key(_k)] = float(_v)
+            except (TypeError, ValueError):
+                continue
         self.use_socsim_experimental = bool(use_socsim_experimental)
         self.use_abe_v2 = bool(use_abe_v2)
         self.study_title = str(study_title or "").strip()
@@ -3806,6 +3908,20 @@ class EnhancedSimulationEngine:
             from .within_design import normalize_design as _normalize_design
             self.design_spec = _normalize_design(design, self.factors, self.conditions)
         self.scales = _normalize_scales(scales)
+        # v1.3.0.8: a declaration carried on the scale itself ("higher_means" / "base_rate") is the
+        # route the app uses; an explicit dv_polarity / dv_base_rates argument wins over it.
+        for _sc in self.scales:
+            for _nm in (_sc.get("variable_name"), _sc.get("name")):
+                _key = _dv_key(_nm)
+                if not _key:
+                    continue
+                if _sc.get("higher_means") not in (None, "") and _key not in self._declared_polarity:
+                    self._declared_polarity[_key] = _sc.get("higher_means")
+                if _sc.get("base_rate") not in (None, "") and _key not in self._declared_base_rates:
+                    try:
+                        self._declared_base_rates[_key] = float(_sc.get("base_rate"))
+                    except (TypeError, ValueError):
+                        pass
         # v1.2.5.3: Build DV description lookup for condition effect intelligence
         # v1.2.5.5: Store BOTH space and underscore variants so lookup always matches
         # (variable names may arrive as "trust scale" or "trust_scale" depending on path)
@@ -4891,6 +5007,39 @@ class EnhancedSimulationEngine:
     # Normalised per-side shift for one Cohen's d (see _compute_effect_for_condition); shared with the inferred-effect helper
     _EFFECT_D_TO_NORMALIZED = 0.109
 
+    def _record_effect_path(self, condition: str, variable: str, path: str) -> None:
+        """Remember which inference route produced this (condition, variable) effect (P0-2).
+
+        One of: ``curated_paradigm``, ``literature_fallback``, ``paradigm_anchor``, ``keyword_rule``,
+        ``hash_residue``, ``reference_arm``, ``not_inferred``. The export used to say only
+        "inferred", so a DV nudged by a published meta-analysis and a DV moved by nothing but the
+        label-hash residue looked exactly the same.
+        """
+        log = getattr(self, "_effect_path_log", None)
+        if log is None:
+            log = self._effect_path_log = {}
+        log[(str(condition), str(variable))] = str(path)
+
+    def _wording_shift(self, condition: str, variable: str, raw: float, effect_scale: float) -> float:
+        """Apply a wording-derived (keyword / valence / domain / hash) shift, under declare-first.
+
+        P0-1: without a declared outcome polarity this returns 0.0 -- a true null, the same as
+        ``auto_effects=False`` -- because the keyword rules know what the CONDITION says and nothing
+        about what higher values of the OUTCOME mean. With a declared polarity the keyword sign is
+        oriented to the declaration, so a "negative tone" arm raises an outcome on which higher
+        means more opposition instead of lowering it.
+        """
+        if not self._wording_inference_allowed(variable):
+            self._record_effect_path(condition, variable, "not_inferred")
+            return 0.0
+        parts = (getattr(self, "_auto_effect_parts", None) or {}).get((str(condition), str(variable)))
+        if parts is not None and abs(parts[0]) < 1e-9:
+            self._record_effect_path(condition, variable, "hash_residue")
+        else:
+            self._record_effect_path(condition, variable, "keyword_rule")
+        sign, _how = self._polarity_for(variable)
+        return float(raw) * float(effect_scale) * (-1.0 if sign == -1 else 1.0)
+
     def _inferred_effect_value(self, condition: str, variable: str) -> float:
         """Normalised mean shift inferred from the condition names: the keyword rules first, then, when they find
         nothing, a strict content match against the literature table (never for the reference arm).
@@ -4916,6 +5065,7 @@ class EnhancedSimulationEngine:
                 and self._is_control_arm(condition) and self._design_has_curated_arm(variable)):
             # the reference arm of a design built on a curated paradigm is the zero point: it must not
             # keep a keyword residual that the other arm's label happens to induce
+            self._record_effect_path(condition, variable, "reference_arm")
             return 0.0
         if (HAS_LITERATURE_EFFECTS and _paradigm_coverage is not None
                 and not self._is_control_arm(condition) and not self._is_economic_game_context(variable)):
@@ -4926,10 +5076,11 @@ class EnhancedSimulationEngine:
             except Exception:
                 _curated = None
             if _curated is not None:
-                return self._literature_match_to_shift(condition, variable, _curated, "curated paradigm phrase")
+                return self._literature_match_to_shift(condition, variable, _curated,
+                                                       "curated paradigm phrase", "curated_paradigm")
 
         if abs(_auto) >= _NEGLIGIBLE or not HAS_LITERATURE_EFFECTS:
-            return _auto * _effect_scale
+            return self._wording_shift(condition, variable, _auto, _effect_scale)
 
         # v1.2.9.1 — LAST RESORT. The keyword rules above are a closed set: an
         # uploaded study whose conditions are called `descriptive_norm_high` /
@@ -4953,7 +5104,7 @@ class EnhancedSimulationEngine:
         # one. A control arm is the zero point, exactly as it is on the explicit
         # path above.
         if self._is_control_arm(condition):
-            return _auto * _effect_scale
+            return self._wording_shift(condition, variable, _auto, _effect_scale)
         try:
             _lit = _literature_effects.lookup(
                 condition=str(condition),
@@ -4963,9 +5114,9 @@ class EnhancedSimulationEngine:
                 **({"policy": self._INFERRED_EFFECT_POLICY} if self._INFERRED_EFFECT_POLICY is not None else {}),
             )
         except Exception:
-            return _auto * _effect_scale
+            return self._wording_shift(condition, variable, _auto, _effect_scale)
         if _lit is None:
-            return _auto * _effect_scale
+            return self._wording_shift(condition, variable, _auto, _effect_scale)
         return self._literature_match_to_shift(condition, variable, _lit, "no keyword rule matched")
 
     def _design_has_curated_arm(self, variable: str) -> bool:
@@ -4998,17 +5149,26 @@ class EnhancedSimulationEngine:
         ])
         return _paradigm_coverage is None or _paradigm_coverage.is_economic_game_text(_ctx)
 
-    def _literature_match_to_shift(self, condition: str, variable: str, _lit: Any, why: str) -> float:
+    def _literature_match_to_shift(self, condition: str, variable: str, _lit: Any, why: str,
+                                   path: str = "literature_fallback") -> float:
         """Normalised shift for one arm from a literature match, with its provenance logged."""
         _lit_d = float(_lit.effect_d)
         if getattr(_lit, "polarity_aware", False):
             # A beneficial (or harmful) manipulation moves a positive construct one way and a
             # symptom-type construct (distress, prejudice, use, ...) the other.
-            _dv_text = (str(variable).replace("_", " ") + " "
-                        + str(self._dv_descriptions.get(str(variable).lower(), ""))).lower()
-            if self._NEGATIVE_DV_RE.search(_dv_text) or (
-                    _paradigm_coverage is not None and _paradigm_coverage.dv_is_negative(_dv_text)):
-                _lit_d = -_lit_d
+            # v1.3.0.8 (P0-1): an analyst's own declaration of what higher values mean overrides the
+            # name-based guess; the guess only ever ran on the DV name and got reverse-keyed
+            # attitude outcomes ("opposition to ...") backwards.
+            _declared_sign, _declared_how = self._polarity_for(variable)
+            if _declared_sign is not None and _declared_how in ("declared", "declared_label"):
+                if _declared_sign < 0:
+                    _lit_d = -_lit_d
+            else:
+                _dv_text = (str(variable).replace("_", " ") + " "
+                            + str(self._dv_descriptions.get(str(variable).lower(), ""))).lower()
+                if self._NEGATIVE_DV_RE.search(_dv_text) or (
+                        _paradigm_coverage is not None and _paradigm_coverage.dv_is_negative(_dv_text)):
+                    _lit_d = -_lit_d
         _normalized = _lit_d * self._EFFECT_D_TO_NORMALIZED * self._explicit_effect_scale(variable)
         # v1.3.0.6: EVERY literature route (curated label phrase and content-matched fallback alike)
         # contrasts one arm with a zero-point reference arm, so it is applied in the explicit currency
@@ -5028,8 +5188,9 @@ class EnhancedSimulationEngine:
         )
         if not hasattr(self, "_inferred_effect_log"):
             self._inferred_effect_log = []
+        self._record_effect_path(condition, variable, path)
         self._inferred_effect_log.append({
-            "path": "literature_fallback", "condition": str(condition), "variable": str(variable),
+            "path": str(path), "condition": str(condition), "variable": str(variable),
             "key": _lit.key, "published_d": round(float(_lit.published_d), 4),
             "shrinkage_factor": round(float(getattr(_lit, "shrinkage", 1.0)), 4),
             "applied_d": round(float(_lit.effect_d), 4), "verification": _lit.status,
@@ -5118,20 +5279,20 @@ class EnhancedSimulationEngine:
             # common control) are averaged so they do not stack; effects on different factors are
             # main effects of a factorial design and add up.
             _value = self._combine_matched_effects(matched_effects) * self._explicit_effect_scale(variable)
-            _applied[(str(condition), str(variable))] = {"source": "user", "offset": float(_value), "unit": _unit}
+            _applied[(str(condition), str(variable))] = {"source": "user", "effect_source": "user", "offset": float(_value), "unit": _unit}
             return _value
 
         # The user configured effects for this variable but none involves this
         # condition (e.g. a Control group): it is the reference level. Do not add
         # keyword-derived automatic effects on top of an explicit design.
         if _variable_has_spec:
-            _applied[(str(condition), str(variable))] = {"source": "user", "offset": 0.0, "unit": _unit}
+            _applied[(str(condition), str(variable))] = {"source": "user", "effect_source": "user", "offset": 0.0, "unit": _unit}
             return 0.0
 
         # True null: with inferred effects switched off only user-specified effects
         # are built into the data.
         if not getattr(self, "auto_effects", True):
-            _applied[(str(condition), str(variable))] = {"source": "none", "offset": 0.0, "unit": _unit}
+            _applied[(str(condition), str(variable))] = {"source": "none", "effect_source": "none", "offset": 0.0, "unit": _unit}
             return 0.0
 
         # AUTO-GENERATE effect if no explicit specification
@@ -5141,7 +5302,15 @@ class EnhancedSimulationEngine:
         # item-count correction: otherwise a 4+ item composite shows d ~1.3-2x the
         # literature value the keyword rule encodes (valence 1.3 vs ~0.6).
         _value = self._inferred_effect_value(condition, variable)
-        _applied[(str(condition), str(variable))] = {"source": "inferred", "offset": float(_value), "unit": _unit}
+        # v1.3.0.8 (P0-2): the coarse "inferred" label is kept for readers written before this
+        # version, but the route is recorded alongside it so a DV sized by a published estimate and
+        # a DV moved by nothing but the label hash are never reported as the same thing. A
+        # (condition, variable) the declare-first gate refused is "not_inferred" -- a true null.
+        _path = (getattr(self, "_effect_path_log", None) or {}).get((str(condition), str(variable)), "keyword_rule")
+        _applied[(str(condition), str(variable))] = {
+            "source": "not_inferred" if _path == "not_inferred" else "inferred",
+            "effect_source": _path, "offset": float(_value), "unit": _unit,
+        }
         return _value
 
     def _get_automatic_condition_effect(self, condition: str, variable: str, _raw: bool = False) -> float:
@@ -7450,6 +7619,15 @@ class EnhancedSimulationEngine:
         # Small random-like adjustment based on hash (-0.05 to +0.05)
         hash_adjustment = ((condition_hash % 1000) / 1000.0 - 0.5) * 0.08
 
+        # v1.3.0.8 (P0-2): remember how much of this value came from a keyword rule and how much
+        # is the stable-hash jitter, so the provenance table can say "keyword_rule" or
+        # "hash_residue" instead of the undifferentiated "inferred".
+        if not _raw:
+            _parts = getattr(self, "_auto_effect_parts", None)
+            if _parts is None:
+                _parts = self._auto_effect_parts = {}
+            _parts[(str(condition), str(variable))] = (float(semantic_effect), float(hash_adjustment))
+
         semantic_effect += hash_adjustment
 
         # =====================================================================
@@ -7671,7 +7849,11 @@ class EnhancedSimulationEngine:
         # Literature anchoring: a named paradigm with a meta-analytic estimate fixes the
         # size of the design's main contrast (relational/economic-game designs keep their
         # own calibrated scaling).
-        if not _raw and not _handled_by_relational and not _is_economic_game_dv:
+        # v1.3.0.8 (P0-1): the anchor takes its MAGNITUDE from a published estimate but its SIGN
+        # from the keyword valence of the arms or from a guess at the DV's own polarity, so it is
+        # gated like every other wording-derived direction.
+        if (not _raw and not _handled_by_relational and not _is_economic_game_dv
+                and self._wording_inference_allowed(variable)):
             _meta_hit = _match_meta_entry(_study_text + " " + _all_conds_text + " " + _cond_desc_text)
             if _meta_hit is not None:
                 # v1.3.0.5: the published d is shrunk toward the replication effect (and given
@@ -7712,6 +7894,77 @@ class EnhancedSimulationEngine:
     # A glued label ("ControlGroup", "NoTreatment", "Control1") is read as separate words: a change from
     # lower to upper case, or between a letter and a digit, starts a new word.
     _LABEL_WORD_BREAK_RE = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])")
+
+    def _polarity_for(self, variable: str) -> Tuple[Optional[int], str]:
+        """What HIGHER values of ``variable`` mean, and how we know (P0-1).
+
+        Returns ``(sign, source)``. ``sign`` is +1 when higher values mean more of the construct a
+        manipulation is expected to raise, -1 when higher values mean less of it (a reverse-keyed
+        outcome such as "opposition to immigration"), and None when nobody has said.
+
+        ``source`` is "declared" (the analyst gave a direction), "declared_label" (read from the
+        analyst's own description of what higher values mean), "game_geometry" (an economic-game
+        allocation, where higher always means a larger allocation) or "" (undeclared).
+
+        Nothing here guesses from the DV NAME. Guessing was the P0-1 defect: a condition called
+        "negative" lowered every outcome, including outcomes where higher means more opposition, so
+        the sign of the headline contrast came out wrong with full confidence. The name-based
+        ``_NEGATIVE_DV_RE`` still runs inside the literature routes, but only to orient an effect
+        whose magnitude a published source fixed, never to create one.
+        """
+        cache = getattr(self, "_polarity_cache", None)
+        if cache is None:
+            cache = self._polarity_cache = {}
+        key = str(variable)
+        if key in cache:
+            return cache[key]
+        result: Tuple[Optional[int], str] = (None, "")
+        declared = getattr(self, "_declared_polarity", None) or {}
+        for cand in (_dv_key(variable), _dv_key(str(variable).replace("_", " "))):
+            if cand and cand in declared:
+                sign, how = _normalize_declared_polarity(declared[cand])
+                if sign is not None:
+                    result = (sign, "declared" if how == "sign" else "declared_label")
+                break
+        if result[0] is None and self._is_economic_game_context(variable):
+            # An allocation DV has its direction from the scale itself: more money sent is more
+            # money sent. The game models own these calibrations, so inference stays available.
+            result = (1, "game_geometry")
+        cache[key] = result
+        return result
+
+    def _wording_inference_allowed(self, variable: str) -> bool:
+        """Whether a wording-derived (keyword / valence / domain) effect may move this outcome.
+
+        Declare-first (P0-1): allowed when the analyst declared what higher values mean, or when
+        they explicitly opted into unvalidated wording inference. Otherwise the inferred effect is
+        a true null, exactly as ``auto_effects=False``, and the run says so.
+        """
+        if getattr(self, "infer_effects_without_polarity", False):
+            return True
+        return self._polarity_for(variable)[0] is not None
+
+    def _any_wording_inference_allowed(self) -> bool:
+        """Whether wording-derived inference is live for ANY outcome of this study.
+
+        Condition-level response-style modifiers (``_compute_condition_trait_modifier``) are not
+        attached to one DV, so they are switched off wholesale when nothing in the design declares a
+        polarity: "declare nothing" then means the same true null ``auto_effects=False`` gives.
+        """
+        cached = getattr(self, "_any_inference_cache", None)
+        if cached is not None:
+            return cached
+        allowed = bool(getattr(self, "infer_effects_without_polarity", False))
+        if not allowed:
+            for sc in (self.scales or []):
+                for nm in (sc.get("variable_name"), sc.get("name")):
+                    if nm and self._polarity_for(_clean_column_name(str(nm)))[0] is not None:
+                        allowed = True
+                        break
+                if allowed:
+                    break
+        self._any_inference_cache = allowed
+        return allowed
 
     def _is_control_arm(self, condition: str) -> bool:
         """Whether ``condition`` names the reference arm of the design.
@@ -7773,6 +8026,7 @@ class EnhancedSimulationEngine:
         cache[ck] = applied
         if not hasattr(self, "_inferred_effect_log"):
             self._inferred_effect_log = []
+        self._record_effect_path("*", variable, "paradigm_anchor")
         self._inferred_effect_log.append({
             "path": "paradigm_anchor", "variable": str(variable), "key": "|".join(keys),
             "published_d": round(published_d, 4),
@@ -7783,6 +8037,18 @@ class EnhancedSimulationEngine:
         self._log(f"Paradigm anchor '{'|'.join(keys)}' for '{variable}': published d={published_d:.3f}, "
                   f"applied d={applied:.3f}")
         return applied
+
+    def _dv_direction_sign(self, variable: str, dv_text: str) -> float:
+        """+1 if a beneficial manipulation RAISES this outcome, -1 if it lowers it.
+
+        v1.3.0.8 (P0-1): an analyst's declaration of what higher values mean is authoritative; the
+        name-based ``_NEGATIVE_DV_RE`` guess is only the fallback, for runs that opted into
+        wording inference without declaring a polarity.
+        """
+        declared, how = self._polarity_for(variable)
+        if declared is not None and how in ("declared", "declared_label"):
+            return float(declared)
+        return -1.0 if bool(self._NEGATIVE_DV_RE.search(dv_text)) else 1.0
 
     def _meta_anchored_effect(self, condition: str, variable: str, meta_d: float) -> float:
         """Effect for ``condition`` when the study names a paradigm with a published estimate.
@@ -7815,7 +8081,7 @@ class EnhancedSimulationEngine:
                 table = {c: (raw[c] - centre) / gap * unit for c in conds}
             elif any(is_ctrl.values()) and not all(is_ctrl.values()):
                 _dv = (str(variable).replace("_", " ") + " " + str(self._dv_descriptions.get(str(variable).lower(), ""))).lower()
-                sign = -1.0 if bool(self._NEGATIVE_DV_RE.search(_dv)) else 1.0
+                sign = self._dv_direction_sign(variable, _dv)
                 table = {c: (0.0 if is_ctrl[c] else sign * unit) for c in conds}
             else:
                 # No reference arm: order the arms by dose words (many/few, high/low, ...).
@@ -7823,7 +8089,7 @@ class EnhancedSimulationEngine:
                 lo = {c: bool(re.search(r"\b(few|fewer|less|low|lower|small|weak|minor|least|minority)\b", c.lower())) for c in conds}
                 if any(hi.values()) and any(lo.values()):
                     _dv = (str(variable).replace("_", " ") + " " + str(self._dv_descriptions.get(str(variable).lower(), ""))).lower()
-                    sign = -1.0 if bool(self._NEGATIVE_DV_RE.search(_dv)) else 1.0
+                    sign = self._dv_direction_sign(variable, _dv)
                     table = {c: sign * unit / 2.0 * (1.0 if hi[c] and not lo[c] else -1.0 if lo[c] and not hi[c] else 0.0)
                              for c in conds}
                 else:
@@ -7958,7 +8224,10 @@ class EnhancedSimulationEngine:
         # between conditions. With inferred effects off, or when the user specified an effect for
         # this condition, only the study-level priming above (identical for every condition)
         # is applied.
-        if not getattr(self, "auto_effects", True) or self._is_explicit_condition(condition):
+        # v1.3.0.8 (P0-1): and never when no outcome declared what higher values mean, because the
+        # direction these name-based modifiers push is as unvalidated as the keyword effects were.
+        if (not getattr(self, "auto_effects", True) or self._is_explicit_condition(condition)
+                or not self._any_wording_inference_allowed()):
             return modifiers
 
         # AI-related conditions affect engagement and trust
@@ -8631,6 +8900,7 @@ class EnhancedSimulationEngine:
                     calibration['positivity_bias'] = -0.05 if _kb_game.mean_proportion < 0.40 else 0.0
                     calibration['_game_variant'] = f"{_kb_game.game_type}_{_kb_game.variant}"
                     calibration['_kb_source'] = _kb_game.source
+                    calibration['_marginal_source'] = 'game_row'
                     # Full empirical distribution (shape, subpopulation shares) so the
                     # generator can reproduce the real outcome distribution, not just
                     # shift a tendency toward the published mean.
@@ -8690,6 +8960,7 @@ class EnhancedSimulationEngine:
                 # Generic economic allocation: slightly below midpoint
                 calibration['mean_adjustment'] = -0.10
                 calibration['variance_adjustment'] = 0.10
+            calibration['_marginal_source'] = 'game_literal'
             return calibration  # Return early — economic game calibration takes priority
 
         # v1.0.8.7: Try structured construct norms database FIRST
@@ -8828,6 +9099,7 @@ class EnhancedSimulationEngine:
                         elif _norm.get('skewness', 0) < -0.3:
                             calibration['variance_adjustment'] -= 0.02
                         calibration['_kb_source'] = f"ConstructNorm: {_norm_key}"
+                        calibration['_marginal_source'] = 'construct_norm'
                         return calibration
 
         # ===== SATISFACTION SCALES =====
@@ -9218,7 +9490,17 @@ class EnhancedSimulationEngine:
                         f"ConstructNorm: {_m.key} (matched on "
                         f"{'acronym' if _m.via_acronym else 'content'})"
                     )
+                    calibration['_marginal_source'] = 'construct_norm'
 
+        # v1.3.0.8 (P0-2): say where this DV's marginal distribution came from, so a norm-nudged DV
+        # and a DV nothing matched can be told apart in the export.
+        if '_marginal_source' not in calibration:
+            calibration['_marginal_source'] = (
+                'construct_keyword'
+                if (calibration['mean_adjustment'] or calibration['variance_adjustment']
+                    or calibration['positivity_bias'])
+                else 'generic_default'
+            )
         return calibration
 
     def _detect_scale_geometry(
@@ -15282,6 +15564,9 @@ class EnhancedSimulationEngine:
                 for e in self.effect_sizes
             ],
             "effect_sizes_observed": observed_effects,  # Actual effects in generated data
+            # v1.3.0.8 (P0-2): per-outcome provenance -- where each DV's effect and baseline
+            # came from, its evidence tier and a plain-language status.
+            "calibration_provenance": self._build_calibration_provenance(),
             "personas_used": sorted(list(set(assigned_personas))),
             # ENHANCED: Full persona distribution with counts and proportions
             "persona_distribution": {
@@ -15374,6 +15659,13 @@ class EnhancedSimulationEngine:
                     study_description=self.study_description,
                     conditions=self.conditions,
                 )
+                _detect_evidence = [
+                    {"variable": str((d.get("scale") or {}).get("variable_name")
+                                     or (d.get("scale") or {}).get("name") or ""),
+                     "game": d.get("game_name"), "confidence": d.get("confidence"),
+                     **(d.get("evidence") or {})}
+                    for d in game_dvs
+                ]
                 if game_dvs:
                     self._log(f"SocSim: Detected {len(game_dvs)} game DV(s): "
                               f"{[d['game_name'] for d in game_dvs]}")
@@ -15389,6 +15681,13 @@ class EnhancedSimulationEngine:
                     )
                     # v1.2.0.8: Null-check socsim_meta — run_socsim_enrichment() may return None
                     if isinstance(socsim_meta, dict):
+                        # v1.3.0.8 (P0-3): say WHY each DV was taken for a game decision.
+                        socsim_meta["detection_evidence"] = _detect_evidence
+                        socsim_meta["game_prior_source"] = (
+                            "Levels come from the empirical registry's game calibrations; socsim's "
+                            "priors.json holds latent utility parameters only. Any contrast the "
+                            "engine built in is restored after enrichment."
+                        )
                         metadata["socsim"] = socsim_meta
                         self._log(f"SocSim enrichment complete: {len(socsim_meta.get('enriched_dvs', []))} DVs enriched")
                         try:
@@ -15597,6 +15896,7 @@ class EnhancedSimulationEngine:
         try:
             metadata["effect_sizes_observed"] = self._compute_observed_effect_sizes(df)
             metadata["effect_sizes_applied"] = self._build_effects_applied(metadata["effect_sizes_observed"])
+            metadata["calibration_provenance"] = self._build_calibration_provenance()
         except Exception as _eff_err:
             self._log(f"WARNING: final effect summary refresh skipped: {_eff_err}")
 
@@ -15663,12 +15963,41 @@ class EnhancedSimulationEngine:
             })
         return {"specs": rows, "warnings": warns}
 
+    def _declare_first_warnings(self) -> List[str]:
+        """Warn about outcomes the declare-first rule left as a true null (P0-1).
+
+        A run where the tool declined to guess a direction must say so, not hand back a quiet null
+        that a reader would take for a measured absence of an effect.
+        """
+        if not bool(getattr(self, "auto_effects", True)):
+            return []
+        undeclared: List[str] = []
+        for sc in (self.scales or []):
+            raw = str(sc.get("variable_name") or sc.get("name") or "").strip()
+            if not raw:
+                continue
+            var = _clean_column_name(raw)
+            if self._wording_inference_allowed(var) or self._variable_has_user_spec(var):
+                continue
+            undeclared.append(var)
+        if not undeclared:
+            return []
+        names = sorted(set(undeclared))
+        return ["No effect was inferred for " + ", ".join(names[:8])
+                + (" and others" if len(names) > 8 else "")
+                + ": the direction of these outcomes was not declared, so the tool cannot know "
+                "whether a condition should raise or lower them, and guessing from the condition "
+                "wording alone produced confidently wrong signs. They carry a true null. Declare "
+                "what higher values mean per outcome, specify the effect you expect, or switch on "
+                "unvalidated wording inference."]
+
     def _check_generation_warnings(self, df: pd.DataFrame) -> List[str]:
         """Return any warnings about the generated data quality."""
         warnings: List[str] = []
         # v1.2.9.1: an expected effect that reached no variable or condition must not go missing silently
         warnings.extend(self._effect_spec_diagnostics()["warnings"])
         warnings.extend(getattr(self, "_effect_build_errors", []) or [])
+        warnings.extend(self._declare_first_warnings())
         if "CONDITION" in df.columns and len(self.conditions) >= 2:
             cell_counts = df["CONDITION"].value_counts()
             min_cell = int(cell_counts.min()) if len(cell_counts) > 0 else 0
@@ -16133,7 +16462,7 @@ class EnhancedSimulationEngine:
         return log
 
     def _reapply_user_effects_after_game_model(self, df: pd.DataFrame, socsim_meta: Dict[str, Any]) -> None:
-        """Restore the effect the user specified on a DV that the game model overwrote.
+        """Restore the effect the engine built into a DV that the game model overwrote.
 
         The behavioral-economics game model replaces the item columns of a game DV with its
         own output, which knows nothing about the requested Cohen's d (observed d came out
@@ -16160,7 +16489,11 @@ class EnhancedSimulationEngine:
             # per-condition target offset in units of "d" (arms sit at +/- d/2)
             targets_d: Dict[str, float] = {}
             for (cond, var), info in applied.items():
-                if var != prefix or info.get("source") != "user":
+                # v1.3.0.8 (P0-3): restore EVERY effect the engine built in, not only the ones the
+                # user typed. The knowledge-base path's own ingroup/outgroup contrast on a real
+                # dictator study came out at d = 0.55 and the game model flattened it to -0.065,
+                # because only "user" effects were put back.
+                if var != prefix or info.get("source") not in ("user", "inferred"):
                     continue
                 unit = float(info.get("unit") or 0.0)
                 if unit > 0:
@@ -16234,6 +16567,122 @@ class EnhancedSimulationEngine:
             socsim_meta["user_effects_reapplied"] = done
             self._log(f"SocSim: re-applied user-specified effects to {len(done)} game DV(s)")
 
+    #: v1.3.0.8: plain-language status per effect route, for the provenance table (P0-2).
+    _EFFECT_SOURCE_STATUS = {
+        "user": "effect you specified",
+        "curated_paradigm": "recalled published effect for a named paradigm (direction recorded, "
+                            "magnitude not source-verified)",
+        "paradigm_anchor": "magnitude recalled from a meta-analysis named in the study text; "
+                           "direction inferred",
+        "literature_fallback": "recalled published effect matched on wording (magnitude not "
+                               "source-verified, direction inferred)",
+        "keyword_rule": "heuristic guess from the condition wording -- direction not validated",
+        "hash_residue": "no rule matched; the only difference is the label-hash jitter (d ~ 0.03)",
+        "reference_arm": "reference arm of the design (zero point)",
+        "not_inferred": "uncalibrated default -- no effect built in (polarity of this outcome was "
+                        "not declared)",
+        "none": "inferred effects switched off -- true null",
+    }
+
+    #: v1.3.0.8: plain-language status per marginal (baseline distribution) route.
+    _MARGINAL_SOURCE_STATUS = {
+        "user": "base rate you supplied",
+        "game_row": "published game calibration from the knowledge base",
+        "game_literal": "hand-entered economic-game baseline (not a registry row)",
+        "construct_norm": "published construct norm, rescaled to this scale",
+        "construct_keyword": "hand-entered baseline for this kind of variable name",
+        "generic_default": "uncalibrated default (scale midpoint)",
+    }
+
+    def _build_calibration_provenance(self) -> Dict[str, Any]:
+        """One row per outcome saying exactly where its effect and its baseline came from (P0-2).
+
+        Before v1.3.0.8 the export marked every non-user effect ``"source": "inferred"``, whether it
+        came from a recalled meta-analytic row, a valence keyword, or nothing but the label hash, and
+        the registry's own verification notice had no caller outside the tests. A reader could not
+        tell a norm-nudged DV from a DV nothing matched. Each row carries:
+
+        ``effect_source`` / ``marginal_source``  the route, see the two status maps above
+        ``evidence_tier``                        the registry tier of the row that was used, if any
+        ``applied_d``                            the d actually built into the contrast, if any
+        ``polarity`` / ``polarity_source``       what higher values mean, and who said so
+        ``status``                               one plain-language sentence for a reader
+        """
+        applied = getattr(self, "_applied_effects", {}) or {}
+        paths = getattr(self, "_effect_path_log", {}) or {}
+        inferred_log = list(getattr(self, "_inferred_effect_log", []) or [])
+        order = ["user", "curated_paradigm", "paradigm_anchor", "literature_fallback",
+                 "keyword_rule", "hash_residue", "reference_arm", "not_inferred", "none"]
+        rows: List[Dict[str, Any]] = []
+        for scale in (self.scales or []):
+            raw = str(scale.get("variable_name") or scale.get("name") or "").strip()
+            if not raw:
+                continue
+            var = _clean_column_name(raw)
+            # strongest route this DV actually used, across its arms
+            seen = {str(info.get("effect_source") or info.get("source") or "")
+                    for (cond, v), info in applied.items() if v == var}
+            seen |= {p for (cond, v), p in paths.items() if v in (var, "*")}
+            seen.discard("")
+            effect_source = next((o for o in order if o in seen), "not_inferred")
+            applied_d: Optional[float] = None
+            unit = 0.0
+            offsets = [float(info.get("offset", 0.0)) for (cond, v), info in applied.items() if v == var]
+            for (cond, v), info in applied.items():
+                if v == var and float(info.get("unit") or 0.0) > 0:
+                    unit = float(info["unit"])
+                    break
+            if offsets and unit > 0:
+                applied_d = round((max(offsets) - min(offsets)) / unit, 3)
+            evidence_tier = ""
+            for ent in inferred_log:
+                if ent.get("variable") == var:
+                    evidence_tier = str(ent.get("verification") or "")
+                    if ent.get("applied_d") is not None:
+                        applied_d = applied_d if applied_d else round(float(ent["applied_d"]), 3)
+                    break
+            try:
+                calibration = self._get_domain_response_calibration(var, "")
+            except Exception:
+                calibration = {}
+            marginal_source = str(calibration.get("_marginal_source") or "generic_default")
+            if _dv_key(raw) in (getattr(self, "_declared_base_rates", None) or {}) or \
+                    _dv_key(var) in (getattr(self, "_declared_base_rates", None) or {}):
+                marginal_source = "user"
+            sign, how = self._polarity_for(var)
+            rows.append({
+                "variable": var,
+                "effect_source": effect_source,
+                "marginal_source": marginal_source,
+                "evidence_tier": evidence_tier,
+                "applied_d": applied_d,
+                "polarity": None if sign is None else ("higher_is_more" if sign > 0 else "higher_is_less"),
+                "polarity_source": how or "undeclared",
+                "marginal_reference": str(calibration.get("_kb_source") or ""),
+                "status": "; ".join(x for x in (
+                    self._EFFECT_SOURCE_STATUS.get(effect_source, effect_source),
+                    self._MARGINAL_SOURCE_STATUS.get(marginal_source, marginal_source),
+                ) if x),
+            })
+        notice = ""
+        summary: Dict[str, Any] = {}
+        if HAS_EMPIRICAL_REGISTRY:
+            try:
+                notice = _empirical_registry.honesty_notice()
+                summary = _empirical_registry.coverage_summary()
+            except Exception:
+                notice, summary = "", {}
+        return {
+            "variables": rows,
+            "declare_first": not bool(getattr(self, "infer_effects_without_polarity", False)),
+            "wording_inference_enabled": bool(getattr(self, "infer_effects_without_polarity", False)),
+            "registry_notice": notice,
+            "registry_coverage": summary,
+            "note": ("One row per outcome. 'effect_source' says what produced the between-condition "
+                     "difference and 'marginal_source' what produced the baseline level. Anything "
+                     "other than 'user' recovers a recalled or default value, not a prediction."),
+        }
+
     def _build_effects_applied(self, observed_effects: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Describe, per DV and pair of conditions, the effect that was built into the data.
 
@@ -16266,7 +16715,10 @@ class EnhancedSimulationEngine:
                     source = "user"
                 elif sources == {"none"}:
                     source = "none"
-                elif sources <= {"inferred", "none"}:
+                elif sources == {"not_inferred"} or sources <= {"not_inferred", "none"}:
+                    # v1.3.0.8: declare-first refused to guess a direction for this outcome
+                    source = "not_inferred"
+                elif sources <= {"inferred", "none", "not_inferred"}:
                     source = "inferred"
                 else:
                     source = "mixed"
@@ -16282,8 +16734,17 @@ class EnhancedSimulationEngine:
                         observed = -reverse if reverse is not None else None
                     if observed is not None:
                         break
+                # v1.3.0.8 (P0-2): `source` keeps its four legacy values for older readers;
+                # `effect_source` is the route, and it is always present.
+                _fine = {str(i.get("effect_source") or "") for i in (i1, i2)} - {""}
+                _order = ["user", "curated_paradigm", "paradigm_anchor", "literature_fallback",
+                          "keyword_rule", "hash_residue", "reference_arm", "not_inferred", "none"]
+                _eff_src = next((o for o in _order if o in _fine), None) or (
+                    "not_inferred" if source == "not_inferred" else source)
                 row = {
                     "variable": var, "condition_1": c1, "condition_2": c2, "source": source,
+                    "effect_source": _eff_src,
+                    "status": self._EFFECT_SOURCE_STATUS.get(_eff_src, _eff_src),
                     "intended_d": None if intended is None else round(float(intended), 3),
                     "observed_d": None if observed is None else round(float(observed), 3),
                 }
