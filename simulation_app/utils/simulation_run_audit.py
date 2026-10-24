@@ -54,10 +54,32 @@ def _safe_json(obj: Any) -> str:
 
 
 def _extract_open_ended_columns(df: pd.DataFrame) -> List[str]:
-    return [
-        c for c in df.columns
-        if pd.api.types.is_string_dtype(df[c]) and c not in STANDARD_TEXT_EXCLUSIONS
-    ]
+    """Columns that hold free text, on every pandas version this tool supports.
+
+    v1.3.0.9: this used ``pd.api.types.is_string_dtype``, whose answer for a text column read
+    back from CSV depends on the pandas major version. On pandas 3 such a column arrives as the
+    new ``str`` dtype and the check says True; on pandas 2 a column with any blank cell arrives as
+    ``object`` holding strings and NaN, and the check says False. The whole open-ended audit --
+    blank share, uniqueness, short responses, generic patterns, LLM activity -- then found no
+    columns to audit and reported a clean run, which is how
+    ``test_audit_new_runs_only_processes_new_directories`` passed on 3.13/pandas 3 and failed on
+    3.12/pandas 2.3.3 with ``issue_count`` 0. Decided by the VALUES instead: a column is text when
+    most of its non-null cells are strings.
+    """
+    out: List[str] = []
+    for c in df.columns:
+        if c in STANDARD_TEXT_EXCLUSIONS:
+            continue
+        col = df[c]
+        if pd.api.types.is_numeric_dtype(col) or pd.api.types.is_bool_dtype(col):
+            continue
+        if pd.api.types.is_string_dtype(col):
+            out.append(c)
+            continue
+        values = [v for v in col.tolist() if v is not None and v == v]  # drop None and NaN
+        if values and sum(1 for v in values if isinstance(v, str)) / len(values) >= 0.8:
+            out.append(c)
+    return out
 
 
 def _compute_issue_severity(issues: List[Dict[str, Any]]) -> str:

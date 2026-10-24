@@ -4,9 +4,12 @@ Which numbers in this tool are actually sourced, and which only look sourced.
 
 ## The problem
 
-`simulation_app/utils/scientific_knowledge_base.py` holds 484 calibration
-entries — 187 meta-analytic effects, 68 economic-game calibrations, 201 construct
-norms, 12 cultural adjustments, 10 response-time norms, 6 order effects. Each one
+`simulation_app/utils/scientific_knowledge_base.py` holds 503 calibration
+entries — 206 meta-analytic effects, 68 economic-game calibrations, 201 construct
+norms, 12 cultural adjustments, 10 response-time norms, 6 order effects. (This
+document said 484/187 until v1.3.0.9; the 19 curated paradigm rows added in
+v1.3.0.5 went into `META_ANALYTIC_DB`, so the breakdown, not only the total, had
+moved. The counts above are the ones `len()` gives today.) Each one
 carries a citation, a 95% confidence interval, a study count *k*, a participant
 count *N*, a heterogeneity estimate τ and an I². Presented that way, every entry
 reads as if it were transcribed from a paper.
@@ -58,11 +61,13 @@ different things and the difference has to be visible.
   can differ the way two real labs differ. **Active since v1.3.0.5 on a recalled
   figure**: see "Consequences".
 
-## State of verification: 1 of 484 source-verified
+## State of verification: 0 of 503 source-verified
 
-> **As of 2026-10-08 (v1.3.0.6):** the knowledge base holds 503 rows (the 484 above plus
-> 19 paradigm entries added in v1.3.0.5). **1 of 503 is sourced** (`corrected`), **0 are
-> `verified`**, and the headline did not move in the evidence pass below. Separately,
+> **As of 2026-10-24 (v1.3.0.9):** the knowledge base holds 503 rows. **0 have been checked
+> against a primary source.** `coverage_summary()['sourced_entries']` returns 1, and that 1 is
+> the single `corrected` row, whose correction was an internal-consistency finding, not a source
+> check — so the field overstates verification by exactly one row and should be read as
+> "rows with any provenance event at all". 502 rows carry a recall audit only. Separately,
 > the registry *store* now holds **146 MEASURED entries**: 43 in `item_process.json`
 > and 103 in `evidence_v1306.json`. Those are computed from data we hold, are not rows of
 > the knowledge base, and are not counted in `sourced_entries`.
@@ -89,7 +94,7 @@ exists to prevent, so nothing is filled in from snippets or from recall.
 The one record present is the `dictator_standard` SD correction above, and it is
 labelled as an internal-consistency finding, not a literature check.
 
-## The recall audit, 2026-10-06: 483 of 484
+## The recall audit, 2026-10-06: 483 of the 484 rows that existed then
 
 Since sources cannot be read here, the entries were instead audited against what a
 model that has read a great deal of this literature recalls of it — entry by entry,

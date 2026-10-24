@@ -37,6 +37,10 @@ LOCATIONS: List[Tuple[str, Path, str]] = [
      rf'^__version__\s*=\s*["\']{VERSION_RE}["\']'),
     ("utils/instructor_report.py __version__", APP / "utils" / "instructor_report.py",
      rf'^__version__\s*=\s*["\']{VERSION_RE}["\']'),
+    # v1.3.0.9: added because this stamp sat at 1.0.9.5 for 30 releases -- it is not in CLAUDE.md's
+    # table, so nothing checked it, and it told every reader the wrong version with authority.
+    ("utils/enhanced_simulation_engine.py __version__", APP / "utils" / "enhanced_simulation_engine.py",
+     rf'^__version__\s*=\s*["\']{VERSION_RE}["\']'),
     ("README.md header '**Version X**'", APP / "README.md",
      rf'^\*\*Version\s+{VERSION_RE}\*\*'),
     ("README.md '## The behavioral engine (vX)'", APP / "README.md",

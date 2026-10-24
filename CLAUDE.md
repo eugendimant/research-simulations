@@ -54,6 +54,7 @@ Hidden password-protected diagnostics page at `?admin=1`. Shows LLM provider sta
 | 6 | `simulation_app/utils/qsf_preview.py` | `__version__ = "X.X.X.X"` (line ~36) |
 | 7 | `simulation_app/utils/response_library.py` | `__version__ = "X.X.X.X"` (line ~66) |
 | 7b | `simulation_app/utils/instructor_report.py` | `__version__ = "X.X.X.X"` (line ~9) |
+| 7c | `simulation_app/utils/enhanced_simulation_engine.py` | `__version__ = "X.X.X.X"` (line ~49) — added to the enforced set in v1.3.0.9, having sat at 1.0.9.5 for 30 releases |
 | 8 | `simulation_app/README.md` | `**Version X.X.X.X**` in header (line ~3) |
 | 9 | `simulation_app/README.md` | `## The behavioral engine (vX.X.X.X)` section header |
 | 10 | `simulation_app/README.md` | `(Version X.X.X.X)` in the citation block at the bottom |
@@ -222,7 +223,14 @@ Never leave changes uncommitted. Never forget the PR link.
 Runs in this order:
 1. **STEP 0 — Relational/Matching Condition Parsing** (fires FIRST): Detects WHO is matched with WHOM. Political identity detection, ingroup (+0.30) vs outgroup (-0.35 to -0.40). Sets `_handled_by_relational = True` to skip Step 1. Economic game DVs amplify by 1.3×.
 2. **STEP 1 — Simple valence keywords** (ONLY if STEP 0 didn't handle): "positive", "negative", "reward", "punishment". Note: 'lover' and 'hater' are EXCLUDED (identity markers, not valence).
-3. **STEP 2 — Domain-specific semantic effects** (43 domains): Each domain has keyword→effect mappings grounded in literature.
+3. **STEP 2 — Domain-specific semantic effects** (43 domains): Each domain has keyword→effect
+   mappings written into the engine as literals. They are **unsourced**: no row carries a
+   citation, a tier or a registry entry, so "grounded in literature" (the old wording here)
+   claimed more than the code holds. The same is true of STEP 0's relational values (+0.30,
+   −0.35 to −0.40) and the 373 `EMPIRICAL_CORRELATIONS` pairs. Moving them into
+   `empirical_registry` with tiers is tracked in `docs/CALIBRATION_STATUS.md`; until then they
+   must be described as hand-set defaults, and as of v1.3.0.9 a wording-derived effect is only
+   applied at all once the analyst declares what higher values of the outcome mean.
 4. **STEP 3 — Stable-hash jitter**: an MD5-derived nudge of ±0.04 so same-meaning condition labels still differ slightly (never positional). Condition trait modifiers — political identity → extremity/consistency, outgroup → negative acquiescence — are a *separate* method, `_get_condition_trait_modifier()` (`enhanced_simulation_engine.py:7571`), applied as STEP 1 of `_generate_scale_response()`.
 5. **STEP 4 — Domain-aware effect magnitude scaling**: Political + economic game: 1.6×. Political only: 1.3×. Economic game only: 1.2×.
 

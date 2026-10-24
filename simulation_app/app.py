@@ -55,8 +55,8 @@ from html import escape as html_escape  # v1.2.9.1: escape user/QSF text before 
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.0.7"
-BUILD_ID = "20261013-v13007-stale-module-heal"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.0.9"
+BUILD_ID = "20261024-v13009-parser-structure-and-routing"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -230,7 +230,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.3.0.7"  # v1.3.0.7: every open-ended template bank is reachable. Before: v1.3.0.4: reliable instructor email, exact instructor analysis, detected DVs on the Design page, effects that hold next to other scales, hardened HTML/scripts/collection
+APP_VERSION = "1.3.0.9"  # v1.3.0.7: every open-ended template bank is reachable. Before: v1.3.0.4: reliable instructor email, exact instructor analysis, detected DVs on the Design page, effects that hold next to other scales, hardened HTML/scripts/collection
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1313,6 +1313,9 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
                     "_is_mediator_moderator": scale.get("_is_mediator_moderator", False),
                     "role": scale.get("role", ""),
                     "connected_dvs": scale.get("connected_dvs", []),
+                    # v1.3.0.8: declared outcome polarity (P0-1) and binary base rate (P1-5)
+                    "higher_means": scale.get("higher_means", ""),
+                    "base_rate": scale.get("base_rate", ""),
                 }
             )
 
@@ -5208,6 +5211,24 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
 
     factors = _infer_factors_from_conditions(conditions)
 
+    # v1.3.0.9 (P1-6): the survey FLOW is structural evidence and beats splitting condition
+    # LABELS on "x" / "_" / a numeric suffix. Two sibling two-arm randomizers ARE a 2 x 2, and
+    # their arm labels need share no separator at all -- "Anxiety High", "Anxiety Low",
+    # "Latino Cue", "European Cue" came through as ONE factor with four levels, so the
+    # simulated design had no interaction to estimate. When the flow describes a crossing, the
+    # cells it implies (one per combination) are the real conditions; the Design page says which
+    # reading was used and can switch back to the flat arm list.
+    design_reading = "labels"
+    parser_factors = [
+        {"name": str(f.get("name") or f"Factor {i + 1}"), "levels": [str(x) for x in (f.get("levels") or [])]}
+        for i, f in enumerate(getattr(preview, "detected_factors", None) or [])
+    ]
+    crossed_cells = [str(c) for c in (getattr(preview, "suggested_crossed_conditions", None) or [])]
+    if len(parser_factors) > len(factors) and crossed_cells:
+        factors = [dict(f) for f in parser_factors]
+        conditions = crossed_cells[:]
+        design_reading = "crossed_from_flow"
+
     scales: List[Dict[str, Any]] = []
     seen_scale_names: set = set()  # Track to prevent duplicates
 
@@ -5282,6 +5303,9 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
                 "question_id": str(s.get("question_id") or ""),
                 "detected_from_qsf": s.get("scale_points") is not None,
                 "_validated": True,
+                # v1.3.0.8: declared outcome polarity (P0-1) and binary base rate (P1-5)
+                "higher_means": s.get("higher_means", ""),
+                "base_rate": s.get("base_rate", ""),
             }
         )
 
@@ -5409,8 +5433,11 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
                     _s["name"] = _new
 
     # Only add the generic default if NO scales were detected AND none recovered.
+    # v1.3.0.9 (P1-6): this placeholder is a 5-item 7-point Likert that exists nowhere in the user's
+    # survey. Simulating it silently produced "a table with no DV", which is worse than saying
+    # nothing was found, so the bridge marks it and the Design page says so prominently.
     if not scales:
-        scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "scale_min": 1, "scale_max": 7, "type": "likert", "reverse_items": [], "detected_from_qsf": False, "_validated": True}]
+        scales = [{"name": "Main_DV", "variable_name": "Main_DV", "num_items": 5, "scale_points": 7, "scale_min": 1, "scale_max": 7, "type": "likert", "reverse_items": [], "detected_from_qsf": False, "_validated": True, "_is_placeholder": True}]
 
     open_ended = getattr(preview, "open_ended_questions", None) or []
 
@@ -5462,6 +5489,16 @@ def _preview_to_engine_inputs(preview: QSFPreviewResult) -> Dict[str, Any]:
     return {
         "conditions": conditions,
         "factors": factors,
+        # v1.3.0.9 (P1-6): what the flow said, and which reading of it the bridge used, so the
+        # Design page can show the crossed reading for confirmation instead of switching silently.
+        "parser_factors": parser_factors,
+        "suggested_crossed_conditions": crossed_cells,
+        "design_reading": design_reading,
+        "label_factors": _infer_factors_from_conditions([str(c) for c in (preview.detected_conditions or [])] or ["Condition A"]),
+        "arm_conditions": [str(c) for c in (preview.detected_conditions or [])],
+        # True when nothing in the survey was recognised as an outcome and the placeholder below
+        # is the only "DV" -- the Design page must say so rather than show a table with no DV.
+        "no_outcome_detected": bool(scales and scales[0].get("_is_placeholder")),
         "scales": scales,
         "open_ended_questions": open_ended,
         "open_ended_details": open_ended_details,
@@ -11100,6 +11137,36 @@ if active_page == 2:
             selected = []
             st.session_state["selected_conditions"] = []
 
+        # v1.3.0.9 (P1-6): the flow can say structurally that the arms are CROSSED -- two sibling
+        # two-arm randomizers are a 2 x 2, whatever the arm labels look like. The condition list
+        # throws that grouping away, so a 2 x 2 arrived as four one-factor levels and the simulated
+        # design had no interaction to estimate. Offer the crossed cells; never switch silently.
+        _crossed_cells = [str(c) for c in (getattr(preview, "suggested_crossed_conditions", None) or [])]
+        _flow_factors = list(getattr(preview, "detected_factors", None) or [])
+        if _crossed_cells and len(_flow_factors) > 1 and not all(c in (selected or []) for c in _crossed_cells):
+            _shape = " × ".join(str(len(f.get("levels") or [])) for f in _flow_factors)
+            _fnames = ", ".join(str(f.get("name") or "Factor") for f in _flow_factors)
+            st.info(
+                f"The survey flow describes a **{_shape} factorial design** ({_fnames}): "
+                f"{len(_flow_factors)} separate randomizers, so each participant gets one arm of each. "
+                f"The {len(_crossed_cells)} conditions are the combinations, not the "
+                f"{sum(len(f.get('levels') or []) for f in _flow_factors)} arms listed above."
+            )
+            if st.button(f"Use the {_shape} reading ({len(_crossed_cells)} cells)", key="use_crossed_design_btn"):
+                _cc = st.session_state.get("custom_conditions", [])
+                for _cell in _crossed_cells:
+                    if _cell not in _cc:
+                        _cc.append(_cell)
+                st.session_state["custom_conditions"] = _cc
+                st.session_state["selected_conditions"] = []
+                st.session_state["condition_multiselect"] = []
+                st.session_state["_crossed_factors_from_flow"] = [
+                    {"name": str(f.get("name") or f"Factor {i + 1}"),
+                     "levels": [str(x) for x in (f.get("levels") or [])]}
+                    for i, f in enumerate(_flow_factors)
+                ]
+                st.rerun()
+
         # Additional ways to add conditions
         with st.expander("Add more conditions", expanded=not bool(all_possible_conditions) or not bool(selected)):
 
@@ -11241,6 +11308,13 @@ if active_page == 2:
 
         # Auto-detect factors from condition names
         auto_detected_factors = _infer_factors_from_conditions(all_conditions)
+        # v1.3.0.9 (P1-6): structural evidence beats label-splitting. When the user took the
+        # crossed reading above, the factors are the randomizers themselves -- the cell labels
+        # ("Anxiety High x Latino Cue") happen to split cleanly, but arm labels that share no
+        # separator do not, and that is exactly how a 2 x 2 came through as one four-level factor.
+        _flow_crossed = st.session_state.get("_crossed_factors_from_flow") or []
+        if _flow_crossed and len(_flow_crossed) > len(auto_detected_factors):
+            auto_detected_factors = [dict(f) for f in _flow_crossed]
         auto_num_factors = len(auto_detected_factors)
 
         # The select box key disappears while another page is shown, so the choice lives in a second key and
@@ -11724,6 +11798,27 @@ if active_page == 2:
         # ── Dependent Variables ──────────────────────────────────────────
         st.markdown("#### Dependent Variables")
 
+        # v1.3.0.9 (P1-6): when the parser recognised NOTHING as an outcome, the page used to seed
+        # a generic 5-item 7-point "Main_DV" that exists nowhere in the survey and announce
+        # "1 DV(s) detected" -- a table with no DV, which is worse than saying so. Across the
+        # 303-survey example corpus 22 surveys still end here (48 before the parser fixes).
+        if preview is not None and not _scales_from_design and not _qsf_design_scales(preview):
+            st.error(
+                "**No outcome variable was found in this survey.** Nothing in it was recognised as "
+                "a dependent variable, so the DV below is a generic placeholder, not your measure. "
+                "Add your outcomes by hand before simulating, or the numbers will describe a "
+                "variable your study does not contain."
+            )
+            _rejected = [
+                str(getattr(q, "question_text", "") or getattr(q, "question_id", "") or "").strip()
+                for q in (getattr(preview, "questions", None) or [])
+            ]
+            _rejected = [q for q in _rejected if q][:12]
+            if _rejected:
+                with st.expander(f"Questions the parser saw but did not treat as outcomes ({len(_rejected)} shown)"):
+                    for _q in _rejected:
+                        st.caption(f"• {_q[:160]}")
+
         # Initialize DV state - use a version counter to handle deletions
         dv_version = st.session_state.get("_dv_version", 0)
 
@@ -12000,6 +12095,43 @@ if active_page == 2:
                     # Save it back into the scale dict for downstream
                     scale["dv_description"] = dv_description
 
+                    # v1.3.0.8 (P0-1): what HIGHER values of this outcome mean. Without it the
+                    # tool cannot tell whether a "negative tone" condition should raise or lower
+                    # this DV, and guessing from the condition wording produced confidently wrong
+                    # signs (an outcome measuring OPPOSITION went the wrong way). Undeclared means
+                    # no effect is inferred for this DV at all -- a true null, stated as such.
+                    _pol_options = [
+                        "Not sure / don't infer a direction",
+                        "Higher = more of what the manipulation is expected to increase",
+                        "Higher = less of it (reverse-keyed, e.g. opposition, distrust, symptoms)",
+                    ]
+                    _pol_existing = str(scale.get("higher_means", "") or "")
+                    _pol_default = 0
+                    if _pol_existing in ("+1", "1", "positive", "higher_is_more"):
+                        _pol_default = 1
+                    elif _pol_existing in ("-1", "negative", "higher_is_less"):
+                        _pol_default = 2
+                    _pol_choice = st.radio(
+                        "What do HIGHER values mean?",
+                        _pol_options,
+                        index=st.session_state.get(f"dv_polarity_v{dv_version}_{i}_idx", _pol_default),
+                        key=f"dv_polarity_v{dv_version}_{i}",
+                        horizontal=False,
+                        help="The simulation only infers an effect from your condition names when it "
+                             "knows which way this outcome points. Leave it on 'Not sure' and this "
+                             "outcome carries a true null unless you specify an effect size yourself.",
+                    )
+                    scale["higher_means"] = {
+                        _pol_options[0]: "",
+                        _pol_options[1]: "+1",
+                        _pol_options[2]: "-1",
+                    }.get(_pol_choice, "")
+                    if not scale["higher_means"]:
+                        st.caption(
+                            "No direction declared: no effect will be inferred for this outcome "
+                            "from the condition names. Specify an effect size if you expect one."
+                        )
+
                     # Show question text if available (but not if same as description)
                     q_text = scale.get("question_text", "")
                     if q_text and q_text != dv_description and not item_names:
@@ -12035,6 +12167,10 @@ if active_page == 2:
                         "_seed_scale_max": scale.get("_seed_scale_max"),
                         # v1.2.5.3: DV description/context for simulation intelligence
                         "dv_description": scale.get("dv_description", ""),
+                        # v1.3.0.8 (P0-1): declared outcome polarity ("" = undeclared)
+                        "higher_means": scale.get("higher_means", ""),
+                        # v1.3.0.9 (P1-5): declared base rate for a binary outcome ("" = undeclared)
+                        "base_rate": scale.get("base_rate", ""),
                     })
         else:
             st.warning("No DVs auto-detected. Click **+ Add DV** below to define them manually.")
@@ -12044,7 +12180,8 @@ if active_page == 2:
             _removed_names = [confirmed_scales[i].get("name", f"DV {i+1}") for i in scales_to_remove if i < len(confirmed_scales)]
             # v1.0.6.1: Clean up orphaned widget state from old version to prevent memory bloat
             for _ci in range(max(10, len(confirmed_scales))):
-                for _prefix in ("dv_name_v", "dv_items_v", "dv_min_v", "dv_max_v", "dv_type_v", "dv_desc_v", "dv_anchor_low_v", "dv_anchor_high_v"):
+                for _prefix in ("dv_name_v", "dv_items_v", "dv_min_v", "dv_max_v", "dv_type_v", "dv_desc_v",
+                                "dv_anchor_low_v", "dv_anchor_high_v", "dv_polarity_v", "dv_base_rate_v"):
                     st.session_state.pop(f"{_prefix}{dv_version}_{_ci}", None)
             st.session_state["confirmed_scales"] = updated_scales
             st.session_state["_dv_version"] = dv_version + 1
@@ -13363,8 +13500,10 @@ if active_page == 2:
                     if st.session_state.get("advanced_mode", False):
                         with st.expander("Inter-scale correlation matrix (advanced)", expanded=False):
                             st.caption(
-                                "Auto-inferred from empirical meta-analytic data. "
-                                "Edit values to customize (matrix will be automatically validated)."
+                                "Starting values come from a hand-entered table of 373 construct-pair "
+                                "correlations (utils/correlation_matrix.py), not from a meta-analysis "
+                                "of your constructs. Treat them as a plausible starting point and edit "
+                                "them (the matrix is validated after every edit)."
                             )
                             # Show construct type badges inline
                             _badge_parts = []
@@ -13448,6 +13587,20 @@ if active_page == 2:
                             key="dropout_rate",
                             help="Proportion of participants who abandon the survey mid-way (5-7% typical)",
                         )
+                    # v1.3.0.8 (P0-3): the experimental game model, opt-in. It used to be forced on
+                    # for every method, its detection was study-wide (one "donation" in the study
+                    # text made every outcome a game DV) and it overwrites item columns with values
+                    # that ignore the published game calibrations the rest of the engine uses.
+                    st.session_state["_use_socsim_experimental"] = st.checkbox(
+                        "Use the experimental game model for economic-game outcomes",
+                        value=bool(st.session_state.get("_use_socsim_experimental", False)),
+                        key="_socsim_optin",
+                        help="Off by default. When on, an outcome whose own name and scale geometry "
+                             "identify an economic game is re-simulated by the experimental "
+                             "Fehr-Schmidt model in experimental_features/. Baselines come from the "
+                             "published game calibrations either way; any contrast the engine built "
+                             "in is restored afterwards.",
+                    )
             st.session_state["inferred_design"]["missing_data_rate"] = _missing_rate
             st.session_state["inferred_design"]["dropout_rate"] = _dropout_rate
 
@@ -14340,8 +14493,13 @@ if active_page == 3:
                             st.session_state.pop("allow_template_fallback_once", None)
                         else:
                             st.session_state[_gen_method_key] = _mk
-                            # v1.2.5.0: ABE 3.0 — always use socsim experimental engine
-                            st.session_state["_use_socsim_experimental"] = True
+                            # v1.3.0.8 (P0-3): the experimental game model is NOT switched on by
+                            # the method tile any more. It lives in experimental_features/, its
+                            # detection used to make every outcome in a study a game DV, and it
+                            # overwrites item columns with values that ignore the registry's own
+                            # published game calibrations. It is an explicit opt-in now
+                            # (_use_socsim_experimental), default off.
+                            st.session_state.pop("_use_socsim_experimental", None)
                             st.session_state["_use_abe_v2"] = (_mk == "abe_v2")
                             st.session_state["allow_template_fallback_once"] = _mk in ("template", "experimental", "abe_v2")
                             if _mk in ("free_llm", "own_api"):
@@ -14513,10 +14671,12 @@ if active_page == 3:
                 )
 
         # Wire method choice into engine settings
-        # v1.2.3.8: Socsim always on — behavioral engine (numeric data) uses ABE 3.0
-        # pipeline for all methods. Tile selection only controls open-ended text source.
-        # v1.2.5.0: ABE 3.0 always uses socsim experimental engine.
-        st.session_state["_use_socsim_experimental"] = True
+        # v1.3.0.8 (P0-3): this line used to force the experimental socsim game model on for every
+        # method and override every other assignment, including the tile deselect above. Numeric
+        # data comes from the ABE 3.0 pipeline either way; socsim only overwrote game-DV columns,
+        # and its study-wide keyword detection caught unrelated Likert outcomes. Default off, and
+        # whatever the user set stays set.
+        st.session_state.setdefault("_use_socsim_experimental", False)
         if _current_method in ("template", "abe_v2", "experimental"):
             st.session_state["allow_template_fallback_once"] = True
             st.session_state["_use_abe_v2"] = _current_method in ("abe_v2")
@@ -14558,7 +14718,7 @@ if active_page == 3:
         _active_method_key = st.session_state.get("generation_method", "")
         _active_card_info = {
             "template":     {"icon": "&#9881;",  "icon_bg": "linear-gradient(135deg, #F59E0B 0%, #F97316 100%)", "title": "Template Engine",              "subtitle": "225+ research domains, 70+ personas, instant generation"},
-            "experimental": {"icon": "&#9889;",  "icon_bg": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)", "title": "Adaptive Behavioral Engine",    "subtitle": "60+ participant archetypes, 30+ research paradigms, literature-calibrated effects"},
+            "experimental": {"icon": "&#9889;",  "icon_bg": "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)", "title": "Adaptive Behavioral Engine",    "subtitle": "60+ participant archetypes, 30+ research paradigms, recalled literature magnitudes"},
             "abe_v2":       {"icon": "&#129504;", "icon_bg": "linear-gradient(135deg, #0EA5E9 0%, #06B6D4 100%)", "title": "Adaptive Behavioral Engine 3.0", "subtitle": "225+ domains, census-weighted demographics, stylometric fingerprinting, 5 consistency layers"},
             "free_llm":     {"icon": "&#129302;", "icon_bg": "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)", "title": "Built-in AI",                   "subtitle": "Free LLM providers for AI-generated open-ended text"},
             "own_api":      {"icon": "&#128273;", "icon_bg": "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)", "title": "AI (your API key)",             "subtitle": "Your own API key for reliable AI-generated text"},
@@ -14675,7 +14835,7 @@ if active_page == 3:
             if st.button("Adaptive Behavioral Engine 3.0", key="_exh_use_abe_v2",
                          type="secondary", use_container_width=True,
                          help="225+ domains, 60+ archetypes, narrative intelligence"):
-                _exh_resume("abe_v2", True, True, True)
+                _exh_resume("abe_v2", True, False, True)
 
     # v1.4.14: Preflight validation — catch issues before expensive generation
     _preflight_errors = _preflight_validation() if all_required_complete else []
@@ -14754,7 +14914,6 @@ if active_page == 3:
             ):
                 st.session_state["generation_method"] = "own_api"
                 st.session_state["allow_template_fallback_once"] = False
-                st.session_state["_use_socsim_experimental"] = True
                 st.session_state["_use_abe_v2"] = False
                 st.session_state.pop("_free_llm_oe_cap_accepted", None)
                 _navigate_to(3)
@@ -14767,7 +14926,6 @@ if active_page == 3:
             ):
                 st.session_state["generation_method"] = "abe_v2"
                 st.session_state["allow_template_fallback_once"] = True
-                st.session_state["_use_socsim_experimental"] = True
                 st.session_state["_use_abe_v2"] = True
                 st.session_state.pop("_free_llm_oe_cap_accepted", None)
                 _navigate_to(3)
@@ -14887,7 +15045,7 @@ if active_page == 3:
                 _retry_method = st.session_state.get("generation_method", "abe_v2")
                 st.session_state["generation_method"] = _retry_method
                 st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
-                st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
+                st.session_state["_use_socsim_experimental"] = False  # v1.3.0.8 (P0-3): explicit opt-in only
                 st.session_state["_use_abe_v2"] = _retry_method in ("abe_v2")
                 st.session_state["is_generating"] = True
                 st.session_state["_generation_phase"] = 1
@@ -14897,7 +15055,6 @@ if active_page == 3:
                          type="secondary", use_container_width=True):
                 st.session_state["generation_method"] = "abe_v2"
                 st.session_state["allow_template_fallback_once"] = True
-                st.session_state["_use_socsim_experimental"] = True
                 st.session_state["_use_abe_v2"] = True
                 st.session_state["is_generating"] = True
                 st.session_state["_generation_phase"] = 1
@@ -14907,7 +15064,6 @@ if active_page == 3:
                          type="secondary", use_container_width=True):
                 st.session_state["generation_method"] = "own_api"
                 st.session_state["allow_template_fallback_once"] = False
-                st.session_state["_use_socsim_experimental"] = True
                 st.session_state["_use_abe_v2"] = False
                 st.session_state["is_generating"] = False
                 _navigate_to(3)
@@ -15613,7 +15769,7 @@ if active_page == 3:
                     _retry_method = st.session_state.get("generation_method", "abe_v2")
                     st.session_state["generation_method"] = _retry_method
                     st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
-                    st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
+                    st.session_state["_use_socsim_experimental"] = False  # v1.3.0.8 (P0-3): explicit opt-in only
                     st.session_state["_use_abe_v2"] = _retry_method in ("abe_v2")
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
@@ -15623,7 +15779,6 @@ if active_page == 3:
                              type="secondary", use_container_width=True):
                     st.session_state["generation_method"] = "abe_v2"
                     st.session_state["allow_template_fallback_once"] = True
-                    st.session_state["_use_socsim_experimental"] = True
                     st.session_state["_use_abe_v2"] = True
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
@@ -15724,7 +15879,6 @@ if active_page == 3:
                     if st.button(f"Switch to {_init_labels[_ia_m]}", key=f"_init_fail_{_ia_m}",
                                  type="primary" if _ia_i == 0 else "secondary", use_container_width=True):
                         st.session_state["generation_method"] = _ia_m
-                        st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = (_ia_m in ("abe_v2"))
                         st.session_state["allow_template_fallback_once"] = _ia_m in ("template", "experimental", "abe_v2")
                         st.session_state["is_generating"] = _ia_m in ("abe_v2")
@@ -15734,7 +15888,6 @@ if active_page == 3:
             with _init_cols[-1]:
                 if st.button("Try again", key="_init_fail_retry",
                              type="secondary", use_container_width=True):
-                    st.session_state["_use_socsim_experimental"] = True
                     st.session_state["_use_abe_v2"] = _failed_method in ("abe_v2")
                     st.session_state["allow_template_fallback_once"] = _failed_method in ("template", "experimental", "abe_v2")
                     st.session_state["is_generating"] = True
@@ -15845,7 +15998,7 @@ if active_page == 3:
                             # Preserve existing method; set all flags explicitly
                             _retry_method = st.session_state.get(_gen_method_key, "free_llm")
                             st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
-                            st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
+                            st.session_state["_use_socsim_experimental"] = False  # v1.3.0.8 (P0-3): explicit opt-in only
                             st.session_state["_use_abe_v2"] = _retry_method in ("abe_v2")
                             st.session_state["is_generating"] = True
                             st.session_state["_generation_phase"] = 1
@@ -15857,7 +16010,6 @@ if active_page == 3:
                             st.session_state[_gen_method_key] = "free_llm"
                             # Built-in AI always has the built-in engine behind it.
                             st.session_state["allow_template_fallback_once"] = True
-                            st.session_state["_use_socsim_experimental"] = True
                             st.session_state["_use_abe_v2"] = False
                             st.session_state["is_generating"] = False
                             _navigate_to(3)
@@ -15868,7 +16020,6 @@ if active_page == 3:
                                      help="Instant generation with narrative intelligence"):
                             st.session_state["allow_template_fallback_once"] = True
                             st.session_state[_gen_method_key] = "abe_v2"
-                            st.session_state["_use_socsim_experimental"] = True
                             st.session_state["_use_abe_v2"] = True
                             st.session_state["is_generating"] = True
                             st.session_state["_generation_phase"] = 1
@@ -16346,7 +16497,6 @@ if active_page == 3:
                                          type="secondary", use_container_width=True):
                                 st.session_state[_gen_method_key] = "own_api"
                                 st.session_state["allow_template_fallback_once"] = False
-                                st.session_state["_use_socsim_experimental"] = True
                                 st.session_state["_use_abe_v2"] = False
                                 _navigate_to(3)
                         with _retry_col2:
@@ -16354,7 +16504,6 @@ if active_page == 3:
                                          type="secondary", use_container_width=True):
                                 st.session_state[_gen_method_key] = "abe_v2"
                                 st.session_state["allow_template_fallback_once"] = True
-                                st.session_state["_use_socsim_experimental"] = True
                                 st.session_state["_use_abe_v2"] = True
                                 _navigate_to(3)
                     else:
@@ -16401,7 +16550,6 @@ if active_page == 3:
                                          type="secondary", use_container_width=True):
                                 st.session_state[_gen_method_key] = "own_api"
                                 st.session_state["allow_template_fallback_once"] = False
-                                st.session_state["_use_socsim_experimental"] = True
                                 st.session_state["_use_abe_v2"] = False
                                 _navigate_to(3)
                         with _fb_col2:
@@ -16409,9 +16557,47 @@ if active_page == 3:
                                          type="secondary", use_container_width=True):
                                 st.session_state[_gen_method_key] = "abe_v2"
                                 st.session_state["allow_template_fallback_once"] = True
-                                st.session_state["_use_socsim_experimental"] = True
                                 st.session_state["_use_abe_v2"] = True
                                 _navigate_to(3)
+
+            # v1.3.0.8 (P0-2): per-outcome calibration provenance. Before this, every non-user
+            # effect was exported as "inferred" and the registry's own verification notice had no
+            # caller outside the tests, so a norm-nudged DV and a DV nothing matched looked the
+            # same and nobody was told how little of the knowledge base is source-verified.
+            _prov = metadata.get("calibration_provenance") or {}
+            _prov_rows = _prov.get("variables") or []
+            if _prov_rows:
+                _n_uncal = sum(1 for r in _prov_rows
+                               if r.get("effect_source") in ("not_inferred", "hash_residue", "none"))
+                with st.expander(
+                    f"Where each outcome's numbers came from — {len(_prov_rows)} outcome(s)"
+                    + (f", {_n_uncal} uncalibrated" if _n_uncal else ""),
+                    expanded=bool(_n_uncal),
+                ):
+                    st.caption(
+                        "This tool recovers an assumption you stated, or a recalled published value. "
+                        "It does not predict behaviour. Anything other than \"effect you specified\" "
+                        "below is a default or a recalled estimate."
+                    )
+                    try:
+                        st.dataframe(
+                            pd.DataFrame([{
+                                "Outcome": r.get("variable", ""),
+                                "Effect from": r.get("effect_source", ""),
+                                "Baseline from": r.get("marginal_source", ""),
+                                "Evidence tier": r.get("evidence_tier", "") or "—",
+                                "Applied d": r.get("applied_d"),
+                                "Higher values mean": r.get("polarity") or "not declared",
+                                "Status": r.get("status", ""),
+                            } for r in _prov_rows]),
+                            use_container_width=True, hide_index=True,
+                        )
+                    except Exception:
+                        for r in _prov_rows:
+                            st.markdown(f"- **{r.get('variable','')}** — {r.get('status','')}")
+                    _notice = str(_prov.get("registry_notice") or "")
+                    if _notice:
+                        st.warning(_notice)
 
             # v1.2.1.0: SocSim enrichment details — only shown in advanced mode
             _socsim_meta = metadata.get("socsim", {})
@@ -16966,7 +17152,6 @@ if active_page == 3:
                                  help="Get a free key from Groq or Google AI in 30 seconds"):
                         st.session_state[_gen_method_key] = "own_api"
                         st.session_state["allow_template_fallback_once"] = False
-                        st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = False
                         st.session_state["is_generating"] = False
                         _navigate_to(3)
@@ -16975,7 +17160,6 @@ if active_page == 3:
                                  type="secondary", use_container_width=True,
                                  help="225+ domains, narrative intelligence, instant"):
                         st.session_state["allow_template_fallback_once"] = True
-                        st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = True
                         st.session_state[_gen_method_key] = "abe_v2"
                         st.session_state["is_generating"] = True
@@ -17001,7 +17185,7 @@ if active_page == 3:
                                  type="primary", use_container_width=True):
                         _retry_method = st.session_state.get(_gen_method_key, "free_llm")
                         st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
-                        st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
+                        st.session_state["_use_socsim_experimental"] = False  # v1.3.0.8 (P0-3): explicit opt-in only
                         st.session_state["_use_abe_v2"] = _retry_method in ("abe_v2")
                         st.session_state["is_generating"] = True
                         st.session_state["_generation_phase"] = 1
@@ -17011,7 +17195,6 @@ if active_page == 3:
                                  type="secondary", use_container_width=True):
                         st.session_state[_gen_method_key] = "own_api"
                         st.session_state["allow_template_fallback_once"] = False
-                        st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = False
                         st.session_state["is_generating"] = False
                         _navigate_to(3)
@@ -17020,7 +17203,6 @@ if active_page == 3:
                                  type="secondary", use_container_width=True):
                         st.session_state[_gen_method_key] = "abe_v2"
                         st.session_state["allow_template_fallback_once"] = True
-                        st.session_state["_use_socsim_experimental"] = True
                         st.session_state["_use_abe_v2"] = True
                         st.session_state["is_generating"] = True
                         st.session_state["_generation_phase"] = 1
@@ -17110,7 +17292,7 @@ if active_page == 3:
                              type="primary", use_container_width=True):
                     _retry_method = st.session_state.get("generation_method", "abe_v2")
                     st.session_state["allow_template_fallback_once"] = _retry_method in ("template", "experimental", "abe_v2")
-                    st.session_state["_use_socsim_experimental"] = _retry_method in ("experimental", "abe_v2")
+                    st.session_state["_use_socsim_experimental"] = False  # v1.3.0.8 (P0-3): explicit opt-in only
                     st.session_state["_use_abe_v2"] = _retry_method in ("abe_v2")
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
@@ -17120,7 +17302,6 @@ if active_page == 3:
                              type="secondary", use_container_width=True):
                     st.session_state["generation_method"] = "abe_v2"
                     st.session_state["allow_template_fallback_once"] = True
-                    st.session_state["_use_socsim_experimental"] = True
                     st.session_state["_use_abe_v2"] = True
                     st.session_state["is_generating"] = True
                     st.session_state["_generation_phase"] = 1
@@ -17130,7 +17311,6 @@ if active_page == 3:
                              type="secondary", use_container_width=True):
                     st.session_state["generation_method"] = "own_api"
                     st.session_state["allow_template_fallback_once"] = False
-                    st.session_state["_use_socsim_experimental"] = True
                     st.session_state["_use_abe_v2"] = False
                     st.session_state["is_generating"] = False
                     _navigate_to(3)
