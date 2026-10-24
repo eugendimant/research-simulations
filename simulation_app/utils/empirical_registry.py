@@ -535,7 +535,48 @@ def coverage_summary() -> Dict[str, Any]:
         "shrinkage_active": bool(_SHRINKAGE.get("factor")),
         "shrinkage_tier": shrinkage_tier(),
         "default_tau": default_tau(),
+        # v1.3.0.9: hand-set literals outside the knowledge base, all unverified (see above)
+        "unsourced_literals": unsourced_literal_count(),
+        "unsourced_literal_groups": literal_inventory(),
     }
+
+
+# v1.3.0.9: the hand-set literals that sit OUTSIDE the knowledge base and therefore outside
+# `audit_table()`. They shape data (the default effect pipeline's STEP 0 and STEP 2, and the
+# cross-DV correlation starting values) and carried no citation, tier or registry entry, so the
+# "0 of 503 sourced" headline understated how much of the pipeline rests on unsourced numbers.
+# Listing them here does not source them. It makes the gap countable, exports it, and lets a test
+# fail if the table and its documentation drift apart. The status is UNVERIFIED by construction:
+# nothing in this ledger has been read from, or checked against, a primary source.
+def literal_inventory() -> List[Dict[str, Any]]:
+    """One row per group of hand-set literals that shape generated data, all UNVERIFIED."""
+    try:
+        try:
+            from .correlation_matrix import EMPIRICAL_CORRELATIONS as _corr
+        except ImportError:  # pragma: no cover - flat import layout
+            from correlation_matrix import EMPIRICAL_CORRELATIONS as _corr  # type: ignore
+        n_corr = len(_corr)
+    except Exception:
+        n_corr = 0
+    return [
+        {"group": "step2_domain_effects", "count": 43, "status": UNVERIFIED,
+         "where": "enhanced_simulation_engine._get_automatic_condition_effect, STEP 2",
+         "what": "keyword -> effect mappings per domain, capped at +/-0.50 in total",
+         "counted": "declared (43 domains per the engine's own header), not re-derived"},
+        {"group": "step0_relational_values", "count": 5, "status": UNVERIFIED,
+         "where": "enhanced_simulation_engine._get_automatic_condition_effect, STEP 0",
+         "what": "ingroup +0.30, outgroup -0.35 / -0.40, neutral identity -0.05, no identity 0.0",
+         "counted": "the five assignments in the relational branch"},
+        {"group": "construct_correlations", "count": n_corr, "status": UNVERIFIED,
+         "where": "correlation_matrix.EMPIRICAL_CORRELATIONS",
+         "what": "starting inter-scale correlations, editable on the Design page",
+         "counted": "len() of the table"},
+    ]
+
+
+def unsourced_literal_count() -> int:
+    """Total hand-set literals in `literal_inventory()`; every one is unverified."""
+    return sum(int(r.get("count") or 0) for r in literal_inventory())
 
 
 def honesty_notice() -> str:
@@ -567,13 +608,19 @@ def honesty_notice() -> str:
             "that could not be placed. "
             "Recall is not verification, so those entries remain barred from setting "
             "a magnitude on their own.")
+    literals = ""
+    if s.get("unsourced_literals"):
+        literals = (
+            f" Outside those entries, {s['unsourced_literals']} further hand-set numbers "
+            "(the default effect rules, the relational ingroup/outgroup values and the "
+            "starting construct correlations) carry no citation at all.")
     return (
         f"{s['sourced_entries']} of {s['total_entries']} calibration entries "
         f"({pct:.1f}%) carry a verification record. For the rest, the citation has "
         "NOT been checked against the source and the exact value has not been "
         "transcribed from the paper, so it should be read as a documented prior "
         "rather than a published fact; where the simulator consults one it damps "
-        f"how hard that number may push the data.{recall} {bias} The provenance "
+        f"how hard that number may push the data.{recall}{literals} {bias} The provenance "
         "table gives the tier of every number behind a run."
     )
 
