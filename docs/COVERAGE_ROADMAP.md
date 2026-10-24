@@ -7,7 +7,7 @@ design cover everything reasonable for anyone who wants to simulate real human
 behavior, and where are the gaps?**
 
 The tool is genuinely mature: **43 effect-detection domains**, a scientific
-knowledge base of **484 calibration entries** (187 meta-analytic effects, 68
+knowledge base of **503 calibration entries** (206 meta-analytic effects, 68
 game calibrations, 201 construct norms spanning clinical/personality/affect/
 well-being scales, 12 cultural adjustments, 10 response-time norms, 6 order
 effects), **78 personas** (6 response-style + 72 domain-specific), census-weighted demographics, ex-Gaussian

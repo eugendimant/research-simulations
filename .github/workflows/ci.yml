@@ -27,7 +27,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r simulation_app/requirements.txt pytest ruff
+          # v1.3.0.9: scipy and matplotlib are optional at runtime but 8 tests skip without them
+          # (the Stage 1 audit counted 75 uninspected skips; most were missing optional deps, which
+          # is silent coverage loss rather than a deliberate exclusion).
+          pip install -r simulation_app/requirements.txt pytest ruff scipy matplotlib
       - name: Version sync (all locations from CLAUDE.md)
         run: python scripts/check_version_sync.py
       - name: Lint (ruff F,B,S - see pyproject.toml)
@@ -50,6 +53,6 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r simulation_app/requirements.txt pytest
+          pip install -r simulation_app/requirements.txt pytest scipy matplotlib
       - name: Tests (slow suite)
         run: python -m pytest tests -m slow -q -p no:cacheprovider

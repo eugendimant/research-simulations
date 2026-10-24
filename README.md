@@ -25,7 +25,7 @@ You upload a `.qsf` file (or describe your study). The tool detects the conditio
 - **Condition effects.** Specify a Cohen's d for an outcome and a contrast and the data show roughly that d on the scale mean. Where you specify nothing, small differences are inferred from the condition names; you can switch that off for a true null. See [How effects work](docs/guide/how-effects-work.md).
 - **Open-ended text** written to fit each participant's ratings and the question topic. In the built-in AI mode, free language-model providers write the first 100 responses and a template engine writes the rest; the template engine alone works offline and goes up to 10,000 participants. Numeric text boxes (age, counts, amounts) get numbers.
 - **Quality flags and exclusions** (speed, attention checks, straight-lining) so you can practice or pre-register exclusion rules.
-- **Between-subjects designs**, including factorial designs. Within-subject and clustered designs are not modeled yet; the design step says so when you pick one.
+- **Between-subjects designs**, including factorial designs, and, since v1.3.0.6, **within-subjects and mixed designs**: every participant answers each within-condition, with order effects, carryover and position-dependent attrition, and the reports run paired / repeated-measures / mixed tests instead of between-subjects ones. Clustered designs are not modeled yet; the design step says so when you pick one.
 
 ## Run it locally
 

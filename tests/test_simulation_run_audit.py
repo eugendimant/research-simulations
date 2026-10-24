@@ -136,3 +136,27 @@ def test_issue_trends_aggregate_multiple_runs(tmp_path: Path):
     assert isinstance(trends["top_issues"], list)
     assert "avg_quality_score" in trends
     assert result.get("avg_quality_score") == trends["avg_quality_score"]
+
+
+def test_open_ended_columns_are_found_in_the_pandas_2_column_shape():
+    """v1.3.0.9: the detector must not depend on which dtype pandas gives a text column.
+
+    On pandas 2 a text column with a blank cell comes back from CSV as ``object`` holding strings
+    and ``NaN``, and ``pd.api.types.is_string_dtype`` says False for it. The audit then found no
+    open-ended columns and reported a clean run, which is why
+    ``test_audit_new_runs_only_processes_new_directories`` failed on 3.12/pandas 2.3.3 and passed
+    on 3.13/pandas 3 (issue_count 0 against the expected >= 1).
+    """
+    import numpy as np
+
+    from utils.simulation_run_audit import _extract_open_ended_columns
+
+    df = pd.DataFrame({
+        "PARTICIPANT_ID": [1, 2, 3],
+        "Q_open": pd.Series(["It depends", np.nan, "Not sure"], dtype=object),
+        "Scale_1": [4, 5, 6],
+    })
+    assert df["Q_open"].dtype == object
+    cols = _extract_open_ended_columns(df)
+    assert "Q_open" in cols
+    assert "Scale_1" not in cols and "PARTICIPANT_ID" not in cols

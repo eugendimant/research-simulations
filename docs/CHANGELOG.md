@@ -487,6 +487,16 @@ parameter controls recursion depth. This was undocumented user-facing behavior â
 now described in the README (Adaptive Behavioral Engine 3.0 section) and the PR.
 Docs-only change; version synced (1.2.8.6).
 
+> **Correction (v1.3.0.9, from the Stage 1 audit of 2026-10-23).** This entry
+> overstated what runs. `StrategyRouter`, `LevelKStrategy` and
+> `CognitiveHierarchyStrategy` exist in `experimental_features/self-learning
+> simulator/socsim/models/`, and nothing in the generation path reaches them. What
+> actually executes for a beauty contest is the closed form `p^k x max/2` plus noise
+> (`socsim/games/beauty_contest.py:14-18`), with `k` the persona's `strategic_depth`:
+> the functional form Level-k predicts, not recursive best-response reasoning, and no
+> Cognitive Hierarchy at all. The experimental game model is additionally opt-in and
+> off by default as of v1.3.0.8. The README was corrected in the same release.
+
 ## 2026-06-01 â€” v1.2.8.5
 ### Mobile UI: landing-hero subtitle wraps cleanly on phones
 
