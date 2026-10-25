@@ -50,6 +50,16 @@ what your conditions do, and as of v1.3.0.9 it says so instead of guessing.
   prospective registered forecast, a comparison with language-model respondents, and a
   corpus-wide misrouting frequency are all still missing. Do not claim them.
 
+## Known deviation introduced by this release
+
+The dictator-game row now uses the registry's source-checked SD correction (0.31, not the stored
+0.18), so that the one correction the registry holds changes something. With a wider spread about
+a third of the mass sits on the zero floor, and the step that restores a requested effect after the
+game model runs lands at **1.13x** the request (d = 0.565 for 0.50, 12 seeds, N = 600) instead of
+inside 1.10x. The restoration sizes its shift from a pre-clipping SD, which the floor then
+shrinks. `test_restored_game_effect_varies_between_seeds_like_a_real_sample` allows 1.15x with this
+note beside it. Fixing the restoration step is open work.
+
 ## How to check any of this yourself
 
 ```bash

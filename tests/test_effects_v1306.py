@@ -18,9 +18,9 @@ HI, LO = "Group 1", "Group 2"
 
 
 def _engine(conds, items=4, smax=5, spec_d=None, n=1200, seed=501, title="A study of participants",
-            name="DV", auto_effects=True, extra_scales=0):
+            name="DV", auto_effects=True, extra_scales=0, higher_means=""):
     scales = [{"name": name, "variable_name": name, "type": "likert", "num_items": items, "scale_points": smax,
-               "scale_min": 1, "scale_max": smax, "reverse_items": []}]
+               "scale_min": 1, "scale_max": smax, "reverse_items": [], "higher_means": higher_means}]
     for j in range(extra_scales):
         scales.append({"name": f"Other{j}", "variable_name": f"Other{j}", "type": "likert", "num_items": 3,
                        "scale_points": 7, "scale_min": 1, "scale_max": 7, "reverse_items": []})
@@ -87,7 +87,8 @@ def test_inferred_keyword_effect_is_delivered_on_the_composite():
     obs, nom = [], []
     for seed in (611, 612, 613, 614, 615, 616):
         e = _engine(["Positive review", "Negative review"], items=4, smax=7, seed=seed,
-                    title="Online reviews and brand attitude", name="Attitude")
+                    title="Online reviews and brand attitude", name="Attitude",
+                    higher_means="+1")  # v1.3.0.9: wording moves an outcome only once its direction is declared
         df, _ = e.generate()
         assert "Attitude" in e._deferred_effect_vars
         obs.append(_d(df, "Positive review", "Negative review", name="Attitude"))
@@ -100,7 +101,8 @@ def test_inferred_effect_next_to_other_scales_is_delivered_too():
     obs, nom = [], []
     for seed in (621, 622, 623, 624):
         e = _engine(["Positive review", "Negative review"], items=4, smax=7, seed=seed, extra_scales=1,
-                    title="Online reviews and brand attitude", name="Attitude")
+                    title="Online reviews and brand attitude", name="Attitude",
+                    higher_means="+1")  # v1.3.0.9: wording moves an outcome only once its direction is declared
         df, _ = e.generate()
         obs.append(_d(df, "Positive review", "Negative review", name="Attitude"))
         nom.append(_nominal(e, "Positive review", "Negative review"))

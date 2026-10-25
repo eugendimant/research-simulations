@@ -2,7 +2,7 @@
 """
 Utility modules for the Behavioral Experiment Simulation Tool.
 
-Version: 1.3.0.9 - A numeric DV spans its declared range; a binary DV's base rate is the analyst's to declare; a 2 x 2 run as two randomizers is read off the survey flow and binary single-choice outcomes are detected; published norms are no longer reached by a single generic word. Before: 1.3.0.8 - Declare-first effect inference, per-outcome calibration provenance, and the experimental game model scoped to the DV that fits it (see docs/CHANGELOG.md).
+Version: 1.3.1.0 - A numeric DV spans its declared range; a binary DV's base rate is the analyst's to declare; a 2 x 2 run as two randomizers is read off the survey flow and binary single-choice outcomes are detected; published norms are no longer reached by a single generic word. Before: 1.3.0.8 - Declare-first effect inference, per-outcome calibration provenance, and the experimental game model scoped to the DV that fits it (see docs/CHANGELOG.md).
 
 Changes (v1.0.0 - 20 Iterations of Comprehensive Improvements):
     === ENHANCED SCALE/MATRIX DETECTION ===
@@ -61,7 +61,7 @@ Modules:
 """
 
 # Package version - should match all module versions
-__version__ = "1.3.0.9"
+__version__ = "1.3.1.0"
 
 
 # =============================================================================

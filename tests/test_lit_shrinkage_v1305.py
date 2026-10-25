@@ -40,7 +40,10 @@ def _engine(title="Anchoring effect on price estimates", conds=("High anchor", "
         study_title=title, study_description=title, sample_size=n, conditions=list(conds),
         factors=[], scales=scales, additional_vars=[],
         demographics={"gender_quota": 50, "age_mean": 30, "age_sd": 8},
-        effect_sizes=specs, seed=seed, auto_effects=auto)
+        effect_sizes=specs, seed=seed, auto_effects=auto,
+        # v1.3.0.9: these tests exercise the INFERENCE MECHANISM (anchoring, shrinkage, logging),
+        # which declare-first leaves off by default; they opt in explicitly.
+        infer_effects_without_polarity=True)
     if policy is not None:
         eng._INFERRED_EFFECT_POLICY = policy
     return eng
@@ -54,7 +57,8 @@ def _dissonance(seed=11, policy=None):
     eng = EnhancedSimulationEngine(
         study_title="Dissonance", study_description="", sample_size=20,
         conditions=["cognitive_dissonance_control", "cognitive_dissonance_induced"],
-        factors=[], scales=scales, additional_vars=[], demographics={}, seed=seed)
+        factors=[], scales=scales, additional_vars=[], demographics={}, seed=seed,
+        infer_effects_without_polarity=True)  # v1.3.0.9: see _engine above
     if policy is not None:
         eng._INFERRED_EFFECT_POLICY = policy
     return eng
@@ -108,7 +112,11 @@ def test_adjust_effect_applies_the_factor_and_respects_the_floor():
         for tau in (0.0, 0.15, 0.4):
             for _ in range(300):
                 out = R.adjust_effect(pub, key="unknown_key", rng=rng, tau=tau)
-                assert out >= R.EffectPolicy().min_retained * pub - 1e-12   # never erased
+                # v1.3.0.9 (P1-7): the floor is scaled by the entry's tier weight, so a weakly
+                # verified entry may be cut further than a strong one, but never erased.
+                floor = R.EffectPolicy().min_retained * R.confidence_weight("meta", "unknown_key") * pub
+                assert out >= floor - 1e-12
+                assert floor > 0
                 assert out > 0                                              # never flipped
     assert R.adjust_effect(0.0) == 0.0
 
@@ -154,7 +162,13 @@ def test_paradigm_anchor_is_shrunk_and_matches_the_logged_d():
     shr = _engine(policy=SHRINK_ONLY)
     v_raw = raw._get_effect_for_condition("High anchor", "Price")
     v_shr = shr._get_effect_for_condition("High anchor", "Price")
-    assert v_shr == pytest.approx(v_raw * 0.45, rel=1e-6)
+    # v1.3.0.9 (P1-7): the anchor now carries its tier. As published, the tier weight applies
+    # alone (0.58 for a recall_uncertain row); shrunk, the STRONGER of tier weight and 0.45 applies
+    # (0.45). This test used to expect exactly 0.45 x raw, which was only true while the anchor
+    # path passed key="" and so applied no tier at all.
+    w = R.confidence_weight("meta", "price_anchoring_meta")
+    assert w > 0.45
+    assert v_shr == pytest.approx(v_raw * 0.45 / w, rel=1e-6)
     row = shr._inferred_effect_log[0]
     assert row["path"] == "paradigm_anchor"
     assert row["published_d"] == pytest.approx(pub, abs=1e-4)
@@ -163,7 +177,7 @@ def test_paradigm_anchor_is_shrunk_and_matches_the_logged_d():
     dflt = _engine()
     dflt._get_effect_for_condition("High anchor", "Price")
     ap = dflt._inferred_effect_log[0]["applied_d"]
-    assert ap >= 0.35 * pub - 1e-9 and ap > 0
+    assert ap >= 0.35 * w * pub - 1e-9 and ap > 0   # floor is tier-scaled since v1.3.0.9
 
 
 def test_all_arms_of_one_contrast_share_the_anchor_draw():

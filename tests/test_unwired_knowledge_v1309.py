@@ -93,3 +93,31 @@ def test_published_only_knowledge_is_reachable_for_a_reader(name):
 def test_every_published_only_entry_says_why():
     for name, why in _PUBLISHED_ONLY.items():
         assert len(why) > 40, f"{name} needs a reason a reader can check"
+
+
+# ---------------------------------------------------------------------------------------------
+# hand-set literals outside the knowledge base are counted, exported and never "sourced"
+# ---------------------------------------------------------------------------------------------
+def test_unsourced_literals_are_inventoried_and_none_counts_as_sourced():
+    from utils import empirical_registry as ER
+    groups = {g["group"]: g for g in ER.literal_inventory()}
+    assert set(groups) == {"step2_domain_effects", "step0_relational_values", "construct_correlations"}
+    assert all(g["status"] == ER.UNVERIFIED for g in groups.values())
+    from utils.correlation_matrix import EMPIRICAL_CORRELATIONS
+    assert groups["construct_correlations"]["count"] == len(EMPIRICAL_CORRELATIONS) == 373
+    s = ER.coverage_summary()
+    assert s["unsourced_literals"] == ER.unsourced_literal_count() > 400
+    # the inventory must not leak into the verification headline
+    assert s["total_entries"] == 503 and s["sourced_entries"] == 1
+
+
+def test_the_relational_values_in_the_inventory_match_the_engine():
+    src = (_ENGINE).read_text(encoding="utf-8")
+    for needle in ("semantic_effect += 0.30", "semantic_effect -= 0.35", "semantic_effect -= 0.40",
+                   "semantic_effect -= 0.05"):
+        assert needle in src, f"{needle} moved: update literal_inventory()"
+
+
+def test_the_honesty_notice_says_the_literals_are_unsourced():
+    from utils import empirical_registry as ER
+    assert "carry no citation at all" in ER.honesty_notice()

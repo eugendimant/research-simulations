@@ -104,7 +104,11 @@ def test_binary_items_keep_the_requested_effect():
     assert observed >= 0.8 * 0.6, f"requested 0.8, observed {observed:.2f} on a binary 3-item scale"
 
 
-@pytest.mark.parametrize("lo, hi, items", [(0, 100, 1), (1, 7, 3)])
+# v1.3.0.9 (P0-3): a 1-7 Likert is not a dictator allocation, so the game model no longer rewrites it
+# (a "Dictator_Giving" rating scale used to be classified as a game on its name alone). The case
+# that stands in for the narrow-range route is an 11-point 0-10 allocation, which the geometry
+# check accepts; the effect-survives-the-model property is what this test is about.
+@pytest.mark.parametrize("lo, hi, items", [(0, 100, 1), (0, 10, 1)])
 def test_game_dv_keeps_the_requested_effect(lo, hi, items):
     """The behavioral-economics game model rewrites game DVs; the requested effect must survive."""
     name = "Dictator_Giving"

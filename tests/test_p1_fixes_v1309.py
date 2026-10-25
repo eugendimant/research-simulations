@@ -344,3 +344,17 @@ def test_every_construct_map_target_exists():
     assert len(targets) > 30, f"only found {len(targets)} targets: the parse missed the table"
     missing = sorted(t for t in targets if t not in KB.CONSTRUCT_NORMS)
     assert not missing, missing
+
+
+def test_a_study_that_names_a_game_does_not_turn_every_dv_into_a_game_outcome():
+    """Regression for a defect introduced and caught inside this release: `or _game_named` made every
+    variable in a trust-game study an economic-game outcome, so a Likert rating of how trustworthy
+    the partner seemed took the trust-game row (mean 0.50, SD 0.28). P0-3, one layer down."""
+    e = EnhancedSimulationEngine(
+        study_title="Trust game", study_description="Participants rate how trustworthy the partner seemed.",
+        sample_size=50, conditions=["A", "B"], factors=[],
+        scales=[dict(name="Trust_Rating_Scale", variable_name="Trust_Rating_Scale", num_items=3,
+                     scale_points=7, scale_min=1, scale_max=7, reverse_items=[], type="matrix")],
+        additional_vars=[], demographics=DEMO, open_ended_questions=[], seed=1, auto_effects=False)
+    cal = e._get_domain_response_calibration("Trust_Rating_Scale", "A")
+    assert "_kb_dist" not in cal and cal.get("_marginal_source") != "game_row"

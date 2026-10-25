@@ -46,7 +46,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.0.9"  # kept in step with utils/__init__.py by scripts/check_version_sync.py
+__version__ = "1.3.1.0"  # kept in step with utils/__init__.py by scripts/check_version_sync.py
 # NOTE: this stamp was frozen at 1.0.9.5 for 30 releases because it is not one of the ten locations
 # the version check enforces. A stamp nobody checks is worse than no stamp: it tells a reader the
 # wrong thing with authority. It is now in the enforced set.
@@ -8846,9 +8846,13 @@ class EnhancedSimulationEngine:
         _econ_ctx = " ".join([condition_lower, (self.study_title or "").lower(),
                               (self.study_description or "").lower(), var_lower])
         _game_named = any(ph in _econ_ctx for ph in _ECON_PHRASES)
+        # The study naming a game is NOT enough on its own: "or _game_named" here made every
+        # variable in a trust-game study a game outcome, so a Likert "Trust_Rating_Scale" took the
+        # trust-game row (mean 0.50, SD 0.28) -- the study-wide misclassification P0-3 removed from
+        # the SocSim detector, reintroduced one layer down. The variable has to carry the signal
+        # itself: a strong keyword in its own name, or a weak one with the game named somewhere.
         _is_econ_game = (any(_econ_tok(kw) for kw in _ECON_KWS_STRONG)
-                         or (_game_named and any(_econ_tok(kw) for kw in _ECON_KWS_WEAK))
-                         or _game_named)
+                         or (_game_named and any(_econ_tok(kw) for kw in _ECON_KWS_WEAK)))
         # v1.3.0.6: games the allocation keywords never matched (stag hunt, common pool, beauty
         # contest, auctions, centipede, ...). A game must be NAMED as a whole phrase (variable name,
         # title, description or condition label); a variable named for the game is its outcome, any

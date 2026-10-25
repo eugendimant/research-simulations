@@ -74,13 +74,17 @@ def _d_av(df, meta, dv, a, b):
 #   * calibration routing (P1-8): "Trust" and "Donation" no longer reach the norms they reached by
 #     substring accident, so their marginals differ.
 #
-# A diff here that is NOT one of those three is a regression: find it before re-recording.
+# v1.3.1.0 re-recorded the METADATA hashes only: the DATA hashes (first entry of each pair) are
+# unchanged from v1.3.0.9. The registry notice that every run now exports names the unsourced
+# hand-set literals (coverage_summary()["unsourced_literals"]), which is part of the metadata.
+#
+# A diff here that is NOT one of those causes is a regression: find it before re-recording.
 BASELINE_HASHES = {
-    "basic_1": ["abfff79a18b5", "d225eab371ea"],
-    "basic_2": ["0dda120ad65e", "1ae71e414cf4"],
-    "basic_3": ["168f0915cb12", "01f6580c1205"],
-    "effects_4": ["089896472a2c", "57f9bff2f6dd"],
-    "factorial_oe_5": ["3edc5783e085", "66a8a2641daf"],
+    "basic_1": ["abfff79a18b5", "3657b9cb9869"],
+    "basic_2": ["0dda120ad65e", "5e2fc6ff367f"],
+    "basic_3": ["168f0915cb12", "7b3e28bd7681"],
+    "effects_4": ["089896472a2c", "c4e5f3574ae1"],
+    "factorial_oe_5": ["3edc5783e085", "039e53182b02"],
 }
 
 

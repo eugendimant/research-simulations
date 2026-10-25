@@ -623,7 +623,10 @@ def test_v1281_inter_item_correlations_are_heterogeneous():
         study_title="Polarization", study_description="political polarization and outgroup attitudes",
         sample_size=400, conditions=[{"name": "Ingroup match"}, {"name": "Outgroup match"}], factors=[],
         scales=[{"name": "Warmth", "variable_name": "Warmth", "type": "matrix",
-                 "num_items": 5, "items": 5, "scale_min": 1, "scale_max": 7}],
+                 "num_items": 5, "items": 5, "scale_min": 1, "scale_max": 7,
+                 # v1.3.0.9: the discrimination effect needs the direction of "warmth" declared
+                 # (higher warmth = more favourable), as every wording-derived effect now does
+                 "higher_means": "+1"}],
         additional_vars=[], demographics={"gender_quota": 50, "age_mean": 45, "age_sd": 16},
         open_ended_questions=[], seed=2024)
     if getattr(eng, "llm_generator", None) is not None:

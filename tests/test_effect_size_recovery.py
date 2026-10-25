@@ -178,7 +178,10 @@ def _named_run(cond_hi, cond_lo, target_d, extra_conds=(), n=1200, seed=3, with_
         sample_size=n, conditions=[cond_hi, cond_lo, *extra_conds], factors=[],
         scales=scales, additional_vars=[],
         demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
-        effect_sizes=specs, seed=seed)
+        effect_sizes=specs, seed=seed,
+        # v1.3.0.9: the automatic-effect tests exercise the wording heuristic, which declare-first
+        # makes opt-in (see _auto_d above).
+        infer_effects_without_polarity=not with_spec)
     df, _ = eng.generate()
     return df
 
@@ -395,7 +398,12 @@ def _auto_d(title, conds, dv, n=1600, seed=7):
     eng = EnhancedSimulationEngine(
         study_title=title, study_description=title, sample_size=n, conditions=conds, factors=[],
         scales=scales, additional_vars=[], demographics={"gender_quota": 50, "age_mean": 30, "age_sd": 8},
-        seed=seed)
+        seed=seed,
+        # v1.3.0.9: these tests measure what the paradigm ANCHOR delivers (its published magnitude,
+        # shrunk, with the sign the heuristic assigns). Under declare-first that route is opt-in, so
+        # the test opts in; the default, undeclared behaviour is a true null and is pinned by
+        # tests/test_declare_first_v1308.py.
+        infer_effects_without_polarity=True)
     df, _ = eng.generate()
     a = df.loc[df["CONDITION"] == conds[0], f"{name}_mean"].astype(float)
     b = df.loc[df["CONDITION"] == conds[1], f"{name}_mean"].astype(float)

@@ -193,10 +193,10 @@ def test_two_different_entries_with_the_same_phrase_length_are_ambiguous():
 
 def _expected_anchor(key):
     e = skb.META_ANALYTIC_DB[key]
-    d = abs(e.effect_d)
-    if key in PC.RULE_ONLY_KEYS:
-        d *= reg.confidence_weight("meta", key)
-    return d
+    # v1.3.0.9 (P1-7): the index holds the PUBLISHED magnitude for rule-only keys too. It used to
+    # multiply them by their tier weight here and then again in adjust_effect (a published 0.47
+    # arrived as 0.32 before the policy had acted); the tier is now applied once, downstream.
+    return abs(e.effect_d)
 
 
 TEXT_CASES = [
