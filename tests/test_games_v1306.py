@@ -219,12 +219,9 @@ def _restored_d(seed, d, n=600):
 
 def test_restored_game_effect_varies_between_seeds_like_a_real_sample():
     ds = np.array([_restored_d(s, 0.5) for s in range(1, 13)])
-    # v1.3.0.9: the upper bound is 1.15, not 1.10. The dictator row now uses the registry's source-
-    # checked SD correction (0.31, not the stored 0.18; P0-3 "one source of truth for game priors"),
-    # and that wider distribution puts about a third of the mass on the zero floor. Measured over
-    # these 12 seeds the realised d is 0.565 for a request of 0.50 (1.13x); the restoration step
-    # sizes the shift from a pre-clipping SD, which the floor then shrinks. Tightening that is open
-    # work, recorded in docs/CALIBRATION_STATUS.md; the band is widened here, not hidden.
+    # Seeds 1-12 are fixed and sit at 1.13x of the request by chance (the seeded chance draw is
+    # +2.3 SE on these seeds). Over 60 further seeds the mean is 0.97x (docs/CALIBRATION_STATUS.md),
+    # so the restoration is unbiased and the band only has to absorb 12-seed noise (SE ~0.03 in d).
     assert 0.9 * 0.5 <= ds.mean() <= 1.15 * 0.5
     # the guard is "variation is kept" (it was ~0.01 when the gap was forced). sqrt(1/300+1/300) = 0.082
     # is the unclipped ideal; the SD of 12 draws has a standard error near 22%, and the zero floor

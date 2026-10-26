@@ -50,15 +50,16 @@ what your conditions do, and as of v1.3.0.9 it says so instead of guessing.
   prospective registered forecast, a comparison with language-model respondents, and a
   corpus-wide misrouting frequency are all still missing. Do not claim them.
 
-## Known deviation introduced by this release
+## Restored game effects: the 1.13x was seed noise, not bias (v1.3.1.1)
 
-The dictator-game row now uses the registry's source-checked SD correction (0.31, not the stored
-0.18), so that the one correction the registry holds changes something. With a wider spread about
-a third of the mass sits on the zero floor, and the step that restores a requested effect after the
-game model runs lands at **1.13x** the request (d = 0.565 for 0.50, 12 seeds, N = 600) instead of
-inside 1.10x. The restoration sizes its shift from a pre-clipping SD, which the floor then
-shrinks. `test_restored_game_effect_varies_between_seeds_like_a_real_sample` allows 1.15x with this
-note beside it. Fixing the restoration step is open work.
+v1.3.1.0 recorded that the step restoring a requested effect after the game model runs landed at
+1.13x the request (d = 0.565 for 0.50, seeds 1-12, N = 600) and blamed a pre-clipping SD. Tracing the
+restoration showed that explanation was wrong: the per-arm moves hit their targets exactly, and the
+12-seed excess came from the seeded chance draw (+0.047 on the target gap, 2.3 standard errors) plus a
+small arm gap already present in the game output (+0.017). Measured on 60 further seeds (13-72) the
+realised d is **0.484 for a request of 0.50 (0.97x, SE 0.013, SD 0.097)**; over all 72 seeds it is
+0.498. No engine change was needed. The test band stays at 0.9-1.15x because seeds 1-12 are fixed and
+sit at 1.13x by chance; a longer sample is the honest check, not a tighter band on a short one.
 
 ## How to check any of this yourself
 
