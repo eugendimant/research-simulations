@@ -5,7 +5,7 @@ every download carried the seed, the persona roster, the trait averages, the con
 observed Cohen's d per contrast (the answer key), the calibration/registry provenance and the
 engine's identity. ``utils.user_package`` now derives the user ZIP from the owner package.
 
-These tests fail if any of that comes back. The expensive one builds a real bundle end to end
+These tests fail if any of that comes back. One of them builds a real bundle end to end
 (engine -> Qualtrics export -> codebook -> prep scripts -> study summary -> user package) and
 scans every delivered file; the cheap ones pin the allowlists, the run-id scrubbing and the
 wiring in ``app.py``.
@@ -288,7 +288,6 @@ def test_app_hands_the_download_button_the_user_package_not_the_owner_zip():
 # End to end through the real engine
 # ──────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.slow
 def test_a_real_run_delivers_no_simulation_internals():
     """Build the owner package from a real run, derive the user package, scan every file."""
     import pandas as pd  # noqa: F401 - the engine needs it
