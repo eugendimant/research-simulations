@@ -1,6 +1,6 @@
 # Behavioral Experiment Simulation Tool
 
-**Version 1.3.1.1** — a Streamlit app that turns a Qualtrics survey export into a realistic synthetic pilot dataset.
+**Version 1.3.1.2** — a Streamlit app that turns a Qualtrics survey export into a realistic synthetic pilot dataset.
 
 ## What it does
 
@@ -31,7 +31,7 @@ Note which engine covers the remainder: picking Built-in AI or Your API Key sets
 
 Built-in provider chain, tried in order until one responds: Google Gemini 3.1 Flash Lite → Gemini 2.5 Flash → Gemini 2.5 Flash Lite → Groq GPT-OSS 120B → Groq Qwen3.6 27B → SambaNova Llama 3.3 70B → OpenRouter Mistral Small 3.1.
 
-## The behavioral engine (v1.3.1.1)
+## The behavioral engine (v1.3.1.2)
 
 **Numeric responses.** Each participant is one person with a persistent identity: eight response-style traits and a latent attitude vector, which together drive their answers. Condition effects are applied as deterministic mean shifts; individual variance is applied separately.
 
@@ -39,7 +39,7 @@ Alongside these, census-weighted demographics are written to `Simulation_Diagnos
 
 **Condition effects.** Forty-three effect-detection domains, each with keyword-to-effect mappings written into the engine as literals. Where the study text names a paradigm that `META_ANALYTIC_DB` has an estimate for — anchoring, default effects, scarcity and so on — the coarse domain multiplier is replaced by one derived from that published estimate (`enhanced_simulation_engine.py:3581`), so an uncalibrated design of that kind gets a literature magnitude rather than a generic domain guess. Paradigms the table does not cover still fall back to the literals, and when the keyword rules find no effect at all for a condition (never the reference arm), a strict content match against the same table is tried last (`utils/literature_effects.py`, called at `enhanced_simulation_engine.py:4826`), with the published effect first shrunk by `empirical_registry.adjust_effect()` (see `docs/REGISTRY.md`). Be precise about what that shrinkage is: it is a single flat factor of 0.45 applied to every recalled effect, NOT a per-tier discount. `adjust_effect` keeps the stronger of the tier weight and that factor, and every tier weight (0.45 to 1.00) is at or above it, so no entry's headline magnitude is currently moved by its tier. The tier does set the floor the shrinkage may not cut below, so it is not inert. `empirical_registry.tier_cap_binds()` reports which tiers, if any, bind under the installed policy, so this paragraph can be checked rather than believed. Relational conditions are parsed before simple valence, so "matched with an outgroup member" produces discrimination rather than generic negativity (Iyengar & Westwood 2015). Economic games start from published baselines rather than a generic 50% (dictator 0.28, Engel 2011; trust 0.50, Berg et al. 1995; Johnson & Mislin 2011). The total automatically-detected effect is capped at ±0.50 before the Cohen's-*d* conversion, which bounds the shift that reaches generation at roughly ±0.12 in normalized units.
 
-**On effect magnitudes.** A configured Cohen's `d` is now recovered, which it was not before v1.2.8.8 — the gap used to run several times the target. Recovery is defined on the scale composite. Averaged over 12 independent runs of 1,200 participants per cell, the composite lands within 12% of the request in all 18 cells checked (within 8% in 16), across scale widths (2-point, 3-point, 5-point, 7-point, 11-point and 0-100) and item counts from 1 to 20; next to other scales it holds too (0.97 of the request with two scales and 1.03 with eight in 8-run checks; before v1.2.9.1 a second scale cut it to 0.2-0.5). v1.2.9.1 corrected a 12-29% overshoot at 8 to 20 items and a 25-100% shortfall on two-point scales (full table in `docs/guide/how-effects-work.md`). A single run varies by roughly ±0.06 in *d* from sampling alone at that size and by about ±0.1 at N=400, so at small `d` one dataset can land near zero or above target; `tests/test_effect_size_recovery.py` and `tests/test_effect_fidelity_v1291.py` cover scale widths, item counts, and that a null effect stays null. Where you configure no `d`, the engine infers literature-sized, directional effects from the condition wording; they are not fitted to a target, and an Advanced Settings checkbox switches them off for a true null. When you do configure a `d` for a variable, nothing inferred from the condition names is added on top of it, and outcomes that the economic-game model rewrites keep the configured `d` too (restored after the model runs). Every run writes what was built in and what was achieved to `Metadata.json` (`effect_sizes_applied`, `effect_sizes_observed`); check there rather than assuming the configured number. Known deviations are tracked in `docs/COVERAGE_ROADMAP.md`.
+**On effect magnitudes.** A configured Cohen's `d` is now recovered, which it was not before v1.2.8.8 — the gap used to run several times the target. Recovery is defined on the scale composite. Averaged over 12 independent runs of 1,200 participants per cell, the composite lands within 12% of the request in all 18 cells checked (within 8% in 16), across scale widths (2-point, 3-point, 5-point, 7-point, 11-point and 0-100) and item counts from 1 to 20; next to other scales it holds too (0.97 of the request with two scales and 1.03 with eight in 8-run checks; before v1.2.9.1 a second scale cut it to 0.2-0.5). v1.2.9.1 corrected a 12-29% overshoot at 8 to 20 items and a 25-100% shortfall on two-point scales (full table in `docs/guide/how-effects-work.md`). A single run varies by roughly ±0.06 in *d* from sampling alone at that size and by about ±0.1 at N=400, so at small `d` one dataset can land near zero or above target; `tests/test_effect_size_recovery.py` and `tests/test_effect_fidelity_v1291.py` cover scale widths, item counts, and that a null effect stays null. Where you configure no `d`, the engine infers literature-sized, directional effects from the condition wording; they are not fitted to a target, and an Advanced Settings checkbox switches them off for a true null. When you do configure a `d` for a variable, nothing inferred from the condition names is added on top of it, and outcomes that the economic-game model rewrites keep the configured `d` too (restored after the model runs). Every run writes what was built in and what was achieved to its own metadata (`effect_sizes_applied`, `effect_sizes_observed`), which reaches the instructor report and the archived run record but not the user's download; check there rather than assuming the configured number. Known deviations are tracked in `docs/COVERAGE_ROADMAP.md`.
 
 **Strategic games.** Each persona carries a `strategic_depth`, and for a beauty contest the guess is the closed form `p^k x max/2` plus noise, with `k` that depth (`experimental_features/self-learning simulator/socsim/games/beauty_contest.py`). That is the shape Level-k predicts (Stahl & Wilson 1994; Nagel 1995), but no recursive reasoning is run: `StrategyRouter`, `LevelKStrategy` and `CognitiveHierarchyStrategy` (Camerer, Ho & Chong 2004) exist in the experimental tree and are not reached from generation. The experimental game model is also opt-in as of v1.3.0.8 and off by default. Of the games the engine implements, **beauty contest and stag hunt** are reachable from a QSF today, alongside dictator, trust, ultimatum, public goods, prisoner's dilemma, die-roll, gift exchange, Holt-Laury, bribery and common-pool games. The engine's registry holds 24 games in all; the other twelve — money-request/11-20, minimum-effort coordination, Tullock contest, sender-receiver, public goods with punishment, the three repeated games (PD, trust, public goods), time MPL, BDM, discrete choice and survey-Likert — have no QSF detection path yet.
 
@@ -90,10 +90,20 @@ Everything detected is editable before generation, and a "Generate Preview (5 ro
 | `Julia_Prepare_Data.jl` | DataFrames.jl |
 | `SPSS_Prepare_Data.sps` | SPSS syntax |
 | `Stata_Prepare_Data.do` | Stata do-file |
-| `Metadata.json` | Every simulation parameter |
+| `Study_Metadata.json` | The study as the user described it: design, conditions, instruments, column descriptions. Simulation parameters are not in the user's download (see "What the user's download leaves out") |
 | `Schema_Validation.json` | Data quality checks |
 | `User_Study_Summary.md` / `.html` | Summary report |
 | `Source_Files/` | Your uploaded QSF and PDF |
+| `README_Download_Contents.txt` | What each file in the download is |
+
+### What the user's download leaves out
+
+The ZIP is derived from the full package by `utils/user_package.py`. The random seed, the persona
+roster and its per-condition breakdown, the trait averages, the configured and observed Cohen's `d`
+per contrast, the calibration and registry provenance, the domain detection and the engine's own
+identifiers are stripped, and the `INSTRUCTOR_*` analyses are never included. The automated
+instructor email and the server-side run archive keep all of it. `tests/test_user_download_secrecy.py`
+builds a real package and fails if any of it comes back.
 
 ## Quick start
 
@@ -199,6 +209,6 @@ Every run sends the instructor notification (the statistical report, the detaile
 Created by Dr. Eugen Dimant. Licensed under the [PolyForm Noncommercial License 1.0.0](../LICENSE): noncommercial use, including research and teaching, is free; commercial use needs the author's permission.
 
 ```
-Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 1.3.1.1) [Computer software].
+Dimant, E. (2026). Behavioral Experiment Simulation Tool (Version 1.3.1.2) [Computer software].
 https://github.com/eugendimant/research-simulations
 ```

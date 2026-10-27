@@ -70,5 +70,6 @@ python3 scripts/check_version_sync.py                          # all 11 version 
 python3 -m pytest tests -m "not slow" -q                       # the fast suite
 ```
 
-Every run writes its own provenance: open `Metadata.json` and read `calibration_provenance`, or
-the "Where each outcome's numbers came from" table on the results page.
+Every run writes its own provenance: read `calibration_provenance` in the run's archived metadata
+or the instructor report, or the "Where each outcome's numbers came from" table on the results page.
+It is not in the user's download (see `utils/user_package.py`).
