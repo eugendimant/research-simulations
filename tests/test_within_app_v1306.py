@@ -127,7 +127,7 @@ def test_qsf_design_page_within_flow_zip_report_and_email(apptest_env, monkeypat
     assert len(long) == 120 and set(long["Condition"]) == {"Pre", "Post"} and "ResponseId" in long.columns
     one = long[(long["ResponseId"] == wide["ResponseId"].iloc[3]) & (long["Condition"] == "Post")].iloc[0]
     assert one["LoyaltyQuestions_1"] == wide["LoyaltyQuestions_Post_1"].iloc[3]
-    metadata = json.loads(files["Metadata.json"])
+    metadata = at.session_state["last_metadata"]
     d = metadata["design"]
     assert metadata["design_type"] == "within" and metadata["design_review"]["design_type"] == "within"
     assert [c["label"] for c in d["cells"]] == ["Pre", "Post"]
@@ -209,7 +209,7 @@ def test_builder_path_mixed_design_with_a_group_by_time_interaction(apptest_env)
                                  {"variable": "Satisfaction", "factor": "condition", "level_high": "Training",
                                   "level_low": "Waitlist", "cohens_d": 0.8, "direction": "positive", "at": {"Time": "Post"}}]})
     files = H._click_generate(at)
-    metadata = json.loads(files["Metadata.json"])
+    metadata = at.session_state["last_metadata"]
     d = metadata["design"]
     assert metadata["design_type"] == "mixed" and [c["label"] for c in d["cells"]] == ["Pre", "Post"]
     scopes = {(s["kind"], json.dumps(s["scope"])) for s in metadata["effect_sizes_applied"]["specs"]}
@@ -245,7 +245,7 @@ def test_between_flow_is_unchanged_by_the_feature(apptest_env):
     H = _helpers()
     at = H._qsf_generate_page(n=40)
     files = H._click_generate(at)
-    metadata = json.loads(files["Metadata.json"])
+    metadata = at.session_state["last_metadata"]
     assert "design" not in metadata and metadata["design_review"]["design_type"] == "between"
     assert "Simulated_Data_Long.csv" not in files
     assert "CONDITION" in _csv(files, "Simulated_Data.csv").columns
@@ -282,7 +282,7 @@ def test_fixed_order_warns_on_the_design_page_and_adds_no_drift(apptest_env):
     assert at.session_state["design_config"]["order_effects"] is False
     H._goto(at, 3)
     files = H._click_generate(at)
-    d = json.loads(files["Metadata.json"])["design"]
+    d = at.session_state["last_metadata"]["design"]
     assert d["order"] == "fixed" and d["order_effect"]["enabled"] is False and d["notes"]
 
 
@@ -297,7 +297,7 @@ def test_open_ended_question_asked_in_every_condition_gets_a_column_per_conditio
     files = H._click_generate(at)
     wide = _csv(files, "Simulated_Data.csv")
     assert {"Why_Pre", "Why_Post"} <= set(wide.columns)
-    d = json.loads(files["Metadata.json"])["design"]
+    d = at.session_state["last_metadata"]["design"]
     assert d["open_ended_columns"]["Why"] == {"Pre": "Why_Pre", "Post": "Why_Post"}
     long = _csv(files, "Simulated_Data_Long.csv")
     assert "Why" in long.columns and len(long) == 80

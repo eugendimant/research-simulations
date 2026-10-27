@@ -112,7 +112,9 @@ def test_effect_ui_text_metadata_and_data_all_say_the_high_condition_scores_high
     messages = [s.value for s in at.success if "Effect configured" in s.value]
     assert messages and f"higher in '{high}' vs '{low}'" in messages[0], messages
     files = _click_generate(at)
-    metadata = json.loads(files["Metadata.json"])
+    # v1.3.1.2: the configured/observed effect ledger is owner-side only (it is the answer key),
+    # so it is read from the run metadata rather than from the user's download.
+    metadata = at.session_state["last_metadata"]
     (configured,) = metadata["effect_sizes_configured"]
     assert (configured["level_high"], configured["level_low"], configured["direction"]) == (high, low, "positive")
     contrast = next(r for r in metadata["effect_sizes_applied"]["contrasts"]
@@ -121,8 +123,9 @@ def test_effect_ui_text_metadata_and_data_all_say_the_high_condition_scores_high
     assert sign * contrast["intended_d"] == pytest.approx(0.8)
     assert sign * contrast["observed_d"] > 0.3, contrast  # the data agree with the text: `high` scores higher
     assert _scale_mean_d(files["Simulated_Data.csv"], high, low) > 0.3
+    # ... and the user's summary does NOT say it: the effect table is owner-side only (v1.3.1.2)
     summary = files["User_Study_Summary.md"].decode("utf-8")
-    assert f"| Satisfaction | {high} | {low} | +0.80 |" in summary  # the design summary says the same
+    assert f"| Satisfaction | {high} | {low} | +0.80 |" not in summary
 
 
 def test_engine_still_accepts_a_negative_direction_from_api_users():
@@ -217,7 +220,7 @@ def test_changing_n_after_generation_flags_the_old_download_as_stale_and_keeps_i
     assert not at.exception and not _stale_warnings(at)
     _click_generate(at)
     assert not _stale_warnings(at)
-    assert json.loads(_zip_members(at)["Metadata.json"])["sample_size"] == 200
+    assert at.session_state["last_metadata"]["sample_size"] == 200
 
 
 def test_visiting_the_design_page_without_changing_anything_does_not_flag_the_dataset(apptest_env):
@@ -536,7 +539,7 @@ def test_choosing_within_subjects_is_recorded_and_shapes_the_data(apptest_env):
     assert not [w for w in at.warning if "one condition per participant" in w.value]   # the old "not modelled" note is gone
     _goto(at, 3)
     files = _click_generate(at)
-    metadata = json.loads(files["Metadata.json"])
+    metadata = at.session_state["last_metadata"]
     assert metadata["design_review"]["design_type"] == "within"
     assert metadata["design"]["type"] == "within" and len(metadata["design"]["cells"]) >= 2
     assert "Simulated_Data_Long.csv" in files

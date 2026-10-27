@@ -204,6 +204,8 @@ _SCALE_KEYS: Tuple[str, ...] = (
 _DESIGN_KEYS: Tuple[str, ...] = (
     "type", "within_factors", "between_factors", "group_labels", "conditions",
     "order", "long_format_file", "n_conditions",
+    # Column mapping: the user cannot read the wide/long layout without these.
+    "cells", "wide_columns", "open_ended_columns", "open_ended_once",
 )
 
 

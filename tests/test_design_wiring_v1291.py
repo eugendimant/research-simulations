@@ -445,7 +445,7 @@ def test_dv_edits_persist_across_reruns_and_the_generated_data_follows_them(app_
     at.run()
     _no_exception(at)
     archive = zipfile.ZipFile(BytesIO(at.session_state["last_zip"]))
-    metadata = json.loads(archive.read("Metadata.json"))
+    metadata = at.session_state["last_metadata"]
     assert [s["variable_name"] for s in metadata["scales"]] == expected
     import pandas as pd
     csv_name = next(n for n in archive.namelist() if n.lower().endswith(".csv"))
