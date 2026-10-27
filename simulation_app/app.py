@@ -55,8 +55,8 @@ from html import escape as html_escape  # v1.2.9.1: escape user/QSF text before 
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.1.1"
-BUILD_ID = "20261025-v13101-game-restoration-measured"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.1.2"
+BUILD_ID = "20261027-v13112-user-download-secrecy"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -138,6 +138,21 @@ from utils.qsf_preview import QSFPreviewParser, QSFPreviewResult
 from utils.schema_validator import validate_schema
 from utils.github_qsf_collector import collect_qsf_async, is_collection_enabled
 from utils.instructor_report import InstructorReportGenerator, ComprehensiveInstructorReport
+# v1.3.1.2: the user's download is derived from the owner package (see utils/user_package).
+# Guarded so a module drift across a deploy cannot take the app down — but the fallback is
+# data-only, never the owner package, so a failed import cannot leak simulation internals.
+try:
+    from utils.user_package import (
+        build_user_package as _build_user_package,
+        sanitize_diagnostics_csv as _sanitize_diagnostics_csv,
+    )
+except ImportError:  # pragma: no cover - safety net for a partial deploy
+    def _sanitize_diagnostics_csv(csv_bytes: Any) -> bytes:  # type: ignore[misc]
+        return b""
+
+    def _build_user_package(files: Dict[str, Any], metadata: Any, **_kw: Any) -> Dict[str, bytes]:  # type: ignore[misc]
+        keep = ("Simulated_Data.csv", "Simulated_Data_Qualtrics_Raw.csv")
+        return {k: v for k, v in (files or {}).items() if k in keep or k.startswith("Source_Files/")}
 
 
 def _log_optional_import_failure(module: str, exc: BaseException) -> None:
@@ -230,7 +245,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.3.1.1"  # v1.3.0.7: every open-ended template bank is reachable. Before: v1.3.0.4: reliable instructor email, exact instructor analysis, detected DVs on the Design page, effects that hold next to other scales, hardened HTML/scripts/collection
+APP_VERSION = "1.3.1.2"  # v1.3.1.2: the user download no longer carries simulation internals. Before: v1.3.0.7: every open-ended template bank is reachable. Before: v1.3.0.4: reliable instructor email, exact instructor analysis, detected DVs on the Design page, effects that hold next to other scales, hardened HTML/scripts/collection
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -17014,7 +17029,25 @@ if active_page == 3:
             metadata["run_improvement_log"] = str(SIM_RUN_IMPROVEMENT_LOG)
 
             st.session_state["last_df"] = df
-            st.session_state["last_zip"] = zip_bytes
+            # v1.3.1.2: `files`/`zip_bytes` above are the OWNER package — the instructor email and
+            # the server-side run archive keep every internal. The user's download is derived from
+            # it by utils/user_package, which strips the seed, the persona roster and traits, the
+            # configured/observed effect ledger (the answer key), the calibration provenance and
+            # the engine's identity. Never hand raw `zip_bytes` to the download button.
+            try:
+                _user_files = _build_user_package(
+                    files, metadata, markdown_to_html=lambda md, title: _markdown_to_html(md, title=title)
+                )
+                st.session_state["last_zip"] = _bytes_to_zip(_user_files)
+            except Exception as _user_pkg_err:
+                # A failure must not ship the owner package: fall back to data + codebook-free CSVs.
+                _log(f"User package build failed, delivering data only: {_user_pkg_err}", level="error")
+                _fallback = {"Simulated_Data.csv": csv_bytes}
+                if qualtrics_raw_bytes is not None:
+                    _fallback["Simulated_Data_Qualtrics_Raw.csv"] = qualtrics_raw_bytes
+                if diagnostics_bytes is not None:
+                    _fallback["Simulation_Diagnostics.csv"] = _sanitize_diagnostics_csv(diagnostics_bytes)
+                st.session_state["last_zip"] = _bytes_to_zip(_fallback)
             st.session_state["last_metadata"] = metadata
 
             progress_bar.progress(85, text="")
@@ -17461,9 +17494,9 @@ if active_page == 3:
         # v1.4.16: ZIP contents list
         st.caption(
             "Includes: Simulated_Data.csv, Simulated_Data_Qualtrics_Raw.csv, "
-            "Simulation_Diagnostics.csv, Data_Codebook_Handbook.txt, "
-            "User_Study_Summary.html, R/Python/Julia/SPSS/Stata scripts, "
-            "Metadata.json, Schema_Validation.json"
+            "Simulation_Diagnostics.csv (data-quality flags), Data_Codebook_Handbook.txt, "
+            "User_Study_Summary.html, R/Python/Julia/SPSS/Stata data-preparation scripts, "
+            "Study_Metadata.json, Schema_Validation.json, README_Download_Contents.txt"
         )
 
         with st.expander("Preview (first 20 rows)"):
@@ -17535,7 +17568,7 @@ if active_page == 3:
                     # visitor must not be able to choose its subject or attach documents of their own.
                     subject = "[Behavioral Simulation] Your simulation output"
                     body = (
-                        "Attached is the simulation output ZIP (Simulated_Data.csv, Simulation_Diagnostics.csv, metadata, data-preparation scripts).\n"
+                        "Attached is the simulation output ZIP (Simulated_Data.csv, Simulation_Diagnostics.csv, study metadata, data-preparation scripts).\n"
                         "Files you uploaded to the app are not included in the emailed copy; the Download button has the full package.\n\n"
                         f"Generated: {datetime.now().isoformat(timespec='seconds')}\n"
                     )

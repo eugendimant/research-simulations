@@ -169,8 +169,10 @@ through:
 2. **Graduated adjustments** applied at the individual response level
 3. **Calibration to the scale**: the shift is corrected for the scale's item count and number of response options, so the Cohen's d observed on the scale mean lands near the target (see [How effects work](guide/how-effects-work.md))
 
-Achieved effects are written to `Metadata.json` under `effect_sizes_observed`
-for you to check. No automatic target check runs during generation:
+Achieved effects are written to the run's own metadata under `effect_sizes_observed`,
+in the instructor report and the archived run record. They are deliberately not in the
+participant-facing download, so that a dataset handed to students does not carry its own
+answer key. No automatic target check runs during generation:
 `_validate_effect_sizes()` exists in the engine, with a 0.15 tolerance, but has
 no callers.
 
@@ -542,7 +544,7 @@ The responses exhibit statistical properties matching published research on huma
 - Mean responses around 4.0-5.2 on 7-point scales before domain calibration (documented positive response bias); realized DV means span roughly 3.5-5.5 once construct norms apply, with clinical DVs centering lower and satisfaction DVs higher
 - Standard deviations of 1.2-1.8 (typical for Likert data)
 - Cronbach's alphas in roughly 0.81-0.90 for multi-item scales (measured 0.812-0.895 over ten four-item scales at N=500, three seeds, per-seed medians 0.840-0.849), injected toward a per-scale 0.80-0.90 target and attenuated when they overshoot it
-- Effect sizes: a configured Cohen's *d* is recovered on the scale composite, which it was not before v1.2.8.8. Averaged over 12 independent runs of 1,200 participants per cell, the composite lands within 12% of the request in all 18 cells checked (within 8% in 16), across 2-point to 0-100 scales and 1 to 20 items; the version before v1.2.9.1 overshot by 12-29% at 8 to 20 items and fell 25-100% short on two-point scales (cell table in `docs/guide/how-effects-work.md`); a single run varies by about ±0.06 in *d* at that size and by about ±0.1 at N=400, so at small *d* one dataset can land near zero or above target. A null effect stays null (`tests/test_effect_size_recovery.py`, `tests/test_effect_fidelity_v1291.py`). Effects inferred from condition wording when no *d* is configured are literature-sized and directional rather than fitted to a target. Verify the achieved effect in `Metadata.json` (`effect_sizes_observed`) before relying on the magnitude.
+- Effect sizes: a configured Cohen's *d* is recovered on the scale composite, which it was not before v1.2.8.8. Averaged over 12 independent runs of 1,200 participants per cell, the composite lands within 12% of the request in all 18 cells checked (within 8% in 16), across 2-point to 0-100 scales and 1 to 20 items; the version before v1.2.9.1 overshot by 12-29% at 8 to 20 items and fell 25-100% short on two-point scales (cell table in `docs/guide/how-effects-work.md`); a single run varies by about ±0.06 in *d* at that size and by about ±0.1 at N=400, so at small *d* one dataset can land near zero or above target. A null effect stays null (`tests/test_effect_size_recovery.py`, `tests/test_effect_fidelity_v1291.py`). Effects inferred from condition wording when no *d* is configured are literature-sized and directional rather than fitted to a target. Verify the achieved effect in the run's instructor report (`effect_sizes_observed`) before relying on the magnitude; it is not in the participant-facing download.
 
 ### Can I use this for any survey?
 

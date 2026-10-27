@@ -46,7 +46,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.1.1"  # kept in step with utils/__init__.py by scripts/check_version_sync.py
+__version__ = "1.3.1.2"  # kept in step with utils/__init__.py by scripts/check_version_sync.py
 # NOTE: this stamp was frozen at 1.0.9.5 for 30 releases because it is not one of the ten locations
 # the version check enforces. A stamp nobody checks is worse than no stamp: it tells a reader the
 # wrong thing with authority. It is now in the enforced set.
