@@ -1,0 +1,11 @@
+# Versions under which the Stage 1 checks were run on v1.3.1.2 (Python 3.13.17, 2026-10-29). Install with: pip install -r requirements-reproduce.txt
+matplotlib==3.11.2
+numpy==2.5.3
+pandas==3.0.5
+plotly==7.1.0
+pypdf==6.17.0
+pytest==9.2.0
+python-dateutil==2.9.0.post0
+scipy==1.18.1
+streamlit==1.66.1
+tabulate==0.10.0

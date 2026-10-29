@@ -1,0 +1,1384 @@
+{
+ "study": "brader_valentino_suhay_2008",
+ "citation": "Brader, T., Valentino, N. A., & Suhay, E. (2008). What triggers public opposition to immigration? Anxiety, group cues, and immigration threat. American Journal of Political Science, 52(4), 959-978.",
+ "seeds": 100,
+ "seed0": 1000,
+ "prior_d": 0.3,
+ "git_sha": "6dc5f9efd9663350016fdb682e6fc7b8949b7d75",
+ "python": "3.13.17",
+ "platform": "Linux-6.18.44-fc-v185-x86_64-with-glibc2.39",
+ "numpy": "2.5.3",
+ "pandas": "3.0.5",
+ "human_data_sha256": "15afc45d23909f5f733f68be4dba4dd9b73d37dc427661f230f8ca2a63fc23bb",
+ "human": {
+  "n": 265,
+  "n_focal": 68,
+  "dv": {
+   "immigr": {
+    "mean": 3.026415094339623,
+    "sd": 0.9669051972025792,
+    "share_floor": 0.07169811320754717,
+    "share_ceiling": 0.4075471698113208,
+    "props": {
+     "1.0": 0.07169811320754717,
+     "2.0": 0.23773584905660378,
+     "3.0": 0.2830188679245283,
+     "4.0": 0.4075471698113208
+    },
+    "focal_g": 0.46132035918744396,
+    "focal_lo": 0.1828653658584266,
+    "focal_hi": 0.7397753525164613,
+    "focal_diff": 0.43923559271424306,
+    "focal_p": 0.0007341587796637105,
+    "reg": {
+     "b_intercept": 2.9206349206349227,
+     "p_intercept": 1.17521309919867e-69,
+     "b_tone": 0.1539919450367199,
+     "p_tone": 0.3543611568001588,
+     "b_eth": -0.17436626391850318,
+     "p_eth": 0.29442733614211575,
+     "b_tone_x_eth": 0.45268057471745055,
+     "p_tone_x_eth": 0.052592243094943564
+    },
+    "mde_raw": 0.38078277409969585
+   },
+   "cong_mesg": {
+    "mean": 0.3320754716981132,
+    "sd": 0.47184903246055543,
+    "share_floor": 0.6679245283018868,
+    "share_ceiling": 0.3320754716981132,
+    "props": {
+     "0.0": 0.6679245283018868,
+     "1.0": 0.3320754716981132
+    },
+    "focal_g": 0.22723090393062267,
+    "focal_lo": -0.04911830131145023,
+    "focal_hi": 0.5035801091726956,
+    "focal_diff": 0.10719617796357117,
+    "focal_p": 0.12062335824455396,
+    "reg": {
+     "b_intercept": 0.36507936507936534,
+     "p_intercept": 2.766537628142354e-09,
+     "b_tone": -0.06657190239279845,
+     "p_tone": 0.420885629028613,
+     "b_eth": -0.1113480217957834,
+     "p_eth": 0.1787056874378516,
+     "b_tone_x_eth": 0.2246052649915693,
+     "p_tone_x_eth": 0.053246209412302806
+    },
+    "mde_raw": 0.1858217166030437
+   },
+   "anti_info": {
+    "mean": 0.10943396226415095,
+    "sd": 0.3127736080662843,
+    "share_floor": 0.8905660377358491,
+    "share_ceiling": 0.10943396226415095,
+    "props": {
+     "0.0": 0.8905660377358491,
+     "1.0": 0.10943396226415095
+    },
+    "focal_g": -0.09081100759465496,
+    "focal_lo": -0.3665906286528884,
+    "focal_hi": 0.18496861346357849,
+    "focal_diff": -0.028515974917885933,
+    "focal_p": 0.4938007840200477,
+    "reg": {
+     "b_intercept": 0.20634920634920653,
+     "p_intercept": 2.034835642961879e-07,
+     "b_tone": -0.07202084814025153,
+     "p_tone": 0.1821539439139756,
+     "b_eth": -0.1914238332148783,
+     "p_eth": 0.00044777827504690655,
+     "b_tone_x_eth": 0.1453307691235704,
+     "p_tone_x_eth": 0.055053964775299405
+    },
+    "mde_raw": 0.12317526318942518
+   }
+  },
+  "spearman": [
+   [
+    1.0,
+    0.42256725529188754,
+    0.21953398826389708
+   ],
+   [
+    0.42256725529188754,
+    1.0,
+    0.34315330230649954
+   ],
+   [
+    0.21953398826389708,
+    0.34315330230649954,
+    1.0
+   ]
+  ]
+ },
+ "adapter_notes": [
+  "the parser reported one factor with four levels, not the 2x2 structure; the engine received the parser's factors unchanged (found: ['European'])"
+ ],
+ "engine_detected_domains": [
+  "behavioral_economics",
+  "consumer_behavior"
+ ],
+ "engine_generation_warnings": [
+  "No effect was inferred for anti_info, cong_mesg, immigr: the direction of these outcomes was not declared, so the tool cannot know whether a condition should raise or lower them, and guessing from the condition wording alone produced confidently wrong signs. They carry a true null. Declare what higher values mean per outcome, specify the effect you expect, or switch on unvalidated wording inference.",
+  "Base rate undeclared for the binary outcome(s) anti_info, cong_mesg: they were generated at an uninformed 0.50. A base rate is a property of your population that the tool cannot infer, so declare it per outcome (base_rate) if you know roughly what share of people choose the high category."
+ ],
+ "pipeline_rehearsal": {
+  "immigr": {
+   "column_present": true,
+   "all_finite": true,
+   "within_human_range": true,
+   "integer_valued": true,
+   "levels_observed": [
+    1.0,
+    2.0,
+    3.0,
+    4.0
+   ]
+  },
+  "cong_mesg": {
+   "column_present": true,
+   "all_finite": true,
+   "within_human_range": true,
+   "integer_valued": true,
+   "levels_observed": [
+    0.0,
+    1.0
+   ]
+  },
+  "anti_info": {
+   "column_present": true,
+   "all_finite": true,
+   "within_human_range": true,
+   "integer_valued": true,
+   "levels_observed": [
+    0.0,
+    1.0
+   ]
+  },
+  "_provenance_columns_present": true,
+  "_condition_labels": [
+   "Negative tone, European immigrant",
+   "Negative tone, Latino immigrant",
+   "Positive tone, European immigrant",
+   "Positive tone, Latino immigrant"
+  ]
+ },
+ "arms": {
+  "ENGINE_DEFAULT": {
+   "n_runs": 100,
+   "dv": {
+    "immigr": {
+     "mean_err_sd": {
+      "mean": -0.2759631341844377,
+      "sd": 0.0637274509818147
+     },
+     "sd_ratio": {
+      "mean": 0.9916762224485808,
+      "sd": 0.028157521166768992
+     },
+     "wasserstein": {
+      "mean": 0.08901886792452832,
+      "sd": 0.020409548221480986
+     },
+     "tv": {
+      "mean": 0.15400000000000003,
+      "sd": 0.024699640534617352
+     },
+     "focal_g_err": {
+      "mean": -0.4773974804233733,
+      "sd": 0.14246821665288317
+     },
+     "focal_sign_agree": {
+      "mean": 0.47,
+      "sd": 0.5016135580465918
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.09,
+      "sd": 0.2876234912646614
+     },
+     "focal_decision_agree": {
+      "mean": 0.03,
+      "sd": 0.1714466079977653
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.01,
+      "sd": 0.09999999999999999
+     },
+     "interaction_decision_agree": {
+      "mean": 0.93,
+      "sd": 0.2564323999762428
+     },
+     "mde_ratio": {
+      "mean": 1.0015184716595906,
+      "sd": 0.028436980665962532
+     }
+    },
+    "cong_mesg": {
+     "mean_err_sd": {
+      "mean": 0.3593250343805551,
+      "sd": 0.06807208314699643
+     },
+     "sd_ratio": {
+      "mean": 1.0594859332302695,
+      "sd": 0.0027585791052510624
+     },
+     "wasserstein": {
+      "mean": 0.16954716981132073,
+      "sd": 0.03211974657048475
+     },
+     "tv": {
+      "mean": 0.16954716981132073,
+      "sd": 0.03211974657048475
+     },
+     "focal_g_err": {
+      "mean": -0.24768982147676188,
+      "sd": 0.1311410470792306
+     },
+     "focal_sign_agree": {
+      "mean": 0.45,
+      "sd": 0.5
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.58,
+      "sd": 0.49604496374885826
+     },
+     "focal_decision_agree": {
+      "mean": 0.96,
+      "sd": 0.19694638556693236
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.01,
+      "sd": 0.09999999999999999
+     },
+     "interaction_decision_agree": {
+      "mean": 0.98,
+      "sd": 0.14070529413628965
+     },
+     "mde_ratio": {
+      "mean": 1.0700011844325865,
+      "sd": 0.00278595762094756
+     }
+    },
+    "anti_info": {
+     "mean_err_sd": {
+      "mean": 1.277915089059693,
+      "sd": 0.10001569447029521
+     },
+     "sd_ratio": {
+      "mean": 1.5982449403061838,
+      "sd": 0.0044823387090452815
+     },
+     "wasserstein": {
+      "mean": 0.3996981132075472,
+      "sd": 0.03128226962272935
+     },
+     "tv": {
+      "mean": 0.3996981132075472,
+      "sd": 0.03128226962272935
+     },
+     "focal_g_err": {
+      "mean": 0.09034014993340081,
+      "sd": 0.13052989707579452
+     },
+     "focal_sign_agree": {
+      "mean": 0.52,
+      "sd": 0.5021167315686782
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.9,
+      "sd": 0.3015113445777636
+     },
+     "focal_decision_agree": {
+      "mean": 0.98,
+      "sd": 0.14070529413628965
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.01,
+      "sd": 0.09999999999999999
+     },
+     "interaction_decision_agree": {
+      "mean": 0.97,
+      "sd": 0.1714466079977653
+     },
+     "mde_ratio": {
+      "mean": 1.6141073000629689,
+      "sd": 0.00452682530015625
+     }
+    }
+   },
+   "corr_mad": {
+    "mean": 0.3221663039729749,
+    "sd": 0.038049210347615485
+   }
+  },
+  "ENGINE_DECLARED": {
+   "n_runs": 100,
+   "dv": {
+    "immigr": {
+     "mean_err_sd": {
+      "mean": -0.27264580051088694,
+      "sd": 0.06907673557185627
+     },
+     "sd_ratio": {
+      "mean": 1.0165546407580432,
+      "sd": 0.03161239167450024
+     },
+     "wasserstein": {
+      "mean": 0.0879245283018868,
+      "sd": 0.022180470034744878
+     },
+     "tv": {
+      "mean": 0.13886792452830188,
+      "sd": 0.027563586566866177
+     },
+     "focal_g_err": {
+      "mean": -0.3025587503220655,
+      "sd": 0.16110682425886275
+     },
+     "focal_sign_agree": {
+      "mean": 0.86,
+      "sd": 0.348735088019777
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.4,
+      "sd": 0.49236596391733095
+     },
+     "focal_decision_agree": {
+      "mean": 0.21,
+      "sd": 0.40936018074033237
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.21,
+      "sd": 0.40936018074033237
+     },
+     "interaction_decision_agree": {
+      "mean": 0.93,
+      "sd": 0.2564323999762428
+     },
+     "mde_ratio": {
+      "mean": 1.026643804826377,
+      "sd": 0.03192614028515894
+     }
+    },
+    "cong_mesg": {
+     "mean_err_sd": {
+      "mean": 0.3635636782314721,
+      "sd": 0.0730984670810292
+     },
+     "sd_ratio": {
+      "mean": 1.059127588245454,
+      "sd": 0.0037990616241039515
+     },
+     "wasserstein": {
+      "mean": 0.17154716981132073,
+      "sd": 0.03449144096653339
+     },
+     "tv": {
+      "mean": 0.17154716981132073,
+      "sd": 0.03449144096653339
+     },
+     "focal_g_err": {
+      "mean": -0.06359599581260367,
+      "sd": 0.16226273758293294
+     },
+     "focal_sign_agree": {
+      "mean": 0.84,
+      "sd": 0.3684529491774707
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.89,
+      "sd": 0.31446603773522014
+     },
+     "focal_decision_agree": {
+      "mean": 0.74,
+      "sd": 0.4408440022768081
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.26,
+      "sd": 0.4408440022768081
+     },
+     "interaction_decision_agree": {
+      "mean": 0.96,
+      "sd": 0.1969463855669324
+     },
+     "mde_ratio": {
+      "mean": 1.0696392829234092,
+      "sd": 0.0038367667847460747
+     }
+    },
+    "anti_info": {
+     "mean_err_sd": {
+      "mean": 1.2859985776328613,
+      "sd": 0.10759928208352812
+     },
+     "sd_ratio": {
+      "mean": 1.5975838165123721,
+      "sd": 0.005383865662974819
+     },
+     "wasserstein": {
+      "mean": 0.40222641509433965,
+      "sd": 0.03365421568260699
+     },
+     "tv": {
+      "mean": 0.40222641509433965,
+      "sd": 0.03365421568260699
+     },
+     "focal_g_err": {
+      "mean": 0.24489886214065662,
+      "sd": 0.15027816888747497
+     },
+     "focal_sign_agree": {
+      "mean": 0.19,
+      "sd": 0.3942772444036626
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.63,
+      "sd": 0.4852365870939097
+     },
+     "focal_decision_agree": {
+      "mean": 0.77,
+      "sd": 0.42295258468165076
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.0,
+      "sd": 0.0
+     },
+     "interaction_decision_agree": {
+      "mean": 0.93,
+      "sd": 0.25643239997624284
+     },
+     "mde_ratio": {
+      "mean": 1.6134396147070356,
+      "sd": 0.005437299784287834
+     }
+    }
+   },
+   "corr_mad": {
+    "mean": 0.3093531973305943,
+    "sd": 0.036255635679962345
+   }
+  },
+  "ENGINE_NULL": {
+   "n_runs": 100,
+   "dv": {
+    "immigr": {
+     "mean_err_sd": {
+      "mean": -0.2759631341844377,
+      "sd": 0.0637274509818147
+     },
+     "sd_ratio": {
+      "mean": 0.9916762224485808,
+      "sd": 0.028157521166768992
+     },
+     "wasserstein": {
+      "mean": 0.08901886792452832,
+      "sd": 0.020409548221480986
+     },
+     "tv": {
+      "mean": 0.15400000000000003,
+      "sd": 0.024699640534617352
+     },
+     "focal_g_err": {
+      "mean": -0.4773974804233733,
+      "sd": 0.14246821665288317
+     },
+     "focal_sign_agree": {
+      "mean": 0.47,
+      "sd": 0.5016135580465918
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.09,
+      "sd": 0.2876234912646614
+     },
+     "focal_decision_agree": {
+      "mean": 0.03,
+      "sd": 0.1714466079977653
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.01,
+      "sd": 0.09999999999999999
+     },
+     "interaction_decision_agree": {
+      "mean": 0.93,
+      "sd": 0.2564323999762428
+     },
+     "mde_ratio": {
+      "mean": 1.0015184716595906,
+      "sd": 0.028436980665962532
+     }
+    },
+    "cong_mesg": {
+     "mean_err_sd": {
+      "mean": 0.3593250343805551,
+      "sd": 0.06807208314699643
+     },
+     "sd_ratio": {
+      "mean": 1.0594859332302695,
+      "sd": 0.0027585791052510624
+     },
+     "wasserstein": {
+      "mean": 0.16954716981132073,
+      "sd": 0.03211974657048475
+     },
+     "tv": {
+      "mean": 0.16954716981132073,
+      "sd": 0.03211974657048475
+     },
+     "focal_g_err": {
+      "mean": -0.24768982147676188,
+      "sd": 0.1311410470792306
+     },
+     "focal_sign_agree": {
+      "mean": 0.45,
+      "sd": 0.5
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.58,
+      "sd": 0.49604496374885826
+     },
+     "focal_decision_agree": {
+      "mean": 0.96,
+      "sd": 0.19694638556693236
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.01,
+      "sd": 0.09999999999999999
+     },
+     "interaction_decision_agree": {
+      "mean": 0.98,
+      "sd": 0.14070529413628965
+     },
+     "mde_ratio": {
+      "mean": 1.0700011844325865,
+      "sd": 0.00278595762094756
+     }
+    },
+    "anti_info": {
+     "mean_err_sd": {
+      "mean": 1.277915089059693,
+      "sd": 0.10001569447029521
+     },
+     "sd_ratio": {
+      "mean": 1.5982449403061838,
+      "sd": 0.0044823387090452815
+     },
+     "wasserstein": {
+      "mean": 0.3996981132075472,
+      "sd": 0.03128226962272935
+     },
+     "tv": {
+      "mean": 0.3996981132075472,
+      "sd": 0.03128226962272935
+     },
+     "focal_g_err": {
+      "mean": 0.09034014993340081,
+      "sd": 0.13052989707579452
+     },
+     "focal_sign_agree": {
+      "mean": 0.52,
+      "sd": 0.5021167315686782
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.9,
+      "sd": 0.3015113445777636
+     },
+     "focal_decision_agree": {
+      "mean": 0.98,
+      "sd": 0.14070529413628965
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.01,
+      "sd": 0.09999999999999999
+     },
+     "interaction_decision_agree": {
+      "mean": 0.97,
+      "sd": 0.1714466079977653
+     },
+     "mde_ratio": {
+      "mean": 1.6141073000629689,
+      "sd": 0.00452682530015625
+     }
+    }
+   },
+   "corr_mad": {
+    "mean": 0.3221663039729749,
+    "sd": 0.038049210347615485
+   }
+  },
+  "ENGINE_PRIOR": {
+   "n_runs": 100,
+   "dv": {
+    "immigr": {
+     "mean_err_sd": {
+      "mean": -0.35874036620327404,
+      "sd": 0.06997221953261427
+     },
+     "sd_ratio": {
+      "mean": 1.0314082352070577,
+      "sd": 0.031576950547485154
+     },
+     "wasserstein": {
+      "mean": 0.11562264150943395,
+      "sd": 0.022552167575294865
+     },
+     "tv": {
+      "mean": 0.16471698113207545,
+      "sd": 0.02477337218391042
+     },
+     "focal_g_err": {
+      "mean": -0.1614603690194329,
+      "sd": 0.14807768854269326
+     },
+     "focal_sign_agree": {
+      "mean": 0.99,
+      "sd": 0.1
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.8,
+      "sd": 0.4020151261036849
+     },
+     "focal_decision_agree": {
+      "mean": 0.53,
+      "sd": 0.5016135580465918
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.53,
+      "sd": 0.5016135580465918
+     },
+     "interaction_decision_agree": {
+      "mean": 0.72,
+      "sd": 0.4512608598542128
+     },
+     "mde_ratio": {
+      "mean": 1.0416448191438292,
+      "sd": 0.03189034740986499
+     }
+    },
+    "cong_mesg": {
+     "mean_err_sd": {
+      "mean": 0.274712106186781,
+      "sd": 0.08786806054680077
+     },
+     "sd_ratio": {
+      "mean": 1.0548550789257438,
+      "sd": 0.011403247028487235
+     },
+     "wasserstein": {
+      "mean": 0.12999999999999998,
+      "sd": 0.04024933884598164
+     },
+     "tv": {
+      "mean": 0.12999999999999998,
+      "sd": 0.04024933884598165
+     },
+     "focal_g_err": {
+      "mean": 0.10409357232882492,
+      "sd": 0.19454061289715893
+     },
+     "focal_sign_agree": {
+      "mean": 0.98,
+      "sd": 0.14070529413628965
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.89,
+      "sd": 0.31446603773522014
+     },
+     "focal_decision_agree": {
+      "mean": 0.44,
+      "sd": 0.4988876515698589
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.56,
+      "sd": 0.49888765156985887
+     },
+     "interaction_decision_agree": {
+      "mean": 0.73,
+      "sd": 0.4461960433384737
+     },
+     "mde_ratio": {
+      "mean": 1.0653243695402264,
+      "sd": 0.011516422676474392
+     }
+    },
+    "anti_info": {
+     "mean_err_sd": {
+      "mean": 1.1461662902253666,
+      "sd": 0.11117345983386659
+     },
+     "sd_ratio": {
+      "mean": 1.5944554716386055,
+      "sd": 0.008753845596816655
+     },
+     "wasserstein": {
+      "mean": 0.3584905660377358,
+      "sd": 0.03477212415345058
+     },
+     "tv": {
+      "mean": 0.3584905660377358,
+      "sd": 0.03477212415345059
+     },
+     "focal_g_err": {
+      "mean": 0.4181824771521048,
+      "sd": 0.16002030814717527
+     },
+     "focal_sign_agree": {
+      "mean": 0.01,
+      "sd": 0.09999999999999999
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.2,
+      "sd": 0.4020151261036849
+     },
+     "focal_decision_agree": {
+      "mean": 0.4,
+      "sd": 0.49236596391733095
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.0,
+      "sd": 0.0
+     },
+     "interaction_decision_agree": {
+      "mean": 0.72,
+      "sd": 0.4512608598542129
+     },
+     "mde_ratio": {
+      "mean": 1.6102802214435135,
+      "sd": 0.008840726302402005
+     }
+    }
+   },
+   "corr_mad": {
+    "mean": 0.3049701854357026,
+    "sd": 0.04163683964713052
+   }
+  },
+  "BASELINE_NULL": {
+   "n_runs": 100,
+   "dv": {
+    "immigr": {
+     "mean_err_sd": {
+      "mean": -0.542676761537916,
+      "sd": 0.07312185869358867
+     },
+     "sd_ratio": {
+      "mean": 1.154619812895376,
+      "sd": 0.02839639103153527
+     },
+     "wasserstein": {
+      "mean": 0.1749056603773584,
+      "sd": 0.02356730173331451
+     },
+     "tv": {
+      "mean": 0.19641509433962268,
+      "sd": 0.028138784200274856
+     },
+     "focal_g_err": {
+      "mean": -0.4755327336426775,
+      "sd": 0.1480407200851321
+     },
+     "focal_sign_agree": {
+      "mean": 0.49,
+      "sd": 0.5024183937956914
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.07,
+      "sd": 0.2564323999762428
+     },
+     "focal_decision_agree": {
+      "mean": 0.06,
+      "sd": 0.23868325657594203
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.03,
+      "sd": 0.17144660799776526
+     },
+     "interaction_decision_agree": {
+      "mean": 0.95,
+      "sd": 0.21904291355759037
+     },
+     "mde_ratio": {
+      "mean": 1.154619812895376,
+      "sd": 0.02839639103153528
+     }
+    },
+    "cong_mesg": {
+     "mean_err_sd": {
+      "mean": 0.3561260578892972,
+      "sd": 0.07013080236868112
+     },
+     "sd_ratio": {
+      "mean": 1.0593555252301947,
+      "sd": 0.003612255070907718
+     },
+     "wasserstein": {
+      "mean": 0.1680377358490566,
+      "sd": 0.033091151243344614
+     },
+     "tv": {
+      "mean": 0.1680377358490566,
+      "sd": 0.033091151243344614
+     },
+     "focal_g_err": {
+      "mean": -0.22199516784420414,
+      "sd": 0.13969497196948616
+     },
+     "focal_sign_agree": {
+      "mean": 0.58,
+      "sd": 0.49604496374885826
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.71,
+      "sd": 0.4560480215720687
+     },
+     "focal_decision_agree": {
+      "mean": 0.94,
+      "sd": 0.23868325657594203
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.03,
+      "sd": 0.1714466079977653
+     },
+     "interaction_decision_agree": {
+      "mean": 0.94,
+      "sd": 0.23868325657594203
+     },
+     "mde_ratio": {
+      "mean": 1.0593555252301947,
+      "sd": 0.0036122550709076964
+     }
+    },
+    "anti_info": {
+     "mean_err_sd": {
+      "mean": 1.241961662271571,
+      "sd": 0.10242899094847956
+     },
+     "sd_ratio": {
+      "mean": 1.5983463298519553,
+      "sd": 0.004512745390436564
+     },
+     "wasserstein": {
+      "mean": 0.3884528301886793,
+      "sd": 0.03203708506954473
+     },
+     "tv": {
+      "mean": 0.3884528301886793,
+      "sd": 0.03203708506954473
+     },
+     "focal_g_err": {
+      "mean": 0.09726371733144865,
+      "sd": 0.13689819360127736
+     },
+     "focal_sign_agree": {
+      "mean": 0.51,
+      "sd": 0.5024183937956914
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.89,
+      "sd": 0.31446603773522014
+     },
+     "focal_decision_agree": {
+      "mean": 0.99,
+      "sd": 0.09999999999999999
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.01,
+      "sd": 0.09999999999999999
+     },
+     "interaction_decision_agree": {
+      "mean": 0.95,
+      "sd": 0.2190429135575904
+     },
+     "mde_ratio": {
+      "mean": 1.5983463298519553,
+      "sd": 0.004512745390436552
+     }
+    }
+   },
+   "corr_mad": {
+    "mean": 0.3288699573435879,
+    "sd": 0.0345274283953965
+   }
+  },
+  "BASELINE_PRIOR": {
+   "n_runs": 100,
+   "dv": {
+    "immigr": {
+     "mean_err_sd": {
+      "mean": -0.4602507766139262,
+      "sd": 0.07135170650177813
+     },
+     "sd_ratio": {
+      "mean": 1.1583607292338884,
+      "sd": 0.027826054222386647
+     },
+     "wasserstein": {
+      "mean": 0.14833962264150943,
+      "sd": 0.022996778615280787
+     },
+     "tv": {
+      "mean": 0.1698867924528302,
+      "sd": 0.025889736075089275
+     },
+     "focal_g_err": {
+      "mean": -0.19607215155243718,
+      "sd": 0.14671371679882853
+     },
+     "focal_sign_agree": {
+      "mean": 0.94,
+      "sd": 0.23868325657594203
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.73,
+      "sd": 0.4461960433384737
+     },
+     "focal_decision_agree": {
+      "mean": 0.48,
+      "sd": 0.5021167315686782
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.48,
+      "sd": 0.5021167315686782
+     },
+     "interaction_decision_agree": {
+      "mean": 0.75,
+      "sd": 0.4351941398892446
+     },
+     "mde_ratio": {
+      "mean": 1.1583607292338884,
+      "sd": 0.02782605422238664
+     }
+    },
+    "cong_mesg": {
+     "mean_err_sd": {
+      "mean": 0.418106227407421,
+      "sd": 0.071342094969958
+     },
+     "sd_ratio": {
+      "mean": 1.0574337707110377,
+      "sd": 0.004987553053673095
+     },
+     "wasserstein": {
+      "mean": 0.19728301886792451,
+      "sd": 0.03366269848528374
+     },
+     "tv": {
+      "mean": 0.19728301886792454,
+      "sd": 0.03366269848528374
+     },
+     "focal_g_err": {
+      "mean": 0.007830779981086753,
+      "sd": 0.13791525090698692
+     },
+     "focal_sign_agree": {
+      "mean": 0.95,
+      "sd": 0.2190429135575904
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.94,
+      "sd": 0.23868325657594203
+     },
+     "focal_decision_agree": {
+      "mean": 0.64,
+      "sd": 0.4824181513244218
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.36,
+      "sd": 0.4824181513244218
+     },
+     "interaction_decision_agree": {
+      "mean": 0.79,
+      "sd": 0.40936018074033237
+     },
+     "mde_ratio": {
+      "mean": 1.0574337707110377,
+      "sd": 0.004987553053673074
+     }
+    },
+    "anti_info": {
+     "mean_err_sd": {
+      "mean": 1.3353440526541431,
+      "sd": 0.10300242955579361
+     },
+     "sd_ratio": {
+      "mean": 1.5959564242516506,
+      "sd": 0.0071423308251689676
+     },
+     "wasserstein": {
+      "mean": 0.41766037735849054,
+      "sd": 0.032216441531758844
+     },
+     "tv": {
+      "mean": 0.41766037735849054,
+      "sd": 0.032216441531758844
+     },
+     "focal_g_err": {
+      "mean": 0.32643963111194274,
+      "sd": 0.12739285818504545
+     },
+     "focal_sign_agree": {
+      "mean": 0.06,
+      "sd": 0.23868325657594203
+     },
+     "focal_ci_covers_human": {
+      "mean": 0.33,
+      "sd": 0.4725815626252608
+     },
+     "focal_decision_agree": {
+      "mean": 0.59,
+      "sd": 0.49431107042371025
+     },
+     "focal_signif_and_same_sign": {
+      "mean": 0.0,
+      "sd": 0.0
+     },
+     "interaction_decision_agree": {
+      "mean": 0.88,
+      "sd": 0.3265986323710904
+     },
+     "mde_ratio": {
+      "mean": 1.5959564242516506,
+      "sd": 0.0071423308251689355
+     }
+    }
+   },
+   "corr_mad": {
+    "mean": 0.31577423986405956,
+    "sd": 0.03505679047964126
+   }
+  }
+ },
+ "null_calibration": {
+  "immigr": {
+   "engine_null_focal_reject_rate": 0.03,
+   "baseline_null_focal_reject_rate": 0.06
+  },
+  "cong_mesg": {
+   "engine_null_focal_reject_rate": 0.04,
+   "baseline_null_focal_reject_rate": 0.06
+  },
+  "anti_info": {
+   "engine_null_focal_reject_rate": 0.02,
+   "baseline_null_focal_reject_rate": 0.01
+  }
+ },
+ "synthetic_focal_g_over_seeds": {
+  "ENGINE_DEFAULT": {
+   "immigr": {
+    "mean": -0.016077121235929394,
+    "sd": 0.14246821665288317
+   },
+   "cong_mesg": {
+    "mean": -0.020458917546139217,
+    "sd": 0.1311410470792306
+   },
+   "anti_info": {
+    "mean": -0.0004708576612541468,
+    "sd": 0.13052989707579452
+   }
+  },
+  "ENGINE_DECLARED": {
+   "immigr": {
+    "mean": 0.15876160886537843,
+    "sd": 0.16110682425886275
+   },
+   "cong_mesg": {
+    "mean": 0.16363490811801903,
+    "sd": 0.16226273758293291
+   },
+   "anti_info": {
+    "mean": 0.15408785454600168,
+    "sd": 0.15027816888747497
+   }
+  },
+  "ENGINE_NULL": {
+   "immigr": {
+    "mean": -0.016077121235929394,
+    "sd": 0.14246821665288317
+   },
+   "cong_mesg": {
+    "mean": -0.020458917546139217,
+    "sd": 0.1311410470792306
+   },
+   "anti_info": {
+    "mean": -0.0004708576612541468,
+    "sd": 0.13052989707579452
+   }
+  },
+  "ENGINE_PRIOR": {
+   "immigr": {
+    "mean": 0.29985999016801107,
+    "sd": 0.14807768854269326
+   },
+   "cong_mesg": {
+    "mean": 0.33132447625944755,
+    "sd": 0.19454061289715888
+   },
+   "anti_info": {
+    "mean": 0.3273714695574499,
+    "sd": 0.16002030814717527
+   }
+  },
+  "BASELINE_NULL": {
+   "immigr": {
+    "mean": -0.014212374455233519,
+    "sd": 0.14804072008513208
+   },
+   "cong_mesg": {
+    "mean": 0.005235736086418549,
+    "sd": 0.13969497196948616
+   },
+   "anti_info": {
+    "mean": 0.006452709736793687,
+    "sd": 0.13689819360127733
+   }
+  },
+  "BASELINE_PRIOR": {
+   "immigr": {
+    "mean": 0.2652482076350068,
+    "sd": 0.14671371679882853
+   },
+   "cong_mesg": {
+    "mean": 0.23506168391170937,
+    "sd": 0.13791525090698692
+   },
+   "anti_info": {
+    "mean": 0.23562862351728772,
+    "sd": 0.12739285818504545
+   }
+  }
+ },
+ "synthetic_means_over_seeds": {
+  "ENGINE_DEFAULT": {
+   "immigr": 2.7595849056603776,
+   "cong_mesg": 0.501622641509434,
+   "anti_info": 0.5091320754716981
+  },
+  "ENGINE_DECLARED": {
+   "immigr": 2.7627924528301886,
+   "cong_mesg": 0.5036226415094339,
+   "anti_info": 0.5116603773584906
+  },
+  "ENGINE_NULL": {
+   "immigr": 2.7595849056603776,
+   "cong_mesg": 0.501622641509434,
+   "anti_info": 0.5091320754716981
+  },
+  "ENGINE_PRIOR": {
+   "immigr": 2.6795471698113205,
+   "cong_mesg": 0.46169811320754717,
+   "anti_info": 0.46792452830188674
+  },
+  "BASELINE_NULL": {
+   "immigr": 2.501698113207547,
+   "cong_mesg": 0.5001132075471698,
+   "anti_info": 0.4978867924528302
+  },
+  "BASELINE_PRIOR": {
+   "immigr": 2.581396226415094,
+   "cong_mesg": 0.5293584905660378,
+   "anti_info": 0.5270943396226415
+  }
+ },
+ "engine_default_effect_record": {
+  "inferred_effects_enabled": true,
+  "contrasts": [
+   {
+    "variable": "immigr",
+    "condition_1": "Positive tone, European immigrant",
+    "condition_2": "Positive tone, Latino immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": -0.356
+   },
+   {
+    "variable": "immigr",
+    "condition_1": "Positive tone, European immigrant",
+    "condition_2": "Negative tone, European immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": 0.069
+   },
+   {
+    "variable": "immigr",
+    "condition_1": "Positive tone, European immigrant",
+    "condition_2": "Negative tone, Latino immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": 0.155
+   },
+   {
+    "variable": "immigr",
+    "condition_1": "Positive tone, Latino immigrant",
+    "condition_2": "Negative tone, European immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": 0.382
+   },
+   {
+    "variable": "immigr",
+    "condition_1": "Positive tone, Latino immigrant",
+    "condition_2": "Negative tone, Latino immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": 0.476
+   },
+   {
+    "variable": "immigr",
+    "condition_1": "Negative tone, European immigrant",
+    "condition_2": "Negative tone, Latino immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": 0.074
+   },
+   {
+    "variable": "cong_mesg",
+    "condition_1": "Positive tone, European immigrant",
+    "condition_2": "Positive tone, Latino immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": 0.073
+   },
+   {
+    "variable": "cong_mesg",
+    "condition_1": "Positive tone, European immigrant",
+    "condition_2": "Negative tone, European immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": 0.073
+   },
+   {
+    "variable": "cong_mesg",
+    "condition_1": "Positive tone, European immigrant",
+    "condition_2": "Negative tone, Latino immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": 0.38
+   },
+   {
+    "variable": "cong_mesg",
+    "condition_1": "Positive tone, Latino immigrant",
+    "condition_2": "Negative tone, European immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": 0.0
+   },
+   {
+    "variable": "cong_mesg",
+    "condition_1": "Positive tone, Latino immigrant",
+    "condition_2": "Negative tone, Latino immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": 0.304
+   },
+   {
+    "variable": "cong_mesg",
+    "condition_1": "Negative tone, European immigrant",
+    "condition_2": "Negative tone, Latino immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": 0.304
+   },
+   {
+    "variable": "anti_info",
+    "condition_1": "Positive tone, European immigrant",
+    "condition_2": "Positive tone, Latino immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": -0.165
+   },
+   {
+    "variable": "anti_info",
+    "condition_1": "Positive tone, European immigrant",
+    "condition_2": "Negative tone, European immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": -0.014
+   },
+   {
+    "variable": "anti_info",
+    "condition_1": "Positive tone, European immigrant",
+    "condition_2": "Negative tone, Latino immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": -0.014
+   },
+   {
+    "variable": "anti_info",
+    "condition_1": "Positive tone, Latino immigrant",
+    "condition_2": "Negative tone, European immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": 0.151
+   },
+   {
+    "variable": "anti_info",
+    "condition_1": "Positive tone, Latino immigrant",
+    "condition_2": "Negative tone, Latino immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": 0.151
+   },
+   {
+    "variable": "anti_info",
+    "condition_1": "Negative tone, European immigrant",
+    "condition_2": "Negative tone, Latino immigrant",
+    "source": "not_inferred",
+    "effect_source": "not_inferred",
+    "status": "uncalibrated default -- no effect built in (polarity of this outcome was not declared)",
+    "intended_d": null,
+    "observed_d": 0.0
+   }
+  ],
+  "inferred_effect_policy": {
+   "mode": "replication_adjusted",
+   "shrinkage_factor": 0.45,
+   "default_tau": 0.15,
+   "heterogeneity_draw": true,
+   "min_retained": 0.35,
+   "evidence_tier": "recall_uncertain",
+   "source_verified": false,
+   "applies_to": "inferred effects only (paradigm anchoring and literature fallback); never to effects you specify, the true null, or economic-game baselines"
+  },
+  "inferred_effect_sources": [],
+  "specs": [],
+  "applied_after_generation": [],
+  "note": "Each contrast is condition_1 minus condition_2, in the order of the conditions. intended_d is given only for effects you specified. Inferred effects are a heuristic read of the condition names, but since v1.3.0.6 they are built in with the same calibration, so the d they name is the d the scale mean shows."
+ },
+ "elapsed_seconds": 451.4
+}

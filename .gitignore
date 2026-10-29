@@ -31,3 +31,6 @@ build/
 # Streamlit secrets (never commit)
 .streamlit/secrets.toml
 secrets.toml
+
+# make reproduce output
+reproducibility_output/

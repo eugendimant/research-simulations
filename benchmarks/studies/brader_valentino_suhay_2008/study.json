@@ -1,0 +1,80 @@
+{
+  "id": "brader_valentino_suhay_2008",
+  "title": "News framing of immigration",
+  "description": "Participants read a news story about immigration that varied in tone (positive or negative) and in the ethnicity of the immigrant (European or Latino), then answered questions about immigration.",
+  "citation": "Brader, T., Valentino, N. A., & Suhay, E. (2008). What triggers public opposition to immigration? Anxiety, group cues, and immigration threat. American Journal of Political Science, 52(4), 959-978.",
+  "human_data": {
+    "source": "mediation::framing, mirrored by the Rdatasets project",
+    "url": "https://raw.githubusercontent.com/vincentarelbundock/Rdatasets/master/csv/mediation/framing.csv",
+    "sha256": "FILLED_BY_FETCH",
+    "rows": 265,
+    "note": "Data are fetched at run time and are not redistributed in this repository."
+  },
+  "n": 265,
+  "n_per_cell": {
+    "Positive tone, European immigrant": 63,
+    "Positive tone, Latino immigrant": 67,
+    "Negative tone, European immigrant": 67,
+    "Negative tone, Latino immigrant": 68
+  },
+  "conditions": [
+    "Positive tone, European immigrant",
+    "Positive tone, Latino immigrant",
+    "Negative tone, European immigrant",
+    "Negative tone, Latino immigrant"
+  ],
+  "factors": [
+    {
+      "name": "Tone",
+      "levels": [
+        "Positive tone",
+        "Negative tone"
+      ]
+    },
+    {
+      "name": "Immigrant ethnicity",
+      "levels": [
+        "European immigrant",
+        "Latino immigrant"
+      ]
+    }
+  ],
+  "focal_cell": "Negative tone, Latino immigrant",
+  "reference_cell": "Positive tone, European immigrant",
+  "dvs": [
+    {
+      "name": "immigr",
+      "label": "Attitude toward increased immigration",
+      "type": "likert",
+      "lo": 1,
+      "hi": 4,
+      "description": "Attitude toward increased immigration (1 = most positive, 4 = most negative)"
+    },
+    {
+      "name": "cong_mesg",
+      "label": "Send anti-immigration message to Congress",
+      "type": "binary",
+      "lo": 0,
+      "hi": 1,
+      "description": "Whether the participant asked to send an anti-immigration message to Congress (0 = no, 1 = yes)"
+    },
+    {
+      "name": "anti_info",
+      "label": "Receive anti-immigration information",
+      "type": "binary",
+      "lo": 0,
+      "hi": 1,
+      "description": "Whether the participant wanted information from anti-immigration organizations (0 = no, 1 = yes)"
+    }
+  ],
+  "prior_d": 0.3,
+  "excluded_variables": {
+    "anx": "Dropped after inspecting the human data: its string labels run opposite to the substantive direction (anxious labels correlate negatively with opposition to immigration and with the documented-direction measures), so its sign cannot be scored without a post hoc recoding. Also dropped: emo and p_harm, whose documented direction conflicts with the data in the mirrored file. This decision was made after the human data had been inspected."
+  },
+  "declared_polarity": {
+    "immigr": "-1",
+    "cong_mesg": "-1",
+    "anti_info": "-1"
+  },
+  "declared_polarity_note": "All three outcomes are coded so that higher values mean more opposition to immigration. '-1' declares them reverse-keyed relative to a favourable construct, which is what a researcher who reads the codebook would enter. Declared before the v1.3.1.2 rerun; no human outcome is used."
+}
