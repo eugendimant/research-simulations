@@ -73,7 +73,7 @@ def _args():
 
 def run_child(qsf: str, seed: int, n: int, hashseed: str) -> dict:
     env = dict(os.environ, PYTHONHASHSEED=hashseed, PYTHONDONTWRITEBYTECODE="1")
-    out = subprocess.run([sys.executable, os.path.abspath(__file__), "--child", "--qsf", qsf, "--seed", str(seed), "--n", str(n)],
+    out = subprocess.run([sys.executable, os.path.abspath(__file__), "--child", "--qsf", qsf, "--seed", str(seed), "--n", str(n)],  # noqa: S603 - fixed argv: this script re-runs itself
                          capture_output=True, text=True, env=env, check=True)
     line = [l for l in out.stdout.splitlines() if l.startswith("HASHES ")][-1]
     return json.loads(line[len("HASHES "):])
@@ -81,7 +81,7 @@ def run_child(qsf: str, seed: int, n: int, hashseed: str) -> dict:
 
 def git_sha() -> str:
     try:
-        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, stderr=subprocess.DEVNULL).strip()
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, stderr=subprocess.DEVNULL).strip()  # noqa: S607 - git from PATH, read-only
     except Exception:  # noqa: BLE001
         return "unknown"
 
