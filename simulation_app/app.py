@@ -55,8 +55,8 @@ from html import escape as html_escape  # v1.2.9.1: escape user/QSF text before 
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.1.2"
-BUILD_ID = "20261027-v13112-user-download-secrecy"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.1.3"
+BUILD_ID = "20261113-v13113-dv-items-type-consistency"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -245,7 +245,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.3.1.2"  # v1.3.1.2: the user download no longer carries simulation internals. Before: v1.3.0.7: every open-ended template bank is reachable. Before: v1.3.0.4: reliable instructor email, exact instructor analysis, detected DVs on the Design page, effects that hold next to other scales, hardened HTML/scripts/collection
+APP_VERSION = "1.3.1.3"  # v1.3.1.3: the DV "Qs" count and Type stay consistent. Before: v1.3.1.2: the user download no longer carries simulation internals. Before: v1.3.0.7: every open-ended template bank is reachable. Before: v1.3.0.4: reliable instructor email, exact instructor analysis, detected DVs on the Design page, effects that hold next to other scales, hardened HTML/scripts/collection
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -1306,6 +1306,15 @@ def _normalize_scale_specs(scales: List[Any]) -> List[Dict[str, Any]]:
             # v1.4.0: Map builder scale types to engine-expected types
             raw_type = scale.get("type", "likert")
             mapped_type = _BUILDER_TO_ENGINE_TYPE.get(raw_type, raw_type)
+
+            # v1.3.1.3: a type that declares exactly one question cannot carry several.
+            # The count is the structural fact (it decides the generated columns
+            # Name_1 ... Name_k), so the type follows it. Without this a spec built
+            # outside the Design page -- or one saved before the UI reconciled the two
+            # -- reached the engine as single_item with num_items > 1, which put a
+            # multi-item battery on the numeric-DV path (_NUMERIC_DV_TYPES).
+            if mapped_type == "single_item" and max(1, num_items) > 1:
+                mapped_type = "numbered_items"
 
             normalized.append(
                 {
@@ -11925,6 +11934,32 @@ if active_page == 2:
                             help=f"QSF Variable: {qsf_var_name} | Question: {display_name[:50]}..."
                         )
 
+                    # v1.3.1.3: keep "Qs" and "Type" consistent, resolved BEFORE either widget
+                    # renders.  The count and the type are two views of one structural fact
+                    # (single_item <=> exactly one question), but the Type selectbox is keyed,
+                    # so its stored value silently overrode the count-driven upgrade below:
+                    # entering 6 on a "Single Item" DV left type='single_item' with num_items=6
+                    # in confirmed_scales, exactly the contradiction the tooltip warned about.
+                    # Last edited wins -- change the count and the type follows it; pick
+                    # "Single Item" and the count is forced back to 1.
+                    _items_key = f"dv_items_v{dv_version}_{i}"
+                    _type_state_key = f"dv_type_v{dv_version}_{i}"
+                    _prev_type_key = f"_dv_prev_type_v{dv_version}_{i}"
+                    _stored_type = st.session_state.get(_type_state_key)
+                    _stored_items = st.session_state.get(_items_key)
+                    if _stored_type == 'single_item' and _stored_items is not None:
+                        try:
+                            _stored_items_int = int(_stored_items)
+                        except (TypeError, ValueError):
+                            _stored_items_int = 1
+                        if _stored_items_int > 1:
+                            if st.session_state.get(_prev_type_key) == 'single_item':
+                                # the count is what the user just changed: the type follows it
+                                st.session_state[_type_state_key] = 'numbered_items'
+                            else:
+                                # the user just picked "Single Item": one question means one
+                                st.session_state[_items_key] = 1
+
                     with col2:
                         # Get items value, handle both 'items' and 'num_items' keys
                         items_val = scale.get("items", scale.get("num_items", 1))
@@ -11935,7 +11970,12 @@ if active_page == 2:
                             'numbered_items': "Number of numbered items (e.g., Scale_1 through Scale_5)",
                             'likert': "Number of Likert-type questions grouped together",
                             'slider': "Number of slider questions",
-                            'single_item': "Single question (always 1)",
+                            # v1.3.1.3: this used to read "Single question (always 1)", which the
+                            # box did not enforce. Raising the count is allowed and converts the
+                            # DV; the Type dropdown is what pins it back to one question.
+                            'single_item': "One question. Raise this and the DV becomes numbered "
+                                           "items (Name_1 ... Name_k); set Type back to Single "
+                                           "Item to return to one question.",
                             'numeric_input': "Number of numeric input fields",
                         }.get(dv_type, "Number of questions/items in this scale")
                         num_items = st.number_input(
@@ -11944,7 +11984,7 @@ if active_page == 2:
                             # v1.2.9.1: a detected battery can hold more than 50 items
                             max_value=max(50, int(items_val or 1)),
                             value=int(items_val) if items_val else 1,
-                            key=f"dv_items_v{dv_version}_{i}",
+                            key=_items_key,
                             help=items_help
                         )
 
@@ -12037,7 +12077,7 @@ if active_page == 2:
                             _dv_type_options.append(dv_type)
                         _dv_type_labels = list(type_badges.values())
                         _current_type_idx = _dv_type_options.index(dv_type) if dv_type in _dv_type_options else 0
-                        _type_key = f"dv_type_v{dv_version}_{i}"
+                        _type_key = _type_state_key
                         selected_type = st.selectbox(
                             "Type",
                             options=_dv_type_options,
@@ -12051,6 +12091,9 @@ if active_page == 2:
                         if selected_type != dv_type:
                             dv_type = selected_type
                             type_badge = type_badges.get(dv_type, "📊 Scale")
+                        # v1.3.1.3: remember the type the user is looking at, so the next run can
+                        # tell a type change from a count change (see the reconciliation above).
+                        st.session_state[_prev_type_key] = selected_type
 
                     with col5:
                         # Remove button with clear help text
@@ -12196,7 +12239,8 @@ if active_page == 2:
             # v1.0.6.1: Clean up orphaned widget state from old version to prevent memory bloat
             for _ci in range(max(10, len(confirmed_scales))):
                 for _prefix in ("dv_name_v", "dv_items_v", "dv_min_v", "dv_max_v", "dv_type_v", "dv_desc_v",
-                                "dv_anchor_low_v", "dv_anchor_high_v", "dv_polarity_v", "dv_base_rate_v"):
+                                "dv_anchor_low_v", "dv_anchor_high_v", "dv_polarity_v", "dv_base_rate_v",
+                                "_dv_prev_type_v"):  # v1.3.1.3: count/type reconciliation marker
                     st.session_state.pop(f"{_prefix}{dv_version}_{_ci}", None)
             st.session_state["confirmed_scales"] = updated_scales
             st.session_state["_dv_version"] = dv_version + 1
