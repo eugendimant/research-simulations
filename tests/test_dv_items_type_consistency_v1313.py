@@ -25,6 +25,8 @@ for _p in (str(_APP_DIR), str(_TESTS_DIR)):
         sys.path.insert(0, _p)
 
 # Reuse the synthetic-QSF builders and the AppTest helpers of the design-wiring suite.
+# The ``app_test`` fixture is declared below rather than imported: importing a fixture and then
+# naming it in every test signature is a redefinition ruff rejects (F811).
 from test_design_wiring_v1291 import (  # noqa: E402
     _confirm,
     _dv_rows,
@@ -33,11 +35,23 @@ from test_design_wiring_v1291 import (  # noqa: E402
     _sq,
     _start,
     _upload,
-    app_test,  # noqa: F401  (pytest fixture)
     essay,
     likert_matrix,
     make_qsf,
 )
+
+
+@pytest.fixture()
+def app_test(monkeypatch, tmp_path):
+    """A fresh AppTest with its data/ folders in a temp dir (same contract as the wiring suite)."""
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.chdir(tmp_path)
+    usage_counter = _APP_DIR / ".usage_counter.json"   # written next to app.py after a generation
+    existed = usage_counter.exists()
+    yield AppTest.from_file(str(_APP_DIR / "app.py"), default_timeout=300)
+    if not existed and usage_counter.exists():
+        usage_counter.unlink()
 
 
 def single_choice(qid, tag, text, points=7):
