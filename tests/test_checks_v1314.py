@@ -418,3 +418,77 @@ def test_configuring_no_checks_changes_nothing():
     b, _ = _engine(seed=77, comprehension_checks=[], manipulation_checks=[],
                    named_attention_checks=[]).generate()
     pd.testing.assert_frame_equal(a, b)
+
+
+# ---------------------------------------------------------------------------
+# The Design page (finding 14: a manipulation check had no editor at all)
+# ---------------------------------------------------------------------------
+
+def test_manipulation_check_editor_exists_on_the_design_page(monkeypatch, tmp_path):
+    """The real app, driven as a student drives it.
+
+    Until v1.3.1.4 the only control was a name box, which is why the range the
+    analyst entered elsewhere was ignored by the generator.
+    """
+    import json
+    from pathlib import Path
+
+    from streamlit.testing.v1 import AppTest
+
+    app_dir = Path(__file__).resolve().parent.parent / "simulation_app"
+    monkeypatch.chdir(tmp_path)
+    at = AppTest.from_file(str(app_dir / "app.py"), default_timeout=300)
+
+    def _click(key):
+        found = [b for b in at.button if b.key == key]
+        assert found, f"no button {key!r}"
+        found[0].click()
+
+    at.run()
+    _click("landing_cta")
+    at.run()
+    at.text_input(key="study_title").input("Scarcity study")
+    at.text_area(key="study_description").input(
+        "A pilot study of whether perceived scarcity raises purchase intentions."
+    )
+    at.run()
+    _click("nav_next_0")
+    at.run()
+
+    qsf = {
+        "SurveyEntry": {"SurveyID": "SV_test", "SurveyName": "Scarcity"},
+        "SurveyElements": [
+            {"Element": "BL", "Payload": [{
+                "ID": "BL_1", "Description": "Outcomes",
+                "BlockElements": [{"Type": "Question", "QuestionID": "QID1"}],
+            }]},
+            {"Element": "SQ", "PrimaryAttribute": "QID1", "Payload": {
+                "QuestionID": "QID1", "DataExportTag": "Purchase",
+                "QuestionText": "How likely are you to buy this product?",
+                "QuestionType": "Matrix", "Selector": "Likert",
+                "Choices": {str(i): {"Display": str(i)} for i in range(1, 8)},
+                "Answers": {str(i): {"Display": f"Item {i}"} for i in range(1, 4)},
+            }},
+        ],
+    }
+    at.file_uploader[0].set_value(("scarcity.qsf", json.dumps(qsf).encode(), "application/octet-stream"))
+    at.run()
+    _click("nav_next_1")
+    at.run()
+
+    at.session_state["inferred_design"] = dict(
+        at.session_state.get("inferred_design", {}) or {},
+        conditions=["Low scarcity", "High scarcity"],
+    )
+    at.session_state["confirmed_manipulation_checks"] = [{"name": "MC_Scarce"}]
+    at.run()
+    assert not at.exception, [str(e.value)[:300] for e in at.exception]
+
+    keys = {str(w.key) for w in at.number_input} | {str(w.key) for w in at.multiselect}
+    for prefix in ("manip_min_v", "manip_max_v", "manip_d_v", "manip_high_v"):
+        assert any(k.startswith(prefix) for k in keys), f"no {prefix} control on the Design page"
+
+    # The stored spec carries the range, the direction and the separation.
+    stored = at.session_state["confirmed_manipulation_checks"][0]
+    for field_name in ("scale_min", "scale_max", "effect_size", "high_conditions"):
+        assert field_name in stored
