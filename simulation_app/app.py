@@ -55,8 +55,8 @@ from html import escape as html_escape  # v1.2.9.1: escape user/QSF text before 
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.1.3"
-BUILD_ID = "20261113-v13113-dv-items-type-consistency"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.1.4"
+BUILD_ID = "20261114-v13114-checks-simulated-by-engine"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -245,7 +245,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.3.1.3"  # v1.3.1.3: the DV "Qs" count and Type stay consistent. Before: v1.3.1.2: the user download no longer carries simulation internals. Before: v1.3.0.7: every open-ended template bank is reachable. Before: v1.3.0.4: reliable instructor email, exact instructor analysis, detected DVs on the Design page, effects that hold next to other scales, hardened HTML/scripts/collection
+APP_VERSION = "1.3.1.4"  # v1.3.1.4: comprehension and manipulation checks are simulated by the engine — the configured scale range, the condition direction and the pass/fail flag are real. Before: v1.3.1.3: the DV "Qs" count and Type stay consistent. Before: v1.3.1.2: the user download no longer carries simulation internals. Before: v1.3.0.7: every open-ended template bank is reachable. Before: v1.3.0.4: reliable instructor email, exact instructor analysis, detected DVs on the Design page, effects that hold next to other scales, hardened HTML/scripts/collection
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")
@@ -442,6 +442,44 @@ def _design_config_for_engine(conditions: List[str]) -> Tuple[Optional[Dict[str,
             problems.append("Within-subjects design: define two or more conditions that every participant sees.")
         design["levels"] = levels
     return design, problems
+
+
+def _manip_check_defaults(raw: Any, default_points: int = 7) -> Dict[str, Any]:
+    """One manipulation-check entry in the dict form the editor and engine expect.
+
+    v1.3.1.4. These used to be stored as bare names, which is why the Design page
+    offered no way to set the scale range (the generator hard-coded 1-7) or the
+    direction (every arm whose label did not contain "control" was shifted up by
+    the same 1.5 points). A string is still accepted and upgraded here.
+    """
+    if isinstance(raw, dict):
+        base = dict(raw)
+    else:
+        base = {"name": str(raw or "").strip()}
+    try:
+        points = int(base.get("scale_points", default_points) or default_points)
+    except (TypeError, ValueError):
+        points = default_points
+    points = max(2, min(1001, points))
+    base["name"] = str(base.get("name", "") or "").strip()
+    base["scale_points"] = points
+    try:
+        base["scale_min"] = int(base.get("scale_min", 1))
+    except (TypeError, ValueError):
+        base["scale_min"] = 1
+    try:
+        base["scale_max"] = int(base.get("scale_max", points))
+    except (TypeError, ValueError):
+        base["scale_max"] = points
+    if base["scale_max"] <= base["scale_min"]:
+        base["scale_min"], base["scale_max"] = 1, points
+    try:
+        base["effect_size"] = float(base.get("effect_size", 2.0))
+    except (TypeError, ValueError):
+        base["effect_size"] = 2.0
+    base["high_conditions"] = [str(c) for c in (base.get("high_conditions") or []) if str(c).strip()]
+    base["question_text"] = str(base.get("question_text", "") or "")
+    return base
 
 
 def _repeated_scale_specs(metadata: Dict[str, Any], scales: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -13183,17 +13221,51 @@ if active_page == 2:
         # ── Attention & Manipulation Checks (editable) ──────────────
         preview = st.session_state.get("qsf_preview")
         _raw_attention = preview.attention_checks if preview and hasattr(preview, 'attention_checks') else []
-        detected_manipulation = []
+        # v1.3.1.4: prefer the QSF parser's detector (which had been dead code) and
+        # fall back to the condition identifier's. Anything that is already a
+        # confirmed DV is dropped: it used to be auto-confirmed as a manipulation
+        # check as well, and then received a second, fabricated column beside the
+        # real one.
+        detected_manipulation = list(getattr(preview, "manipulation_checks", None) or [])
         enhanced_analysis = st.session_state.get("enhanced_analysis")
-        if enhanced_analysis and hasattr(enhanced_analysis, 'manipulation_checks'):
-            detected_manipulation = enhanced_analysis.manipulation_checks
+        if not detected_manipulation and enhanced_analysis and hasattr(enhanced_analysis, 'manipulation_checks'):
+            detected_manipulation = list(enhanced_analysis.manipulation_checks or [])
+        _scale_keys = {
+            re.sub(r'[^\w]+', '_', str(_sc.get("name", "") or "")).strip('_').lower()
+            for _sc in (st.session_state.get("confirmed_scales") or [])
+            if isinstance(_sc, dict)
+        }
+        detected_manipulation = [
+            _m for _m in detected_manipulation
+            if re.sub(r'[^\w]+', '_', str(_m)).strip('_').lower() not in _scale_keys
+        ]
 
         # v1.0.9.1: Editable attention/manipulation check lists with add/remove
         _checks_version = st.session_state.get("_checks_version", 0)
+        _design_conditions = [
+            str(_c) for _c in (st.session_state.get("inferred_design", {}) or {}).get("conditions", [])
+            if str(_c).strip()
+        ]
+        # Default the check's response scale to the one the study's own DVs use, so a
+        # 1-5 study does not get a 1-7 manipulation check by default.
+        _scale_pts = [
+            int(_sc.get("scale_points", 0) or 0)
+            for _sc in (st.session_state.get("confirmed_scales") or [])
+            if isinstance(_sc, dict) and int(_sc.get("scale_points", 0) or 0) >= 2
+        ]
+        _default_points = max(set(_scale_pts), key=_scale_pts.count) if _scale_pts else 7
         if "confirmed_attention_checks" not in st.session_state:
             st.session_state["confirmed_attention_checks"] = list(_raw_attention)
         if "confirmed_manipulation_checks" not in st.session_state:
-            st.session_state["confirmed_manipulation_checks"] = list(detected_manipulation)
+            st.session_state["confirmed_manipulation_checks"] = [
+                _manip_check_defaults(_m, _default_points) for _m in detected_manipulation
+            ]
+        # Legacy runs stored bare names; upgrade them in place so the editor below
+        # always sees the dict form.
+        st.session_state["confirmed_manipulation_checks"] = [
+            _manip_check_defaults(_m, _default_points)
+            for _m in (st.session_state.get("confirmed_manipulation_checks") or [])
+        ]
 
         _confirmed_attn = st.session_state.get("confirmed_attention_checks", [])
         _confirmed_manip = st.session_state.get("confirmed_manipulation_checks", [])
@@ -13207,10 +13279,10 @@ if active_page == 2:
 
         _checks_label = f"Attention & manipulation checks ({_attn_count + _manip_count})" if (_attn_count + _manip_count) > 0 else "Attention & manipulation checks (none yet)"
         with st.expander(_checks_label, expanded=False):
-            col_attn, col_manip = st.columns(2)
-
-            # --- Attention Checks column ---
-            with col_attn:
+            # v1.3.1.4: manipulation checks moved out of the two-column layout — they
+            # now carry a scale range, a direction and an effect size, which do not fit
+            # in half the width.
+            with st.container():
                 st.markdown("**Attention Checks**")
                 if _confirmed_attn:
                     _attn_to_remove: list = []
@@ -13242,38 +13314,110 @@ if active_page == 2:
                         st.session_state["confirmed_attention_checks"] = _confirmed_attn
                         st.rerun()
 
-            # --- Manipulation Checks column ---
-            with col_manip:
-                st.markdown("**Manipulation Checks**")
-                if _confirmed_manip:
-                    _manip_to_remove: list = []
-                    for _mi, _mcheck in enumerate(_confirmed_manip):
-                        _mc1, _mc2 = st.columns([5, 1])
-                        with _mc1:
-                            st.caption(f"{_mcheck[:60]}{'...' if len(str(_mcheck)) > 60 else ''}")
-                        with _mc2:
-                            if st.button("✕", key=f"rm_manip_v{_checks_version}_{_mi}", help="Remove this check"):
-                                _manip_to_remove.append(_mi)
-                    if _manip_to_remove:
-                        _new_manip = [c for _j, c in enumerate(_confirmed_manip) if _j not in _manip_to_remove]
-                        st.session_state["confirmed_manipulation_checks"] = _new_manip
-                        st.session_state["_checks_version"] = _checks_version + 1
-                        st.session_state["_check_removal_notice"] = f"Removed {len(_manip_to_remove)} manipulation check(s)."
-                        st.rerun()
-                else:
-                    st.caption("None yet (optional) — add below")
+            # --- Manipulation Checks (full width) ---
+            # v1.3.1.4: before this, a manipulation check was a bare name. The
+            # generator then used a hard-coded 1-7 scale and added a flat +1.5 to
+            # every arm whose label did not contain the substring "control", so a
+            # design such as "Low scarcity" / "High scarcity" produced a column with
+            # no condition difference and a fixed 3-7 range. The range, the direction
+            # and the separation are now the analyst's to set.
+            st.markdown("---")
+            st.markdown("**Manipulation Checks**")
+            st.caption(
+                "A manipulation check asks whether participants noticed the manipulation, "
+                "so its answers should differ by condition. Set the response scale and say "
+                "which conditions should score high; a `<name>_Pass` column is generated "
+                "alongside the answers."
+            )
 
-                _add_manip_name = st.text_input(
-                    "Add manipulation check",
-                    key=f"add_manip_input_v{_checks_version}",
-                    placeholder="e.g., Q20_ManipCheck",
-                    label_visibility="collapsed",
-                )
-                if st.button("+ Add", key=f"add_manip_btn_v{_checks_version}"):
-                    if _add_manip_name.strip():
-                        _confirmed_manip.append(_add_manip_name.strip())
-                        st.session_state["confirmed_manipulation_checks"] = _confirmed_manip
-                        st.rerun()
+            if _confirmed_manip:
+                _manip_to_remove: list = []
+                for _mi, _mcheck in enumerate(_confirmed_manip):
+                    _mcheck = _manip_check_defaults(_mcheck, _default_points)
+                    _m1, _m2, _m3, _m4, _m5 = st.columns([2.2, 1, 1, 1, 0.4])
+                    with _m1:
+                        _m_name = st.text_input(
+                            "Variable name",
+                            value=_mcheck.get("name", f"ManipCheck_{_mi + 1}"),
+                            key=f"manip_name_v{_checks_version}_{_mi}",
+                            label_visibility="collapsed",
+                            placeholder="e.g., Q20_ManipCheck",
+                        )
+                    with _m2:
+                        _m_min = st.number_input(
+                            "Scale min",
+                            value=int(_mcheck.get("scale_min", 1)),
+                            step=1,
+                            key=f"manip_min_v{_checks_version}_{_mi}",
+                            help="Lowest value on this check's response scale.",
+                        )
+                    with _m3:
+                        _m_max = st.number_input(
+                            "Scale max",
+                            value=int(_mcheck.get("scale_max", _default_points)),
+                            step=1,
+                            key=f"manip_max_v{_checks_version}_{_mi}",
+                            help="Highest value on this check's response scale.",
+                        )
+                    with _m4:
+                        _m_d = st.number_input(
+                            "Separation (d)",
+                            min_value=0.0, max_value=4.0, step=0.1,
+                            value=float(_mcheck.get("effect_size", 2.0)),
+                            key=f"manip_d_v{_checks_version}_{_mi}",
+                            help=(
+                                "How far apart the conditions sit on this check, in "
+                                "Cohen's d. A manipulation check is built to be obvious, "
+                                "so 2.0 (a ~84% pass rate with two arms) is the default."
+                            ),
+                        )
+                    with _m5:
+                        if st.button("✕", key=f"rm_manip_v{_checks_version}_{_mi}", help="Remove"):
+                            _manip_to_remove.append(_mi)
+
+                    _m_high = st.multiselect(
+                        "Higher in",
+                        options=_design_conditions,
+                        default=[c for c in _mcheck.get("high_conditions", []) if c in _design_conditions],
+                        key=f"manip_high_v{_checks_version}_{_mi}",
+                        help=(
+                            "The conditions in which participants should score HIGH on this "
+                            "check. Leave empty and the direction is read from the condition "
+                            "labels (e.g. low/medium/high, 10%/50%), which is reported with "
+                            "the run."
+                        ),
+                    )
+                    if _mi not in _manip_to_remove:
+                        _confirmed_manip[_mi] = _manip_check_defaults({
+                            "name": _m_name.strip() or f"ManipCheck_{_mi + 1}",
+                            "scale_min": int(_m_min),
+                            "scale_max": int(_m_max),
+                            "scale_points": max(2, int(_m_max) - int(_m_min) + 1),
+                            "effect_size": float(_m_d),
+                            "high_conditions": list(_m_high),
+                            "question_text": _mcheck.get("question_text", ""),
+                        }, _default_points)
+
+                if _manip_to_remove:
+                    _confirmed_manip = [c for _j, c in enumerate(_confirmed_manip) if _j not in _manip_to_remove]
+                    for _mi_c in range(max(10, len(_confirmed_manip) + len(_manip_to_remove))):
+                        for _pfx in ("manip_name_v", "manip_min_v", "manip_max_v", "manip_d_v", "manip_high_v"):
+                            st.session_state.pop(f"{_pfx}{_checks_version}_{_mi_c}", None)
+                    st.session_state["confirmed_manipulation_checks"] = _confirmed_manip
+                    st.session_state["_checks_version"] = _checks_version + 1
+                    st.session_state["_check_removal_notice"] = f"Removed {len(_manip_to_remove)} manipulation check(s)."
+                    st.rerun()
+            else:
+                st.caption("None yet (optional) — add below")
+
+            if st.button("+ Add Manipulation Check", key=f"add_manip_btn_v{_checks_version}"):
+                _confirmed_manip.append(_manip_check_defaults(
+                    {"name": f"ManipCheck_{len(_confirmed_manip) + 1}"}, _default_points
+                ))
+                st.session_state["confirmed_manipulation_checks"] = _confirmed_manip
+                st.rerun()
+
+            st.session_state["confirmed_manipulation_checks"] = _confirmed_manip
 
             # Context input for simulation
             st.markdown("---")
@@ -13293,8 +13437,12 @@ if active_page == 2:
                         _raw_comp.append({
                             "name": _cc.get("export_tag", _cc.get("question_id", "CompCheck")),
                             "question_text": _cc.get("question_text", ""),
-                            "correct_answer": str(_cc.get("expected_answer", "")),
-                            "answer_options": "",  # User can specify: "Option A; Option B; Option C"
+                            "correct_answer": str(_cc.get("expected_answer", "") or ""),
+                            # v1.3.1.4: the QSF's own choice list, so a wrong answer is a
+                            # real option rather than the placeholder "Wrong_<answer>".
+                            "answer_options": "; ".join(
+                                str(_o) for _o in (_cc.get("answer_options") or []) if str(_o).strip()
+                            ),
                             "pass_rate": 0.90,
                         })
                 st.session_state["confirmed_comprehension_checks"] = _raw_comp
@@ -14123,6 +14271,19 @@ if active_page == 3:
             min_sec = st.number_input("Min completion time (sec)", 10, 600, 60)
             max_sec = st.number_input("Max completion time (sec)", 300, 7200, 1800)
             straight = st.number_input("Straight-line threshold", 3, 40, 10)
+            # v1.3.1.4: a failed comprehension / manipulation check is always written
+            # to Flag_Comprehension / Flag_Manipulation; these decide whether it also
+            # drives Exclude_Recommended, which is the usual pre-registered rule.
+            _excl_comp = st.checkbox(
+                "Exclude on failed comprehension check", value=False,
+                key="excl_failed_comprehension",
+                help="Adds a failed comprehension check to Exclude_Recommended.",
+            )
+            _excl_manip = st.checkbox(
+                "Exclude on failed manipulation check", value=False,
+                key="excl_failed_manipulation",
+                help="Adds a failed manipulation check to Exclude_Recommended.",
+            )
             exclusion = ExclusionCriteria(
                 attention_check_threshold=0.0,
                 completion_time_min_seconds=int(min_sec),
@@ -14130,6 +14291,8 @@ if active_page == 3:
                 straight_line_threshold=int(straight),
                 duplicate_ip_check=True,
                 exclude_careless_responders=False,
+                exclude_failed_comprehension=bool(_excl_comp),
+                exclude_failed_manipulation=bool(_excl_manip),
             )
 
         st.markdown("#### Expected Effect Sizes *(optional)*")
@@ -15881,6 +16044,13 @@ if active_page == 3:
                 free_llm_oe_cap=_free_llm_oe_cap,
                 auto_effects=bool(st.session_state.get("_auto_effects", True)) if st.session_state.get("advanced_mode", False) else True,
                 design=_design_cfg,
+                # v1.3.1.4: the checks are generated BY the engine now. They used to be
+                # appended to the finished dataframe here, which left them out of the
+                # codebook, out of the missing-data pass, and uncoupled from the run seed
+                # and the participant's traits.
+                comprehension_checks=list(st.session_state.get("confirmed_comprehension_checks", []) or []),
+                manipulation_checks=list(st.session_state.get("confirmed_manipulation_checks", []) or []),
+                named_attention_checks=list(st.session_state.get("confirmed_attention_checks", []) or []),
             )
             # v1.2.5.0: ABE 3.0 — always use EnhancedSimulationEngine (HBS merged in)
             engine = _construct_engine(**_engine_kwargs)
@@ -16167,95 +16337,14 @@ if active_page == 3:
                 progress_bar.progress(25, text="")
                 df, metadata = engine.generate()
 
-            # v1.2.6.3: Generate comprehension check columns post-engine
-            _gen_comp_checks = st.session_state.get("confirmed_comprehension_checks", [])
-            if _gen_comp_checks and df is not None and len(df) > 0:
-                import numpy as _np_comp
-                _comp_rng = _np_comp.random.RandomState(42)
-                # v1.2.6.3: Move attn_col lookup OUTSIDE the row loop (O(m) not O(n*m))
-                _comp_attn_col = [c for c in df.columns if 'attention_pass' in c.lower()]
-                for _gc in _gen_comp_checks:
-                    _gc_name = re.sub(r'[^\w]', '_', _gc.get("name") or "CompCheck").strip('_')
-                    _gc_correct = _gc.get("correct_answer", "").strip()
-                    _gc_rate = float(_gc.get("pass_rate", 0.90))
-                    _gc_options_str = _gc.get("answer_options", "").strip()
-
-                    if not _gc_correct:
-                        continue
-                    # v1.2.6.3: Column collision guard
-                    if _gc_name in df.columns or f"{_gc_name}_Pass" in df.columns:
-                        continue
-
-                    _gc_options = [o.strip() for o in _gc_options_str.split(";") if o.strip()] if _gc_options_str else []
-                    _gc_wrong = [o for o in _gc_options if o != _gc_correct] if _gc_options else []
-
-                    n_rows = len(df)
-                    _gc_responses = []
-                    for _ri in range(n_rows):
-                        _participant_attentive = True
-                        if _comp_attn_col:
-                            _participant_attentive = df[_comp_attn_col[0]].iloc[_ri] >= 0.5
-                        _p_correct = _gc_rate if _participant_attentive else _gc_rate * 0.6
-                        if _comp_rng.random() < _p_correct:
-                            _gc_responses.append(_gc_correct)
-                        elif _gc_wrong:
-                            _gc_responses.append(_comp_rng.choice(_gc_wrong))
-                        else:
-                            _gc_responses.append(f"Wrong_{_gc_correct}")
-
-                    df[_gc_name] = _gc_responses
-                    df[f"{_gc_name}_Pass"] = [1 if r == _gc_correct else 0 for r in _gc_responses]
-
-                metadata['comprehension_checks'] = [
-                    {"name": c.get("name", ""), "correct_answer": c.get("correct_answer", "").strip(),
-                     "pass_rate_configured": c.get("pass_rate", 0.90),
-                     "pass_rate_actual": sum(1 for r in df.get((c.get("name") or "").replace(" ", "_"), []) if r == c.get("correct_answer", "").strip()) / max(1, len(df))
-                    }
-                    for c in _gen_comp_checks if c.get("correct_answer", "").strip()
-                ]
-
-            # v1.2.6.3: Generate manipulation check columns post-engine
-            # Manipulation checks should show condition differences — non-control
-            # conditions get higher scores (successful manipulation).
-            _gen_manip_checks = st.session_state.get("confirmed_manipulation_checks", [])
-            if _gen_manip_checks and df is not None and len(df) > 0:
-                import numpy as _np_manip
-                _manip_rng = _np_manip.random.RandomState(123)
-                _cond_col = "CONDITION" if "CONDITION" in df.columns else None
-                for _mc_name_raw in _gen_manip_checks:
-                    _mc_name = re.sub(r'[^\w]', '_', str(_mc_name_raw)).strip('_') or "ManipCheck"
-                    if not _mc_name or _mc_name in df.columns:
-                        continue
-                    n_rows = len(df)
-                    _mc_values = []
-                    for _ri in range(n_rows):
-                        _cond_effect = 0.0
-                        if _cond_col:
-                            _p_cond = str(df[_cond_col].iloc[_ri]).lower()
-                            if 'control' not in _p_cond and 'baseline' not in _p_cond:
-                                _cond_effect = 1.5
-                        _base = 4.0 + _cond_effect + _manip_rng.normal(0, 1.2)
-                        _mc_values.append(int(max(1, min(7, round(_base)))))
-                    df[_mc_name] = _mc_values
-                metadata['manipulation_checks_generated'] = list(_gen_manip_checks)
-
-            # v1.2.6.3: Ensure confirmed attention checks appear as named binary columns
-            _gen_attn_checks = st.session_state.get("confirmed_attention_checks", [])
-            if _gen_attn_checks and df is not None and len(df) > 0:
-                import numpy as _np_attn
-                _attn_pass_col = [c for c in df.columns if 'attention_pass' in c.lower()]
-                _base_pass_rate = df[_attn_pass_col[0]].values if _attn_pass_col else None
-                _rate = float(st.session_state.get("attention_rate", 0.95) or 0.95)
-                for _ai_idx, _ac_name_raw in enumerate(_gen_attn_checks):
-                    _ac_name = re.sub(r'[^\w]', '_', str(_ac_name_raw)).strip('_') or f"AttnCheck_{_ai_idx+1}"
-                    if not _ac_name or _ac_name in df.columns:
-                        continue
-                    _attn_rng = _np_attn.random.RandomState(456 + _ai_idx * 17)
-                    if _base_pass_rate is not None:
-                        df[_ac_name] = [1 if _attn_rng.random() < float(p) else 0 for p in _base_pass_rate]
-                    else:
-                        df[_ac_name] = [1 if _attn_rng.random() < _rate else 0 for _ in range(len(df))]
-                metadata['attention_checks_generated'] = list(_gen_attn_checks)
+            # v1.3.1.4: comprehension / manipulation / named attention checks are
+            # generated inside engine.generate() (see _generate_checks). They used to
+            # be stamped onto the finished dataframe here from fixed literal seeds, on
+            # a hard-coded 1-7 scale, with a +1.5 shift applied to every arm whose
+            # label did not contain the substring "control" — so a design with arms
+            # such as "Low scarcity" / "High scarcity" got no condition difference at
+            # all. Do not reintroduce post-engine column stamping: anything added here
+            # misses the codebook, the missing-data pass and the exclusion flags.
 
             # v1.2.0.8: Validate engine output before proceeding.
             # Engine may return (None, metadata) if it encounters an unrecoverable

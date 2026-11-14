@@ -46,7 +46,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.1.3"  # kept in step with utils/__init__.py by scripts/check_version_sync.py
+__version__ = "1.3.1.4"  # kept in step with utils/__init__.py by scripts/check_version_sync.py
 # NOTE: this stamp was frozen at 1.0.9.5 for 30 releases because it is not one of the ten locations
 # the version check enforces. A stamp nobody checks is worse than no stamp: it tells a reader the
 # wrong thing with authority. It is now in the enforced set.
@@ -3390,6 +3390,12 @@ class ExclusionCriteria:
     straight_line_threshold: int = 10  # Max consecutive identical responses across items
     duplicate_ip_check: bool = True
     exclude_careless_responders: bool = False  # If True, flags but doesn't exclude
+    # v1.3.1.4: comprehension / manipulation checks can now drive exclusion. Both
+    # default to False, so existing runs are unchanged: the Flag_ columns are
+    # written whenever such a check exists, but nothing is excluded on them until
+    # the analyst asks for it.
+    exclude_failed_comprehension: bool = False
+    exclude_failed_manipulation: bool = False
 
 
 def _attenuate_inter_item_correlation(
@@ -3828,6 +3834,13 @@ class EnhancedSimulationEngine:
         # bit-identical; a dict such as {"type": "within"} / {"type": "mixed", "within_factors": [...]}
         # is described in utils/within_design.py.
         design: Optional[Dict[str, Any]] = None,
+        # v1.3.1.4: comprehension / manipulation / named attention checks. These used to be
+        # stamped onto the finished dataframe by app.py AFTER generate() returned, which left
+        # them out of the codebook, out of the missing-data pass and uncoupled from the run
+        # seed and the participant's traits. Empty lists (the default) add no columns.
+        comprehension_checks: Optional[List[Dict[str, Any]]] = None,
+        manipulation_checks: Optional[List[Any]] = None,
+        named_attention_checks: Optional[List[Any]] = None,
         # v1.3.0.8 (P0-1, declare-first): what HIGHER values of each outcome mean. Either a sign
         # (+1 / "positive" / "higher_is_more_of_the_construct") or a short label ("more opposition
         # to immigration"). Without it the tool cannot know whether a "negative tone" arm should
@@ -3885,6 +3898,17 @@ class EnhancedSimulationEngine:
             from .within_design import normalize_design as _normalize_design
             self.design_spec = _normalize_design(design, self.factors, self.conditions)
         self.scales = _normalize_scales(scales)
+        # v1.3.1.4: raw check specs; normalised in _generate_checks(), where the
+        # already-generated columns are known (a manipulation check that is also a
+        # confirmed DV must reuse that DV's column rather than add a second one).
+        self._raw_comprehension_checks = list(comprehension_checks or [])
+        self._raw_manipulation_checks = list(manipulation_checks or [])
+        self._raw_named_attention_checks = list(named_attention_checks or [])
+        self.check_metadata: Dict[str, Any] = {}
+        self._check_warnings: List[str] = []
+        self._check_recompute: Dict[str, List[Dict[str, Any]]] = {
+            "manipulation": [], "comprehension": [],
+        }
         # v1.3.0.8: a declaration carried on the scale itself ("higher_means" / "base_rate") is the
         # route the app uses; an explicit dv_polarity / dv_base_rates argument wins over it.
         for _sc in self.scales:
@@ -3929,6 +3953,23 @@ class EnhancedSimulationEngine:
         self._reversal_ok_arr: Optional[Tuple[str, np.ndarray]] = None
         self.exclusion_criteria = exclusion_criteria or ExclusionCriteria()
         self.open_ended_questions = _normalize_open_ended(open_ended_questions)
+        # v1.3.1.4: the Design page offers a "Manipulation Check" purpose whose help text
+        # promises condition-aware responses, but the engine only ever branched on
+        # "Demographic", so the setting did nothing. The purpose now enriches the
+        # question context, which both the prefill pool and the per-participant draw
+        # read, so the answer is written as a report about the condition the
+        # participant saw rather than as another opinion item.
+        for _oq in self.open_ended_questions:
+            if str(_oq.get("question_purpose", "")).strip() != "Manipulation Check":
+                continue
+            _ctx = str(_oq.get("question_context", "") or "").strip()
+            _hint = (
+                "This is a manipulation check: the answer should describe what the "
+                "participant noticed about the condition they were assigned to, in their "
+                "own words, not their opinion of the topic."
+            )
+            if _hint not in _ctx:
+                _oq["question_context"] = (f"{_ctx} {_hint}".strip() if _ctx else _hint)
         # v1.2.9.1: a text box that is also a detected numeric DV already has its numbers in the
         # DV columns; do not add a second, prose-filled column with the same name.
         self.open_ended_questions, self._oe_dropped_as_dv_duplicates = _drop_oe_duplicating_dvs(
@@ -4415,6 +4456,22 @@ class EnhancedSimulationEngine:
         for col in list(data.keys()):
             if "Attention_Check" in col or "attention_check" in col.lower():
                 _PROTECTED_COLUMNS.add(col)
+        # v1.3.1.4: derived pass/fail flags must stay complete — a NaN there would
+        # read as "did not pass" in every downstream count. The check's own answer
+        # column is NOT protected: a real comprehension or manipulation check can be
+        # skipped like any other item.
+        for col in list(data.keys()):
+            if col.endswith("_Pass") or col in ("Flag_Comprehension", "Flag_Manipulation"):
+                _PROTECTED_COLUMNS.add(col)
+        for _spec in (self.check_metadata.get("named_attention_checks") or []):
+            _PROTECTED_COLUMNS.add(str(_spec.get("column", "")))
+        # v1.3.1.4 (review): the answer columns too. A missing answer beside a 1/0 pass
+        # flag is a contradiction an analyst cannot resolve, and comprehension and
+        # manipulation checks are forced-response in practice — the same reason the
+        # attention-check columns above are protected.
+        for _family in ("manipulation", "comprehension"):
+            for _spec in self._check_recompute.get(_family, []):
+                _PROTECTED_COLUMNS.add(str(_spec.get("column", "")))
 
         # Identify eligible columns (numeric, not protected, not open-ended strings)
         eligible_cols: List[str] = []
@@ -11448,21 +11505,366 @@ class EnhancedSimulationEngine:
             df["Flag_Attention"] = (pr < (thr if thr > 0 else 1.0)).astype(int)
         if "Flag_StraightLine" in df.columns and "Max_Straight_Line" in df.columns:
             self._recompute_straight_line_columns(df)
+        self._recompute_check_flags(df, metadata)
         if "Exclude_Recommended" in df.columns:
             if crit.exclude_careless_responders:
                 df["Exclude_Recommended"] = 0
             else:
-                df["Exclude_Recommended"] = (
+                _excl = (
                     (df.get("Flag_Speed", 0) > 0) | (df.get("Flag_Attention", 0) > 0)
                     | (df.get("Flag_StraightLine", 0) > 0)
-                ).astype(int)
+                )
+                # v1.3.1.4: a failed comprehension / manipulation check counts only when
+                # the analyst asked for it; the flag column itself is always kept.
+                if crit.exclude_failed_comprehension and "Flag_Comprehension" in df.columns:
+                    _excl = _excl | (df["Flag_Comprehension"] > 0)
+                if crit.exclude_failed_manipulation and "Flag_Manipulation" in df.columns:
+                    _excl = _excl | (df["Flag_Manipulation"] > 0)
+                df["Exclude_Recommended"] = _excl.astype(int)
         summ = metadata.get("exclusion_summary")
         if isinstance(summ, dict):
             for key, col in (("flagged_speed", "Flag_Speed"), ("flagged_attention", "Flag_Attention"),
                              ("flagged_straightline", "Flag_StraightLine"),
+                             ("flagged_comprehension", "Flag_Comprehension"),
+                             ("flagged_manipulation", "Flag_Manipulation"),
                              ("total_excluded", "Exclude_Recommended")):
                 if col in df.columns:
                     summ[key] = int(pd.to_numeric(df[col], errors="coerce").fillna(0).sum())
+
+    def _generate_checks(
+        self,
+        data: Dict[str, List],
+        conditions: "pd.Series",
+        all_traits: List[Dict],
+        participant_item_responses: List[List[int]],
+        n: int,
+    ) -> Dict[str, List[int]]:
+        """Generate comprehension / manipulation / named attention check columns.
+
+        v1.3.1.4. These used to be appended to the finished dataframe by app.py,
+        which meant they carried no codebook entry, never received missing data,
+        were drawn from fixed literal seeds (42 / 123 / 456) rather than the run
+        seed, and ignored the participant entirely. The manipulation check in
+        particular applied a hard-coded +1.5 on a hard-coded 1-7 scale to every
+        arm whose label did not contain the substring "control", so a design with
+        arms such as "Low scarcity" / "High scarcity" showed no condition
+        difference at all.
+
+        Returns a dict of per-participant failure indicators for the exclusion
+        pass. Adds nothing and returns empty lists when no checks are configured.
+        """
+        from .check_simulation import (
+            generate_comprehension_values,
+            generate_manipulation_values,
+            normalize_attention_specs,
+            normalize_comprehension_specs,
+            normalize_manipulation_specs,
+        )
+
+        out = {"comprehension_failed": [0] * n, "manipulation_failed": [0] * n}
+        if not (self._raw_comprehension_checks or self._raw_manipulation_checks
+                or self._raw_named_attention_checks):
+            return out
+
+        cond_list = [str(c) for c in (conditions.tolist() if hasattr(conditions, "tolist")
+                                      else list(conditions))]
+        existing_cols = list(data.keys())
+        default_points = 7
+        if self.scales:
+            try:
+                default_points = int(self.scales[0].get("scale_points", 7))
+            except (TypeError, ValueError):
+                default_points = 7
+
+        # Participant standing on the outcome, standardised WITHIN condition, so the
+        # manipulation check correlates with the DV without carrying the condition
+        # effect twice.
+        means = np.array(
+            [float(np.mean(r)) if r else np.nan for r in participant_item_responses],
+            dtype=float,
+        )
+        dv_z = np.zeros(n, dtype=float)
+        if np.isfinite(means).any():
+            for label in set(cond_list):
+                idx = [i for i, c in enumerate(cond_list) if c == label]
+                vals = means[idx]
+                finite = vals[np.isfinite(vals)]
+                if finite.size >= 2:
+                    sd = float(finite.std())
+                    mu = float(finite.mean())
+                    if sd > 1e-9:
+                        for i in idx:
+                            if np.isfinite(means[i]):
+                                dv_z[i] = (means[i] - mu) / sd
+
+        meta: Dict[str, Any] = {}
+
+        # --- Manipulation checks -------------------------------------------------
+        manip_specs, manip_warn = normalize_manipulation_specs(
+            self._raw_manipulation_checks, self.conditions, self.scales,
+            existing_cols, default_points,
+        )
+        self._check_warnings.extend(manip_warn)
+        manip_meta: List[Dict[str, Any]] = []
+        manip_fail = np.zeros(n, dtype=int)
+        for spec in manip_specs:
+            if spec.bound_column:
+                # Already a DV: keep the analyst's own column and scale, add only
+                # the pass flag computed from it.
+                series = [float(_safe_numeric(v, float("nan")))
+                          for v in data.get(spec.bound_column, [])]
+                passes = []
+                targets = sorted(spec.targets.items())
+                for i in range(n):
+                    val = series[i] if i < len(series) else float("nan")
+                    if not np.isfinite(val) or not targets:
+                        passes.append(1)
+                        continue
+                    own = float(spec.targets.get(cond_list[i], spec.midpoint))
+                    passes.append(1 if all(
+                        abs(val - own) <= abs(val - other) + 1e-9
+                        for label, other in targets if label != cond_list[i]
+                    ) else 0)
+                col = spec.bound_column
+                self._check_warnings.append(
+                    f"Manipulation check '{spec.name}' is also a measured outcome, so "
+                    f"column '{col}' was used as-is and only '{col}_Pass' was added."
+                )
+            else:
+                # v1.3.1.4 (review): the seed carries the check's own name, so two
+                # manipulation checks with the same settings are two measurements
+                # rather than the same column twice.
+                values, passes = generate_manipulation_values(
+                    spec, cond_list, all_traits, dv_z,
+                    self.seed + 31337 + _stable_int_hash(spec.column),
+                )
+                col = spec.column
+                data[col] = values
+                self.column_info.append((
+                    col,
+                    f"Manipulation check '{spec.name}' ({spec.scale_min}-{spec.scale_max} scale); "
+                    f"higher = more of the manipulated attribute",
+                ))
+            data[f"{col}_Pass"] = passes
+            self.column_info.append((
+                f"{col}_Pass",
+                f"Manipulation check '{spec.name}' passed (answer closest to the "
+                f"participant's own condition): 1=Yes, 0=No",
+            ))
+            manip_fail += (1 - np.asarray(passes, dtype=int))
+            # v1.3.1.4 (review): a bound DV is still changed after this point by the
+            # game model, composite reconciliation and the validator, so the pass flag
+            # is recomputed from the FINAL column in _finalize_quality_flags.
+            self._check_recompute["manipulation"].append(
+                {"column": col, "targets": dict(spec.targets), "name": spec.name}
+            )
+            manip_meta.append({
+                "name": spec.name,
+                "column": col,
+                "scale_min": spec.scale_min,
+                "scale_max": spec.scale_max,
+                "effect_size": spec.effect_size,
+                "direction_basis": spec.order_basis,
+                "bound_to_dv": bool(spec.bound_column),
+                "condition_targets": {k: round(v, 3) for k, v in spec.targets.items()},
+                "pass_rate_observed": round(float(np.mean(passes)), 4) if passes else 0.0,
+            })
+        if manip_meta:
+            meta["manipulation_checks"] = manip_meta
+            out["manipulation_failed"] = (manip_fail > 0).astype(int).tolist()
+
+        # --- Comprehension checks ------------------------------------------------
+        comp_specs, comp_warn = normalize_comprehension_specs(
+            self._raw_comprehension_checks, self.conditions,
+        )
+        self._check_warnings.extend(comp_warn)
+        comp_meta: List[Dict[str, Any]] = []
+        comp_fail = np.zeros(n, dtype=int)
+        for spec in comp_specs:
+            if spec.column in data or f"{spec.column}_Pass" in data:
+                self._check_warnings.append(
+                    f"Comprehension check '{spec.name}' collides with an existing "
+                    f"column '{spec.column}' and was skipped."
+                )
+                continue
+            # v1.3.1.4 (review): per-check seed — a shared one made two checks at the
+            # same pass rate produce identical pass/fail vectors, and checks at
+            # different rates produce nested ones.
+            answers, passes = generate_comprehension_values(
+                spec, cond_list, all_traits,
+                self.seed + 24691 + _stable_int_hash(spec.column),
+            )
+            data[spec.column] = answers
+            data[f"{spec.column}_Pass"] = passes
+            # v1.3.1.4 (review): a labelled answer is a survey choice, not prose. Long
+            # choice labels can be classified as open-ended text, after which the
+            # stylometric engine and HBSValidator rewrite them and the exported answer
+            # no longer matches any option.
+            self._structured_oe_columns.add(spec.column)
+            self.column_info.extend([
+                (spec.column,
+                 f"Comprehension check '{spec.name}': "
+                 + ("1=correct, 0=incorrect" if spec.coded_only
+                    else f"answer given (correct answer: {spec.correct_answer})")),
+                (f"{spec.column}_Pass",
+                 f"Comprehension check '{spec.name}' answered correctly: 1=Yes, 0=No"),
+            ])
+            comp_fail += (1 - np.asarray(passes, dtype=int))
+            self._check_recompute["comprehension"].append({
+                "column": spec.column,
+                "name": spec.name,
+                "correct_answer": spec.correct_answer,
+                "correct_by_condition": dict(spec.correct_by_condition),
+                "coded_only": spec.coded_only,
+            })
+            comp_meta.append({
+                "name": spec.name,
+                "column": spec.column,
+                "correct_answer": spec.correct_answer,
+                "coded_only": spec.coded_only,
+                "pass_rate_configured": round(spec.pass_rate, 4),
+                "pass_rate_observed": round(float(np.mean(passes)), 4) if passes else 0.0,
+            })
+        if comp_meta:
+            meta["comprehension_checks"] = comp_meta
+            out["comprehension_failed"] = (comp_fail > 0).astype(int).tolist()
+
+        # --- Named attention checks ---------------------------------------------
+        attn_specs, attn_warn = normalize_attention_specs(self._raw_named_attention_checks)
+        self._check_warnings.extend(attn_warn)
+        attn_meta: List[Dict[str, Any]] = []
+        for a_idx, spec in enumerate(attn_specs):
+            if spec.column in data:
+                self._check_warnings.append(
+                    f"Attention check '{spec.name}' collides with an existing column "
+                    f"'{spec.column}' and was skipped."
+                )
+                continue
+            values = []
+            for i in range(n):
+                rng = np.random.RandomState(
+                    (self.seed + i * 100 + 4096 + a_idx * 17) % (2 ** 31)
+                )
+                passed, _ = self._attention_outcome(all_traits[i], rng)
+                values.append(1 if passed else 0)
+            data[spec.column] = values
+            self.column_info.append((
+                spec.column,
+                f"Attention check '{spec.name}' passed: 1=Yes, 0=No",
+            ))
+            attn_meta.append({
+                "name": spec.name,
+                "column": spec.column,
+                "pass_rate_observed": round(float(np.mean(values)), 4) if values else 0.0,
+            })
+        if attn_meta:
+            meta["named_attention_checks"] = attn_meta
+
+        self.check_metadata = meta
+        return out
+
+    def _attention_outcome(self, traits: Dict[str, float], rng) -> Tuple[bool, float]:
+        """Pass/fail for one attention check, on the same model as the engine's own.
+
+        Shares ``_attention_fail_scale`` with ``_generate_attention_check`` so a
+        named attention check agrees with ``Attention_Pass_Rate`` instead of being
+        an independent coin flip at the configured rate.
+        """
+        attention = _safe_trait_value(traits.get("attention_level"), 0.85)
+        scale = getattr(self, "_attention_fail_scale", None)
+        if scale is None:
+            scale = (1.0 - self.attention_rate) / 0.05
+        p_fail = min(1.0, max(0.0, (1.0 - attention) ** 2 * scale))
+        if self.attention_rate >= 1.0:
+            p_fail = 0.0
+        return bool(rng.random() >= p_fail), p_fail
+
+    def _recompute_check_flags(self, df: "pd.DataFrame", metadata: Dict[str, Any]) -> None:
+        """Re-derive every check's pass flag from the FINAL exported column.
+
+        v1.3.1.4 (review). The flags are first computed where the answers are drawn,
+        which is before the experimental game model, composite reconciliation, the
+        missing-data pass and the validator can still change a column — and a
+        manipulation check bound to a measured DV rides on exactly those columns. The
+        exported answer and its ``_Pass`` could therefore disagree, and the
+        disagreement could drive an exclusion. Every flag, the two aggregate
+        ``Flag_`` columns and the reported pass rates are rebuilt here, so each one is
+        reproducible from the data that is actually delivered.
+        """
+        specs_m = self._check_recompute.get("manipulation") or []
+        specs_c = self._check_recompute.get("comprehension") or []
+        if not (specs_m or specs_c):
+            return
+        conds = df["CONDITION"].astype(str) if "CONDITION" in df.columns else None
+
+        manip_fail = np.zeros(len(df), dtype=int)
+        for spec in specs_m:
+            col = str(spec.get("column", ""))
+            pass_col = f"{col}_Pass"
+            if col not in df.columns or pass_col not in df.columns:
+                continue
+            targets = {str(k): float(v) for k, v in (spec.get("targets") or {}).items()}
+            values = pd.to_numeric(df[col], errors="coerce")
+            flags = []
+            for pos in range(len(df)):
+                val = values.iloc[pos]
+                cond = str(conds.iloc[pos]) if conds is not None else ""
+                if not np.isfinite(val) or len(targets) < 2 or cond not in targets:
+                    # No answer to classify. A manipulation check bound to a measured
+                    # DV inherits that DV's missingness, and a participant cannot fail
+                    # an item they did not answer, so the flag is missing too rather
+                    # than silently reading as "passed".
+                    flags.append(float("nan"))
+                    continue
+                own = targets[cond]
+                own_gap = abs(val - own)
+                flags.append(1 if all(
+                    own_gap <= abs(val - other) + 1e-9
+                    for label, other in targets.items() if label != cond
+                ) else 0)
+            arr = np.asarray(flags, dtype=float)
+            df[pass_col] = arr if np.isnan(arr).any() else arr.astype(int)
+            manip_fail += (arr == 0.0).astype(int)
+            observed = float(np.nanmean(arr)) if np.isfinite(arr).any() else 0.0
+            self._update_check_pass_rate("manipulation_checks", col, observed)
+
+        comp_fail = np.zeros(len(df), dtype=int)
+        for spec in specs_c:
+            col = str(spec.get("column", ""))
+            pass_col = f"{col}_Pass"
+            if col not in df.columns or pass_col not in df.columns:
+                continue
+            by_condition = {str(k): str(v) for k, v in (spec.get("correct_by_condition") or {}).items()}
+            correct = str(spec.get("correct_answer", ""))
+            coded = bool(spec.get("coded_only"))
+            flags = []
+            for pos in range(len(df)):
+                answer = df[col].iloc[pos]
+                if answer is None or (isinstance(answer, float) and not np.isfinite(answer)):
+                    flags.append(float("nan"))
+                    continue
+                if coded:
+                    flags.append(1 if _safe_numeric(answer, 0.0) >= 0.5 else 0)
+                    continue
+                cond = str(conds.iloc[pos]) if conds is not None else ""
+                flags.append(1 if str(answer) == by_condition.get(cond, correct) else 0)
+            arr = np.asarray(flags, dtype=float)
+            df[pass_col] = arr if np.isnan(arr).any() else arr.astype(int)
+            comp_fail += (arr == 0.0).astype(int)
+            observed = float(np.nanmean(arr)) if np.isfinite(arr).any() else 0.0
+            self._update_check_pass_rate("comprehension_checks", col, observed)
+
+        if specs_m and "Flag_Manipulation" in df.columns:
+            df["Flag_Manipulation"] = (manip_fail > 0).astype(int)
+        if specs_c and "Flag_Comprehension" in df.columns:
+            df["Flag_Comprehension"] = (comp_fail > 0).astype(int)
+
+    def _update_check_pass_rate(self, family: str, column: str, rate: float) -> None:
+        """Keep metadata["checks"][family][i]["pass_rate_observed"] true to the data."""
+        for entry in (self.check_metadata.get(family) or []):
+            if str(entry.get("column", "")) == column:
+                entry["pass_rate_observed"] = round(float(rate), 4)
+                return
 
     def _calibrate_attention_fail_scale(self, all_traits: List[Dict[str, float]]) -> float:
         """Scale so that mean per-participant failure probability == 1 - attention_rate.
@@ -13391,6 +13793,8 @@ class EnhancedSimulationEngine:
         traits: Dict[str, float],
         participant_item_responses: List[int],
         participant_seed: int,
+        failed_comprehension: bool = False,
+        failed_manipulation: bool = False,
     ) -> Dict[str, Any]:
         rng = np.random.RandomState(participant_seed)
 
@@ -13454,7 +13858,18 @@ class EnhancedSimulationEngine:
         exclude_attention = pass_rate < (_attn_thr if _attn_thr > 0 else 1.0)
         exclude_straightline = max_straight_line >= int(self.exclusion_criteria.straight_line_threshold)
 
-        exclude_recommended = bool(exclude_time or exclude_attention or exclude_straightline)
+        # v1.3.1.4: a failed comprehension or manipulation check is always recorded,
+        # but only drives exclusion when the analyst asked for it.
+        exclude_comprehension = bool(
+            failed_comprehension and self.exclusion_criteria.exclude_failed_comprehension
+        )
+        exclude_manipulation = bool(
+            failed_manipulation and self.exclusion_criteria.exclude_failed_manipulation
+        )
+        exclude_recommended = bool(
+            exclude_time or exclude_attention or exclude_straightline
+            or exclude_comprehension or exclude_manipulation
+        )
         # When exclude_careless_responders is True, flag only (don't recommend exclusion)
         # — this lets instructors decide on exclusion rather than auto-excluding
         if self.exclusion_criteria.exclude_careless_responders:
@@ -13467,6 +13882,8 @@ class EnhancedSimulationEngine:
             "flag_completion_time": bool(exclude_time),
             "flag_attention": bool(exclude_attention),
             "flag_straight_line": bool(exclude_straightline),
+            "flag_comprehension": bool(failed_comprehension),
+            "flag_manipulation": bool(failed_manipulation),
             "exclude_recommended": bool(exclude_recommended),
         }
 
@@ -15430,11 +15847,21 @@ class EnhancedSimulationEngine:
                         _col_responses[_di] = _mod + ' '.join(_words)
                     self._log(f"Deduped {len(_indices)-1} cross-participant duplicates in '{col}'")
 
+        # v1.3.1.4: comprehension / manipulation / named attention checks are generated
+        # here — inside generate(), before the exclusion pass and before missing data —
+        # so they inherit the run seed, the participant's traits, the codebook and the
+        # missingness mask like every other column.
+        _check_failures = self._generate_checks(
+            data, conditions, all_traits, participant_item_responses, n
+        )
+
         exclusion_data: List[Dict[str, Any]] = []
         for i in range(n):
             p_seed = (self.seed + i * 100 + 88888) % (2**31)
             excl = self._simulate_exclusion_flags(
-                attention_results[i], all_traits[i], participant_item_responses[i], p_seed
+                attention_results[i], all_traits[i], participant_item_responses[i], p_seed,
+                failed_comprehension=bool(_check_failures["comprehension_failed"][i]),
+                failed_manipulation=bool(_check_failures["manipulation_failed"][i]),
             )
             exclusion_data.append(excl)
 
@@ -15444,6 +15871,18 @@ class EnhancedSimulationEngine:
         data["Flag_Speed"] = [1 if e["flag_completion_time"] else 0 for e in exclusion_data]
         data["Flag_Attention"] = [1 if e["flag_attention"] else 0 for e in exclusion_data]
         data["Flag_StraightLine"] = [1 if e["flag_straight_line"] else 0 for e in exclusion_data]
+        # v1.3.1.4: only present when such a check exists, so existing runs keep
+        # their exact column set.
+        if self.check_metadata.get("comprehension_checks"):
+            data["Flag_Comprehension"] = [1 if e["flag_comprehension"] else 0 for e in exclusion_data]
+            self.column_info.append(
+                ("Flag_Comprehension", "Failed at least one comprehension check: 1=Yes, 0=No")
+            )
+        if self.check_metadata.get("manipulation_checks"):
+            data["Flag_Manipulation"] = [1 if e["flag_manipulation"] else 0 for e in exclusion_data]
+            self.column_info.append(
+                ("Flag_Manipulation", "Failed at least one manipulation check: 1=Yes, 0=No")
+            )
         data["Exclude_Recommended"] = [1 if e["exclude_recommended"] else 0 for e in exclusion_data]
 
         self.column_info.extend(
@@ -16003,6 +16442,13 @@ class EnhancedSimulationEngine:
         except Exception as _flag_err:
             self._log(f"WARNING: final quality-flag refresh skipped: {_flag_err}")
 
+        # v1.3.1.4: what the comprehension / manipulation / attention checks were
+        # configured to do and what they actually produced. Added only when such a
+        # check exists, so a run without them keeps byte-identical metadata
+        # (BASELINE_HASHES in tests/test_within_design_v1306.py).
+        if self.check_metadata:
+            metadata["checks"] = dict(self.check_metadata)
+
         return df, metadata
 
     def _effect_spec_diagnostics(self) -> Dict[str, Any]:
@@ -16126,6 +16572,9 @@ class EnhancedSimulationEngine:
         warnings.extend(self._effect_spec_diagnostics()["warnings"])
         warnings.extend(getattr(self, "_effect_build_errors", []) or [])
         warnings.extend(self._declare_first_warnings())
+        # v1.3.1.4: a check that could not be generated, or whose direction had to be
+        # inferred, must never fail silently (it used to be a bare `continue`).
+        warnings.extend(getattr(self, "_check_warnings", []) or [])
         warnings.extend(self._binary_base_rate_warnings())
         if "CONDITION" in df.columns and len(self.conditions) >= 2:
             cell_counts = df["CONDITION"].value_counts()

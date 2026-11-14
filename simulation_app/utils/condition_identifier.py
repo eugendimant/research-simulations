@@ -22,6 +22,26 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 
+_WORD_IN_TEXT_CACHE: Dict[str, Any] = {}
+
+
+def _word_in_text(word: str, text: str) -> bool:
+    """True when ``word`` occurs in ``text`` delimited by non-word characters.
+
+    v1.3.1.4. Substring matching made the condition "Control" match
+    "self-control"; ``\\b`` is avoided because labels such as ``80%`` or ``$10``
+    must still match (the rule used across the engine).
+    """
+    key = str(word or '').strip().lower()
+    if not key:
+        return False
+    pattern = _WORD_IN_TEXT_CACHE.get(key)
+    if pattern is None:
+        pattern = re.compile(r'(?<!\w)' + re.escape(key) + r'(?!\w)', re.IGNORECASE)
+        _WORD_IN_TEXT_CACHE[key] = pattern
+    return bool(pattern.search(str(text or '')))
+
+
 class VariableRole(Enum):
     """Role classifications for survey variables (25 types).
 
@@ -1479,23 +1499,58 @@ class EnhancedConditionIdentifier:
         questions_map: Dict[str, Dict],
         conditions: List[IdentifiedCondition],
     ) -> List[str]:
-        """Find manipulation check questions."""
-        manip_checks = []
+        """Find manipulation check questions.
+
+        v1.3.1.4: the old rule flagged any question whose text contained
+        ``manipulation``, ``perceived``, ``felt``, ``seemed`` or ``appeared``, or
+        any condition name as a substring. "I felt confident about the purchase"
+        and "How did you perceive the product?" are ordinary DV items, and a
+        condition called "Control" matched "self-control" and "controlled". Those
+        hits were auto-confirmed on the Design page and then received a fabricated
+        check column beside the real DV. Detection now needs a manipulation-check
+        phrase, or a condition label matched on word boundaries together with a
+        recall cue.
+        """
+        manip_checks: List[str] = []
         if not isinstance(questions_map, dict):
             return manip_checks
-        keywords = ['manipulation', 'perceived', 'felt', 'seemed', 'appeared']
 
-        # Also look for questions that reference condition names
-        condition_names = [c.name.lower() for c in conditions]
+        # Phrases that only a manipulation check uses.
+        phrases = (
+            'manipulation check', 'manip check',
+            'did you notice', 'do you recall', 'do you remember',
+            'which condition', 'what condition', 'condition you were',
+            'treatment you received', 'version you saw', 'version you read',
+            'scenario you read', 'what was the', 'which of the following best describes the',
+        )
+        # Cues that turn a condition-name mention into a check rather than a DV.
+        recall_cues = (
+            'recall', 'remember', 'notice', 'describe', 'was the', 'were you',
+            'did you see', 'did you read', 'assigned',
+        )
+        # Never a manipulation check, whatever else matches.
+        attention_markers = ('please select', 'please choose', 'instructed', 'attention check')
+
+        condition_names = [str(c.name).strip() for c in conditions if str(c.name).strip()]
 
         for q_id, q_info in questions_map.items():
             if not isinstance(q_info, dict):
                 continue
-            text = q_info.get('question_text', '').lower()
-            if any(kw in text for kw in keywords):
-                manip_checks.append(q_info.get('export_tag', q_id))
-            elif any(cn in text for cn in condition_names if cn):
-                manip_checks.append(q_info.get('export_tag', q_id))
+            text = str(q_info.get('question_text', '') or '').lower()
+            if not text:
+                continue
+            if any(marker in text for marker in attention_markers):
+                continue
+            hit = any(p in text for p in phrases)
+            if not hit and condition_names:
+                hit = (
+                    any(_word_in_text(cn, text) for cn in condition_names)
+                    and any(cue in text for cue in recall_cues)
+                )
+            if hit:
+                tag = q_info.get('export_tag', q_id)
+                if tag not in manip_checks:
+                    manip_checks.append(tag)
 
         return manip_checks
 
