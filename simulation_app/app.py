@@ -55,8 +55,8 @@ from html import escape as html_escape  # v1.2.9.1: escape user/QSF text before 
 # Addresses known issue: https://github.com/streamlit/streamlit/issues/366
 # Where deeply imported modules don't hot-reload properly.
 
-REQUIRED_UTILS_VERSION = "1.3.1.4"
-BUILD_ID = "20261114-v13114-checks-simulated-by-engine"  # Change this to force cache invalidation
+REQUIRED_UTILS_VERSION = "1.3.1.5"
+BUILD_ID = "20261114-v13115-check-detection-evidence"  # Change this to force cache invalidation
 
 # NOTE: Previously _verify_and_reload_utils() purged utils.* from sys.modules
 # before every import.  This caused KeyError crashes on Streamlit Cloud when
@@ -245,7 +245,7 @@ if hasattr(utils, '__version__') and utils.__version__ != REQUIRED_UTILS_VERSION
 # -----------------------------
 APP_TITLE = "Behavioral Experiment Simulation Tool"
 APP_SUBTITLE = "Fast, standardized pilot simulations from your Qualtrics QSF or study description"
-APP_VERSION = "1.3.1.4"  # v1.3.1.4: comprehension and manipulation checks are simulated by the engine — the configured scale range, the condition direction and the pass/fail flag are real. Before: v1.3.1.3: the DV "Qs" count and Type stay consistent. Before: v1.3.1.2: the user download no longer carries simulation internals. Before: v1.3.0.7: every open-ended template bank is reachable. Before: v1.3.0.4: reliable instructor email, exact instructor analysis, detected DVs on the Design page, effects that hold next to other scales, hardened HTML/scripts/collection
+APP_VERSION = "1.3.1.5"  # v1.3.1.4: comprehension and manipulation checks are simulated by the engine — the configured scale range, the condition direction and the pass/fail flag are real. Before: v1.3.1.3: the DV "Qs" count and Type stay consistent. Before: v1.3.1.2: the user download no longer carries simulation internals. Before: v1.3.0.7: every open-ended template bank is reachable. Before: v1.3.0.4: reliable instructor email, exact instructor analysis, detected DVs on the Design page, effects that hold next to other scales, hardened HTML/scripts/collection
 APP_BUILD_TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 BASE_STORAGE = Path("data")

@@ -34,7 +34,21 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.3.1.4"  # v1.3.1.4: comprehension-check detection is operator-aware and resolves choice text
+__version__ = "1.3.1.5"  # v1.3.1.5: block-name evidence for checks; unanswerable elements are not checks
+
+
+# Qualtrics elements that display something but collect no response, so they can
+# never be a check or a dependent variable (v1.3.1.5). The label strings are the
+# ones ``_map_question_type`` produces; "DB ()" is the raw descriptive-block form
+# that already appears in the open-ended filter.
+# Blocks a researcher has set aside; a question in one is not simulated at all
+# (v1.3.1.5).
+_TRASH_BLOCK_RE = re.compile(r'(?<![a-z0-9])(trash|unused|old|archive|backup|deprecated)\w*',
+                             re.IGNORECASE)
+
+_UNANSWERABLE_QUESTION_TYPES = frozenset({
+    'Descriptive Text', 'DB ()', 'Graphic Block', 'Timing', 'Meta Info', 'Captcha',
+})
 
 
 def _finite_float(value: Any, default: Optional[float] = None) -> Optional[float]:
@@ -130,6 +144,10 @@ class QuestionInfo:
     # v1.3.1.4: the answer options, so the simulator can draw a real wrong answer
     # instead of the placeholder string "Wrong_<correct answer>".
     comprehension_options: List[str] = field(default_factory=list)
+    # v1.3.1.5: validation states a correct answer, but the question's own name and
+    # text carry no cue. The block name decides; see
+    # ``_promote_block_named_comprehension_checks``.
+    comprehension_candidate: bool = False
     # v2.4.3: Enhanced validation tracking from QSF training
     min_chars: Optional[int] = None  # Minimum character requirement for text entry
     max_chars: Optional[int] = None  # Maximum character requirement
@@ -790,6 +808,13 @@ class QSFPreviewParser:
         # Map questions to blocks
         blocks = self._map_questions_to_blocks(blocks_map, questions_map)
 
+        # v1.3.1.5: now that every question knows its block, the questions whose
+        # validation stated a correct answer can be judged on the block name too.
+        # This runs BEFORE scale and open-ended detection on purpose: those passes
+        # skip comprehension checks, and a question in a block called
+        # "Comprehension 1" or "ExplanationA_3_checkquestion1" is not a DV.
+        self._promote_block_named_comprehension_checks(questions_map)
+
         # Detect conditions from flow/randomizers
         detected_conditions = self._detect_conditions(flow_data, blocks)
 
@@ -1164,25 +1189,32 @@ class QSFPreviewParser:
             is_comprehension_check = False
             comprehension_expected = None
             comprehension_options: List[str] = []
+            # v1.3.1.5: a question whose validation states a correct answer but whose
+            # own name and text carry no cue is a CANDIDATE. The block name is the
+            # remaining piece of evidence and is not known here (it is filled in by
+            # _map_questions_to_blocks), so the decision is finished there.
+            comprehension_candidate = False
             if isinstance(validation, dict):
                 settings = validation.get('Settings', {})
                 if isinstance(settings, dict):
                     custom_val = settings.get('CustomValidation', {})
                     if isinstance(custom_val, dict) and 'Logic' in custom_val:
                         expected_id = self._extract_equal_to_operand(custom_val.get('Logic', {}))
-                        looks_like_check = (
-                            expected_id is not None
-                            and self._looks_like_comprehension_check(q_id, data_export_tag, question_text)
-                        )
-                        if looks_like_check:
-                            is_comprehension_check = True
+                        if expected_id is not None:
                             comprehension_expected, comprehension_options = (
                                 self._resolve_choice_text(expected_id, choices_data)
                             )
-                            self._log(
-                                LogLevel.INFO, "COMPREHENSION_CHECK",
-                                f"Detected comprehension check: {q_id} (expected: {comprehension_expected})"
-                            )
+                            if self._looks_like_comprehension_check(
+                                q_id, data_export_tag, question_text
+                            ):
+                                is_comprehension_check = True
+                                self._log(
+                                    LogLevel.INFO, "COMPREHENSION_CHECK",
+                                    f"Detected comprehension check: {q_id} "
+                                    f"(expected: {comprehension_expected})"
+                                )
+                            else:
+                                comprehension_candidate = True
 
             # v2.4.3: Extract enhanced validation details from QSF training
             min_chars = None
@@ -1304,6 +1336,7 @@ class QSFPreviewParser:
                 is_comprehension_check=is_comprehension_check,
                 comprehension_expected=comprehension_expected,
                 comprehension_options=comprehension_options,
+                comprehension_candidate=comprehension_candidate,
                 min_chars=min_chars,
                 max_chars=max_chars,
                 validation_regex=validation_regex,
@@ -4016,7 +4049,16 @@ class QSFPreviewParser:
         if not isinstance(questions_map, dict):
             return manipulation_checks
 
+        seen: Set[str] = set()
         for q_id, q_info in questions_map.items():
+            # v1.3.1.5: an instruction page, a stimulus image and a timing element
+            # carry no answer, so they cannot be a manipulation check. They matched
+            # on text ("...based on the scenario you read.") or on a name
+            # ("ManipLuxBrandPen"), and every match became a column the analyst was
+            # asked to confirm on the Design page.
+            if str(getattr(q_info, 'question_type', '') or '') in _UNANSWERABLE_QUESTION_TYPES:
+                continue
+
             text = q_info.question_text.lower() if q_info.question_text else ''
             export_tag = str(getattr(q_info, 'export_tag', '') or '')
             name_lower = f"{q_id} {export_tag}".lower()
@@ -4028,20 +4070,34 @@ class QSFPreviewParser:
             if not is_manip:
                 is_manip = any(re.search(p, name_lower) for p in manip_id_patterns)
 
+            if not is_manip:
+                continue
+
             # Avoid false positives - don't flag if it's an attention or comprehension
             # check; both are generated as their own column family.
             attention_indicators = ['attention', 'please select', 'please choose', 'instructed']
-            if is_manip and any(ind in text for ind in attention_indicators):
+            if any(ind in text for ind in attention_indicators):
                 continue
-            if is_manip and getattr(q_info, 'is_comprehension_check', False):
+            # v1.3.1.5: the NAME says attention too. "Attention check" is its own
+            # family whatever the wording of the item.
+            if 'attention' in name_lower:
+                continue
+            if getattr(q_info, 'is_comprehension_check', False):
                 continue
 
-            if is_manip:
-                manipulation_checks.append(export_tag or q_id)
-                self._log(
-                    LogLevel.INFO, "MANIPULATION_CHECK",
-                    f"Detected manipulation check: {q_id}"
-                )
+            # v1.3.1.5: one entry per variable. Several QIDs commonly share an export
+            # tag (the same item shown once per condition), and the duplicates reached
+            # the Design page as separate rows and the engine as repeated specs, which
+            # it then skipped one by one with a warning each.
+            name = export_tag or q_id
+            if name in seen:
+                continue
+            seen.add(name)
+            manipulation_checks.append(name)
+            self._log(
+                LogLevel.INFO, "MANIPULATION_CHECK",
+                f"Detected manipulation check: {q_id}"
+            )
 
         return manipulation_checks
 
@@ -4548,6 +4604,49 @@ class QSFPreviewParser:
                 if operand is not None and str(operand).strip():
                     return str(operand).strip()
         return None
+
+    # Words that mark a BLOCK as holding checks rather than outcomes. ``\\w*`` so
+    # "checkquestion1" and "Comprehension 2" match; the leading boundary keeps
+    # "Recheck" and "spellcheck" out.
+    _CHECK_BLOCK_RE = re.compile(
+        r'(?<![a-z0-9])(comprehension|manipulation|understanding|quiz|check|recall)\w*',
+        re.IGNORECASE,
+    )
+
+    def _promote_block_named_comprehension_checks(self, questions_map: Dict) -> None:
+        """Confirm comprehension-check candidates that sit in a check-named block.
+
+        v1.3.1.5. The v1.3.1.5 gate looked only at the question's own id, export tag
+        and text, so items in blocks named "Comprehension 1" or
+        "ExplanationA_3_checkquestion1_trial2" — whose own tags are bare ids such as
+        ``C1a`` or ``CQ1_trial2`` — were not detected at all. Besides losing the
+        check, that fed them to scale and open-ended detection, which simulated a
+        comprehension question as a numeric DV or an open-ended answer.
+
+        A bare block name is not enough on its own: only a question whose validation
+        already states a correct answer (``comprehension_candidate``) is promoted.
+        """
+        if not isinstance(questions_map, dict):
+            return
+        for q_id, q_info in questions_map.items():
+            if not getattr(q_info, 'comprehension_candidate', False):
+                continue
+            if getattr(q_info, 'is_comprehension_check', False):
+                continue
+            block_name = str(getattr(q_info, 'block_name', '') or '')
+            if not block_name or not self._CHECK_BLOCK_RE.search(block_name):
+                continue
+            # NOT _is_excluded_block_name: that list exists to keep blocks out of
+            # CONDITION detection and it excludes "Comprehension 1" by name, which is
+            # exactly the block wanted here. Only a discarded block disqualifies.
+            if _TRASH_BLOCK_RE.search(block_name):
+                continue
+            q_info.is_comprehension_check = True
+            self._log(
+                LogLevel.INFO, "COMPREHENSION_CHECK",
+                f"Detected comprehension check: {q_id} (block '{block_name}', "
+                f"expected: {getattr(q_info, 'comprehension_expected', None)})"
+            )
 
     @staticmethod
     def _looks_like_comprehension_check(

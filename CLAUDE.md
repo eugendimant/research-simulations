@@ -337,7 +337,30 @@ Runs in this order:
   `_resolve_choice_text` maps the recode id to the choice text — a `NotEqualTo`
   validation used to report the wrong answer as correct, and the recode id was written
   into the data as if it were the answer.
-- Guard: `tests/test_checks_v1314.py`.
+- **Conservative is not the same as blind (v1.3.1.5).** Three gaps in the v1.3.1.4
+  detectors, found by replaying all 303 QSFs in `simulation_app/example_files`:
+  - **An element that collects no response is never a check.**
+    `_UNANSWERABLE_QUESTION_TYPES` (`qsf_preview`) / `_UNANSWERABLE_QSF_TYPES`
+    (`condition_identifier`) — descriptive text, graphic blocks, timing, meta, captcha.
+    An instruction page reading "based on the scenario you read" and an image block named
+    `ManipLuxBrandPen` were 46 of 277 corpus detections, each one a column the student was
+    asked to confirm. An `attention` in the variable NAME disqualifies it too; the old
+    guard read only the question text.
+  - **One entry per variable, not per question.** Several QIDs routinely share an export
+    tag (the same item shown once per condition), and the duplicates reached the Design
+    page as separate rows and the engine as repeated specs it skipped with a warning each.
+  - **The block name is evidence.** The gate runs where `block_name` is still empty
+    (`_map_questions_to_blocks` fills it afterwards), so items in blocks called
+    "Comprehension 1" or "ExplanationA_3_checkquestion1_trial2", whose own tags are bare
+    ids such as `C1b` or `CQ1_trial2`, were not detected at all — and because scale and
+    open-ended detection skip comprehension checks, the item was simulated as a numeric DV
+    or an open-ended answer instead. `_promote_block_named_comprehension_checks` finishes
+    the decision right after block mapping and **before** `_detect_scales` /
+    `_detect_open_ended` for that reason. It promotes only a question whose validation
+    already states a correct answer (`comprehension_candidate`), and never one in a
+    trash/unused block. Do **not** use `_is_excluded_block_name` here: that list exists to
+    keep blocks out of CONDITION detection and it excludes "Comprehension 1" by name.
+- Guards: `tests/test_checks_v1314.py`, `tests/test_detection_v1315.py`.
 
 ---
 

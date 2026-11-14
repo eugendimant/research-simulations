@@ -25,6 +25,11 @@ from enum import Enum
 _WORD_IN_TEXT_CACHE: Dict[str, Any] = {}
 
 
+# Raw Qualtrics question types that display something but collect no response
+# (v1.3.1.5): DB = descriptive block / graphic, Timing, Meta = metadata, Captcha.
+_UNANSWERABLE_QSF_TYPES = frozenset({'DB', 'Timing', 'Meta', 'Captcha'})
+
+
 def _word_in_text(word: str, text: str) -> bool:
     """True when ``word`` occurs in ``text`` delimited by non-word characters.
 
@@ -1536,10 +1541,18 @@ class EnhancedConditionIdentifier:
         for q_id, q_info in questions_map.items():
             if not isinstance(q_info, dict):
                 continue
+            # v1.3.1.5: a descriptive block, a stimulus image or a timing element
+            # collects no response, so it cannot be a manipulation check. Same rule
+            # as qsf_preview._detect_manipulation_checks; here the raw Qualtrics type
+            # is available instead of the display label.
+            if str(q_info.get('type', '') or '') in _UNANSWERABLE_QSF_TYPES:
+                continue
             text = str(q_info.get('question_text', '') or '').lower()
             if not text:
                 continue
             if any(marker in text for marker in attention_markers):
+                continue
+            if 'attention' in f"{q_id} {q_info.get('export_tag', '')}".lower():
                 continue
             hit = any(p in text for p in phrases)
             if not hit and condition_names:
