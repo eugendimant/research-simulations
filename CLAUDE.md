@@ -292,6 +292,55 @@ Runs in this order:
 
 ---
 
+## Comprehension and manipulation checks (v1.3.1.4) — DO NOT regress
+
+- **The engine generates them, not `app.py`.** All three families (comprehension,
+  manipulation, named attention) are produced inside `generate()` by
+  `_generate_checks()` (`enhanced_simulation_engine.py`), which runs *before* the
+  exclusion pass and *before* `_apply_missing_data`. Until v1.3.1.4 they were stamped
+  onto the finished dataframe after `generate()` returned, which is why they carried no
+  codebook entry, were the only 100%-complete columns in a dataset with NAs, and were
+  drawn from the fixed literal seeds 42 / 123 / 456 instead of the run seed. **Never add
+  a data column in `app.py` after the engine returns.**
+- **A manipulation check differs by condition in a stated direction.** The old rule added
+  a flat +1.5 on a hard-coded 1-7 scale to every arm whose label did not contain the
+  substring `control`, so "Low scarcity" / "High scarcity" got no difference at all and a
+  fixed 3-7 range. Direction now comes from the analyst's `high_conditions`, then from
+  numeric labels, then ordinal labels, then a reference arm, then the declared order —
+  and the basis is reported in `metadata["checks"]` and in `generation_warnings`.
+  `utils/check_simulation.condition_intensity_order` is the single place that decides.
+- **The configured range is the range.** `scale_min` / `scale_max` come from the spec or
+  from the linked DV; nothing in this path may assume 1-7.
+- **A check that is also a confirmed DV keeps the DV's column.** `resolve_existing_column`
+  knows the engine writes a single-item DV named `X` as `X_1` and a multi-item one as
+  `X_mean`; only `<col>_Pass` is added. The old bare-name collision guard missed that and
+  produced a fabricated twin column beside the real one.
+- **Every check gets a `<name>_Pass` column**, and `Flag_Comprehension` /
+  `Flag_Manipulation` exist whenever such a check does. They drive `Exclude_Recommended`
+  only when `ExclusionCriteria.exclude_failed_comprehension` / `_manipulation` is set.
+  `_Pass` and `Flag_` columns are protected from missing data; the answer columns are not.
+- **One name rule.** `check_simulation.normalize_check_name` is used both to write a column
+  and to read it back. Two different normalisations (`re.sub(r'[^\w]','_')` when writing,
+  `.replace(' ','_')` when reading) made the reported pass rate 0.0 for any name with
+  punctuation.
+- **The configured pass rate is a sample property.** `calibrate_probability_scale` solves
+  for it by bisection, as `_calibrate_attention_fail_scale` does. Do not multiply the
+  configured rate by a per-participant factor and call the result the pass rate.
+- **Never emit a placeholder answer.** A comprehension check with no answer options is
+  generated as a 1/0 coded column with a warning; the old code wrote the literal string
+  `"Wrong_<correct answer>"`.
+- **Detection is conservative.** `condition_identifier._find_manipulation_checks` and
+  `qsf_preview._detect_manipulation_checks` require a manipulation-check phrase or a
+  check-shaped variable name; bare `perceived` / `felt` / `seemed` / `appeared` and
+  substring condition-name matching flagged ordinary DV items.
+  `qsf_preview._extract_equal_to_operand` requires an `EqualTo` operator and
+  `_resolve_choice_text` maps the recode id to the choice text — a `NotEqualTo`
+  validation used to report the wrong answer as correct, and the recode id was written
+  into the data as if it were the answer.
+- Guard: `tests/test_checks_v1314.py`.
+
+---
+
 ## Open-Text Response Generation Architecture
 
 ### Two Separate Systems:

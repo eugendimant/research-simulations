@@ -34,7 +34,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Version identifier to help track deployed code
-__version__ = "1.3.1.3"  # v1.3.0.4: pass Qualtrics numeric validation through to the engine
+__version__ = "1.3.1.4"  # v1.3.1.4: comprehension-check detection is operator-aware and resolves choice text
 
 
 def _finite_float(value: Any, default: Optional[float] = None) -> Optional[float]:
@@ -127,6 +127,9 @@ class QuestionInfo:
     is_comprehension_check: bool = False
     # v2.4.2: Track expected answer for comprehension checks
     comprehension_expected: Optional[str] = None
+    # v1.3.1.4: the answer options, so the simulator can draw a real wrong answer
+    # instead of the placeholder string "Wrong_<correct answer>".
+    comprehension_options: List[str] = field(default_factory=list)
     # v2.4.3: Enhanced validation tracking from QSF training
     min_chars: Optional[int] = None  # Minimum character requirement for text entry
     max_chars: Optional[int] = None  # Maximum character requirement
@@ -189,6 +192,8 @@ class QSFPreviewResult:
     raw_structure: Dict[str, Any]
     open_ended_questions: List[str] = field(default_factory=list)
     attention_checks: List[str] = field(default_factory=list)
+    # v1.3.1.4: previously computed by a detector that nothing ever called.
+    manipulation_checks: List[str] = field(default_factory=list)
     randomizer_info: Dict[str, Any] = field(default_factory=dict)
     # Detailed open-ended info (includes question text, context, etc.)
     open_ended_details: List[Dict[str, Any]] = field(default_factory=list)
@@ -805,6 +810,7 @@ class QSFPreviewParser:
 
         # Detect attention checks
         attention_checks = self._detect_attention_checks(questions_map)
+        manipulation_checks = self._detect_manipulation_checks(questions_map)
 
         # Analyze randomizer structure
         randomizer_info = self._analyze_randomizers(flow_data)
@@ -854,6 +860,7 @@ class QSFPreviewParser:
             },
             open_ended_questions=open_ended,
             attention_checks=attention_checks,
+            manipulation_checks=manipulation_checks,
             randomizer_info=randomizer_info,
             open_ended_details=open_ended_details,
             study_context=study_context,
@@ -1147,27 +1154,31 @@ class QSFPreviewParser:
                         f"Detected {len(form_fields)} FORM fields in {q_id}: {[f['label'][:30] for f in form_fields]}"
                     )
 
-            # v2.4.2: Detect comprehension checks (CustomValidation with expected answer)
+            # Detect comprehension checks (CustomValidation with an expected answer).
+            # v1.3.1.4: the old rule treated ANY CustomValidation.Logic block as a
+            # comprehension check — including sum-to-100 constraints and forced-choice
+            # rules — took the expected answer from whichever RightOperand came last in
+            # an unordered dict, never checked the operator (so a NotEqualTo validation
+            # reported the WRONG answer as correct), and returned the Qualtrics choice
+            # recode id rather than the answer text.
             is_comprehension_check = False
             comprehension_expected = None
+            comprehension_options: List[str] = []
             if isinstance(validation, dict):
                 settings = validation.get('Settings', {})
                 if isinstance(settings, dict):
                     custom_val = settings.get('CustomValidation', {})
                     if isinstance(custom_val, dict) and 'Logic' in custom_val:
-                        is_comprehension_check = True
-                        # Try to extract expected answer from logic
-                        logic = custom_val.get('Logic', {})
-                        if isinstance(logic, dict):
-                            for _, condition_group in logic.items():
-                                if isinstance(condition_group, dict):
-                                    for _, condition in condition_group.items():
-                                        if isinstance(condition, dict):
-                                            right_operand = condition.get('RightOperand')
-                                            if right_operand:
-                                                comprehension_expected = str(right_operand)
-                                                break
-                        if is_comprehension_check:
+                        expected_id = self._extract_equal_to_operand(custom_val.get('Logic', {}))
+                        looks_like_check = (
+                            expected_id is not None
+                            and self._looks_like_comprehension_check(q_id, data_export_tag, question_text)
+                        )
+                        if looks_like_check:
+                            is_comprehension_check = True
+                            comprehension_expected, comprehension_options = (
+                                self._resolve_choice_text(expected_id, choices_data)
+                            )
                             self._log(
                                 LogLevel.INFO, "COMPREHENSION_CHECK",
                                 f"Detected comprehension check: {q_id} (expected: {comprehension_expected})"
@@ -1292,6 +1303,7 @@ class QSFPreviewParser:
                 form_fields=form_fields,
                 is_comprehension_check=is_comprehension_check,
                 comprehension_expected=comprehension_expected,
+                comprehension_options=comprehension_options,
                 min_chars=min_chars,
                 max_chars=max_chars,
                 validation_regex=validation_regex,
@@ -3979,22 +3991,26 @@ class QSFPreviewParser:
         """
         manipulation_checks = []
 
-        # Patterns that suggest manipulation checks
+        # v1.3.1.4: this detector was dead code (nothing called it) and over-fired.
+        # The bare id pattern r'check' matched "checkout_intent", and r'comprehension'
+        # pulled in comprehension checks, which are a separate column family. A text
+        # phrase is now required, or a manipulation-check-shaped variable name.
         manip_keywords = [
-            'manipulation check', 'manip check', 'understanding check',
-            'did you notice', 'do you recall', 'what was the',
-            'in the scenario', 'in the study', 'in the experiment',
-            'what did the', 'who was the', 'which condition',
-            'the [product/person/article]', 'comprehension',
-            'perceived as', 'seemed like', 'appeared to be',
-            'treatment you received', 'condition you were in',
-            'recall what', 'remember what',
+            'manipulation check', 'manip check',
+            'did you notice', 'do you recall', 'do you remember',
+            'which condition', 'what condition', 'condition you were',
+            'treatment you received', 'treatment you were',
+            'version you saw', 'version you read', 'scenario you read',
+            'what was the', 'what did the', 'who was the',
+            'to what extent did the', 'how would you describe the',
         ]
 
-        # Question ID patterns for manipulation checks
+        # Variable-name patterns. ``\d*`` with non-alphanumeric boundaries so
+        # "MC_1" and "manip2" match while "checkout" and "uncheck" do not.
         manip_id_patterns = [
-            r'mc[_\d]', r'manip', r'manipulation', r'comprehension',
-            r'recall', r'check', r'understand',
+            r'(?<![a-z0-9])mc\d*(?![a-z0-9])',
+            r'(?<![a-z0-9])manip\w*',
+            r'(?<![a-z0-9])manipulation\w*',
         ]
 
         if not isinstance(questions_map, dict):
@@ -4002,22 +4018,26 @@ class QSFPreviewParser:
 
         for q_id, q_info in questions_map.items():
             text = q_info.question_text.lower() if q_info.question_text else ''
-            q_id_lower = q_id.lower()
+            export_tag = str(getattr(q_info, 'export_tag', '') or '')
+            name_lower = f"{q_id} {export_tag}".lower()
 
             # Check text content
             is_manip = any(kw in text for kw in manip_keywords)
 
             # Check question ID patterns
             if not is_manip:
-                is_manip = any(re.search(p, q_id_lower) for p in manip_id_patterns)
+                is_manip = any(re.search(p, name_lower) for p in manip_id_patterns)
 
-            # Avoid false positives - don't flag if it's an attention check
-            attention_indicators = ['attention', 'please select', 'instructed']
+            # Avoid false positives - don't flag if it's an attention or comprehension
+            # check; both are generated as their own column family.
+            attention_indicators = ['attention', 'please select', 'please choose', 'instructed']
             if is_manip and any(ind in text for ind in attention_indicators):
+                continue
+            if is_manip and getattr(q_info, 'is_comprehension_check', False):
                 continue
 
             if is_manip:
-                manipulation_checks.append(q_id)
+                manipulation_checks.append(export_tag or q_id)
                 self._log(
                     LogLevel.INFO, "MANIPULATION_CHECK",
                     f"Detected manipulation check: {q_id}"
@@ -4502,6 +4522,88 @@ class QSFPreviewParser:
 
         return text_entries
 
+    @staticmethod
+    def _extract_equal_to_operand(logic: Any) -> Optional[str]:
+        """The RightOperand of the FIRST EqualTo condition in a CustomValidation block.
+
+        v1.3.1.4. Only an equality test states a correct answer; a NotEqualTo or a
+        numeric range states a constraint, and reading its operand as "the correct
+        answer" gave exactly the wrong one. Conditions are visited in sorted key
+        order so the result does not depend on dict ordering.
+        """
+        if not isinstance(logic, dict):
+            return None
+        for _, group in sorted(logic.items(), key=lambda kv: str(kv[0])):
+            if not isinstance(group, dict):
+                continue
+            for _, condition in sorted(group.items(), key=lambda kv: str(kv[0])):
+                if not isinstance(condition, dict):
+                    continue
+                operator = str(condition.get('Operator', '') or '').strip().lower()
+                if operator not in ('equalto', 'selected', 'is', 'equals'):
+                    continue
+                operand = condition.get('RightOperand')
+                if operand is None and operator == 'selected':
+                    operand = condition.get('ChoiceLocator') or condition.get('LeftOperand')
+                if operand is not None and str(operand).strip():
+                    return str(operand).strip()
+        return None
+
+    @staticmethod
+    def _looks_like_comprehension_check(
+        q_id: str, export_tag: str, question_text: str
+    ) -> bool:
+        """Does anything but the validation block say this is a comprehension check?
+
+        v1.3.1.4: a validation block alone is not evidence — Qualtrics uses
+        CustomValidation for sum-to-100 budgets and forced-choice rules too.
+        """
+        name = f"{q_id or ''} {export_tag or ''}".lower()
+        # ``\d*`` so "Comp1" / "MC_2" match while "company" and "checkout" do not.
+        if re.search(
+            r'(?<![a-z0-9])(comp|comprehension|manip|manipulation|check|recall|understanding)\d*(?![a-z0-9])',
+            name,
+        ):
+            return True
+        text = str(question_text or '').lower()
+        cues = (
+            'comprehension', 'did you notice', 'do you recall', 'do you remember',
+            'in the scenario', 'in the passage', 'according to the', 'what was the',
+            'which of the following describes', 'which condition', 'you just read',
+            'you just saw', 'as described above',
+        )
+        return any(cue in text for cue in cues)
+
+    @staticmethod
+    def _resolve_choice_text(
+        operand: Optional[str], choices_data: Any
+    ) -> Tuple[Optional[str], List[str]]:
+        """Map a Qualtrics choice recode id to its display text, with all options.
+
+        v1.3.1.4: ``RightOperand`` is a recode id such as ``"2"``; writing that into
+        the data produced a column of ``"2"`` and ``"Wrong_2"``.
+        """
+        options: List[str] = []
+        by_id: Dict[str, str] = {}
+        if isinstance(choices_data, dict):
+            for choice_id, choice in choices_data.items():
+                if isinstance(choice, dict):
+                    display = choice.get('Display', '')
+                else:
+                    display = choice
+                label = re.sub(r'<[^>]+>', '', str(display or '')).strip()
+                if not label:
+                    continue
+                by_id[str(choice_id).strip()] = label
+                recode = choice.get('RecodeValue') if isinstance(choice, dict) else None
+                if recode is not None and str(recode).strip():
+                    by_id.setdefault(str(recode).strip(), label)
+                options.append(label)
+        if operand is None:
+            return None, options
+        key = str(operand).strip()
+        return by_id.get(key, key), options
+
     def _extract_comprehension_checks(self, questions_map: Dict) -> List[Dict[str, Any]]:
         """Extract comprehension check questions with their expected answers.
 
@@ -4522,6 +4624,7 @@ class QSFPreviewParser:
                     'question_text': q_info.question_text[:150],
                     'block_name': q_info.block_name,
                     'expected_answer': q_info.comprehension_expected,
+                    'answer_options': list(q_info.comprehension_options or []),
                     'selector': q_info.selector,
                 })
 
