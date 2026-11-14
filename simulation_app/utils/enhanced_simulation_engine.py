@@ -16008,9 +16008,6 @@ class EnhancedSimulationEngine:
             "consistency_audit": _consistency_audit,
             "scale_verification": self._build_scale_verification_report(df),
             "generation_warnings": self._check_generation_warnings(df),
-            # v1.3.1.4: what the comprehension / manipulation / attention checks were
-            # configured to do and what they actually produced.
-            "checks": dict(self.check_metadata),
             # v1.8.7.1: Include open-ended questions with context in metadata
             "open_ended_questions": [
                 {
@@ -16320,6 +16317,13 @@ class EnhancedSimulationEngine:
             self._finalize_quality_flags(df, metadata)
         except Exception as _flag_err:
             self._log(f"WARNING: final quality-flag refresh skipped: {_flag_err}")
+
+        # v1.3.1.4: what the comprehension / manipulation / attention checks were
+        # configured to do and what they actually produced. Added only when such a
+        # check exists, so a run without them keeps byte-identical metadata
+        # (BASELINE_HASHES in tests/test_within_design_v1306.py).
+        if self.check_metadata:
+            metadata["checks"] = dict(self.check_metadata)
 
         return df, metadata
 
