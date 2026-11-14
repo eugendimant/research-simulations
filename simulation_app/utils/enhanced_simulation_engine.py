@@ -46,7 +46,7 @@ This module is designed to run inside a `utils/` package (i.e., imported as
 """
 
 # Version identifier to help track deployed code
-__version__ = "1.3.1.4"  # kept in step with utils/__init__.py by scripts/check_version_sync.py
+__version__ = "1.3.1.5"  # kept in step with utils/__init__.py by scripts/check_version_sync.py
 # NOTE: this stamp was frozen at 1.0.9.5 for 30 releases because it is not one of the ten locations
 # the version check enforces. A stamp nobody checks is worse than no stamp: it tells a reader the
 # wrong thing with authority. It is now in the enforced set.
@@ -11556,6 +11556,7 @@ class EnhancedSimulationEngine:
         from .check_simulation import (
             generate_comprehension_values,
             generate_manipulation_values,
+            is_reserved_column,
             normalize_attention_specs,
             normalize_comprehension_specs,
             normalize_manipulation_specs,
@@ -11608,6 +11609,18 @@ class EnhancedSimulationEngine:
         manip_meta: List[Dict[str, Any]] = []
         manip_fail = np.zeros(n, dtype=int)
         for spec in manip_specs:
+            # v1.3.1.5: a check named like one of the engine's own columns. The
+            # comprehension and attention families already refuse this; the
+            # manipulation family instead BOUND to it as though the demographic were
+            # the measured outcome, and with exclude_failed_manipulation set that
+            # excluded every participant in the low arm.
+            if is_reserved_column(spec.column) or is_reserved_column(spec.bound_column):
+                self._check_warnings.append(
+                    f"Manipulation check '{spec.name}' uses the name of a column the "
+                    f"simulator writes itself ('{spec.bound_column or spec.column}'), so "
+                    "no check was generated. Give the check a name of its own."
+                )
+                continue
             if spec.bound_column:
                 # Already a DV: keep the analyst's own column and scale, add only
                 # the pass flag computed from it.
@@ -11681,6 +11694,13 @@ class EnhancedSimulationEngine:
         comp_meta: List[Dict[str, Any]] = []
         comp_fail = np.zeros(n, dtype=int)
         for spec in comp_specs:
+            if is_reserved_column(spec.column):
+                self._check_warnings.append(
+                    f"Comprehension check '{spec.name}' uses the name of a column the "
+                    f"simulator writes itself ('{spec.column}'), so no check was "
+                    "generated. Give the check a name of its own."
+                )
+                continue
             if spec.column in data or f"{spec.column}_Pass" in data:
                 self._check_warnings.append(
                     f"Comprehension check '{spec.name}' collides with an existing "
@@ -11734,6 +11754,13 @@ class EnhancedSimulationEngine:
         self._check_warnings.extend(attn_warn)
         attn_meta: List[Dict[str, Any]] = []
         for a_idx, spec in enumerate(attn_specs):
+            if is_reserved_column(spec.column):
+                self._check_warnings.append(
+                    f"Attention check '{spec.name}' uses the name of a column the "
+                    f"simulator writes itself ('{spec.column}'), so no check was "
+                    "generated. Give the check a name of its own."
+                )
+                continue
             if spec.column in data:
                 self._check_warnings.append(
                     f"Attention check '{spec.name}' collides with an existing column "
