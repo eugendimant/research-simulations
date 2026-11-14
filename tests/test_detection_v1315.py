@@ -279,3 +279,64 @@ def test_no_detection_on_an_empty_or_malformed_questions_map():
     assert parser._detect_manipulation_checks(None) == []
     parser._promote_block_named_comprehension_checks(None)  # must not raise
     parser._promote_block_named_comprehension_checks({})
+
+
+# ---------------------------------------------------------------------------
+# 4. a check may not be named after one of the engine's own columns
+# ---------------------------------------------------------------------------
+
+def _check_engine(**overrides):
+    from utils.enhanced_simulation_engine import EnhancedSimulationEngine, ExclusionCriteria
+    kwargs = dict(
+        study_title="Message study",
+        study_description="Attitudes toward a persuasive message.",
+        sample_size=200,
+        conditions=["Control", "Treatment"],
+        factors=[{"name": "Arm", "levels": ["Control", "Treatment"]}],
+        scales=[{"name": "DV", "num_items": 3, "scale_points": 7, "type": "matrix"}],
+        additional_vars=[],
+        demographics={"gender_quota": 50, "age_mean": 35, "age_sd": 12},
+        seed=5,
+        exclusion_criteria=ExclusionCriteria(exclude_failed_manipulation=True),
+    )
+    kwargs.update(overrides)
+    return EnhancedSimulationEngine(**kwargs)
+
+
+def test_a_manipulation_check_named_age_does_not_exclude_a_whole_arm():
+    """``resolve_existing_column`` bound to ANY existing column, demographics included.
+
+    The targets then sat on the check's 1-7 scale while the column held ages, so
+    every age above the high target "passed": 100% of one arm failed and, with
+    ``exclude_failed_manipulation`` set, 53% of the sample was dropped.
+    """
+    df, meta = _check_engine(manipulation_checks=[{"name": "Age"}]).generate()
+    assert "Age_Pass" not in df.columns
+    assert df["Age"].notna().all() and (df["Age"] > 15).all()
+    by_arm = df.groupby("CONDITION")["Exclude_Recommended"].mean()
+    assert by_arm.max() < 0.5, dict(by_arm)
+    assert any("writes itself" in str(w) for w in (meta.get("generation_warnings") or []))
+
+
+def test_no_check_family_may_take_an_engine_column_name():
+    df, meta = _check_engine(
+        manipulation_checks=[{"name": "CONDITION"}, {"name": "Flag_Speed"},
+                             {"name": "ABE3_Income"}, {"name": "MC_real"}],
+        comprehension_checks=[{"name": "Gender", "correct_answer": "x",
+                               "answer_options": "x; y"}],
+        named_attention_checks=["PARTICIPANT_ID"],
+    ).generate()
+    assert [c for c in df.columns if c.endswith("_Pass")] == ["MC_real_Pass"]
+    assert df["PARTICIPANT_ID"].is_unique
+    assert set(df["Gender"].dropna()) <= {"Male", "Female", "Non-binary", "Other",
+                                          "Prefer not to say"}
+    refused = [w for w in (meta.get("generation_warnings") or []) if "writes itself" in str(w)]
+    assert len(refused) == 5, refused
+
+
+def test_the_reserved_list_does_not_swallow_an_ordinary_name():
+    from utils.check_simulation import is_reserved_column
+    for name in ("Age", "CONDITION", "Flag_Attention", "ABE3_PartyID", "PARTICIPANT_ID"):
+        assert is_reserved_column(name), name
+    for name in ("Age_perceived", "Flagged_item", "MC_Age", "Condition_clarity", "Gendered"):
+        assert not is_reserved_column(name), name

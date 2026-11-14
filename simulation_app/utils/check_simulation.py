@@ -50,6 +50,7 @@ __all__ = [
     "condition_intensity_order",
     "generate_comprehension_values",
     "generate_manipulation_values",
+    "is_reserved_column",
     "normalize_attention_specs",
     "normalize_check_name",
     "normalize_comprehension_specs",
@@ -76,6 +77,28 @@ def normalize_check_name(name: Any, fallback: str = "Check") -> str:
     if cleaned[0].isdigit():
         cleaned = f"V_{cleaned}"
     return cleaned
+
+
+# Columns the engine writes itself. A check must never be bound to one, and never
+# overwrite one (v1.3.1.5). Naming a manipulation check "Age" bound it to the
+# demographic column: the targets then sat on the check's 1-7 scale, so every age
+# above the high target "passed" and every participant in the low arm failed, and
+# with exclude_failed_manipulation set that silently dropped a whole arm.
+_RESERVED_COLUMNS = frozenset({
+    "PARTICIPANT_ID", "RUN_ID", "SIMULATION_MODE", "SIMULATION_SEED", "CONDITION",
+    "Age", "Gender", "Completion_Time_Seconds", "Attention_Pass_Rate",
+    "Max_Straight_Line", "Exclude_Recommended", "Mean_Item_RT_ms",
+    "Total_Scale_RT_ms", "_Generation_Source", "Order",
+})
+_RESERVED_PREFIXES = ("Flag_", "ABE3_", "Position_")
+
+
+def is_reserved_column(name: Any) -> bool:
+    """Is this one of the engine's own bookkeeping columns?"""
+    text = str(name or "")
+    if text in _RESERVED_COLUMNS:
+        return True
+    return any(text.startswith(prefix) for prefix in _RESERVED_PREFIXES)
 
 
 def resolve_existing_column(name: str, columns: Sequence[str]) -> Optional[str]:

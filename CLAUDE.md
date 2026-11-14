@@ -360,6 +360,14 @@ Runs in this order:
     already states a correct answer (`comprehension_candidate`), and never one in a
     trash/unused block. Do **not** use `_is_excluded_block_name` here: that list exists to
     keep blocks out of CONDITION detection and it excludes "Comprehension 1" by name.
+  - **A check may not be named after a column the engine writes** (`is_reserved_column`
+    in `check_simulation`). `resolve_existing_column` bound to ANY existing column, so a
+    manipulation check called `Age` was treated as "also a measured outcome": the targets
+    sat on the check's 1-7 scale while the column held ages, every age above the high
+    target "passed", 100% of one arm failed, and with `exclude_failed_manipulation` set
+    53% of the sample was silently dropped. All three families now refuse the name with a
+    warning; the comprehension and attention families already refused it by accident
+    (their `in data` guard), the manipulation family did not.
 - Guards: `tests/test_checks_v1314.py`, `tests/test_detection_v1315.py`.
 
 ---
