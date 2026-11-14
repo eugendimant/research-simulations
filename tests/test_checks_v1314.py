@@ -373,16 +373,26 @@ def test_check_columns_are_documented_in_the_codebook():
         assert descriptions[col].strip()
 
 
-def test_check_answers_receive_missing_data_but_pass_flags_do_not():
+def test_a_standalone_check_answer_is_never_missing():
+    """A missing answer beside a 0/1 pass flag is a contradiction.
+
+    Comprehension and manipulation checks are forced-response in practice, so
+    their own columns are protected from the missing-data pass — the same rule
+    the attention-check columns have always had. A check bound to a measured DV
+    is the exception: it inherits that DV's missingness, and its flag goes
+    missing with it (see test_pass_flags_are_reproducible_from_the_exported_columns).
+    """
     eng = _engine(
         sample_size=600,
         missing_data_rate=0.08,
         manipulation_checks=[{"name": "MC"}],
+        comprehension_checks=[{"name": "Comp", "correct_answer": "A", "answer_options": "A; B"}],
     )
     df, _ = eng.generate()
-    assert df["MC"].isna().sum() > 0
-    assert df["MC_Pass"].isna().sum() == 0
-    assert df["Flag_Manipulation"].isna().sum() == 0
+    for col in ("MC", "MC_Pass", "Comp", "Comp_Pass", "Flag_Manipulation", "Flag_Comprehension"):
+        assert df[col].isna().sum() == 0, f"{col} should be complete"
+    # The study's own DVs still receive missingness.
+    assert df["Purchase_1"].isna().sum() > 0
 
 
 # ---------------------------------------------------------------------------
@@ -492,3 +502,84 @@ def test_manipulation_check_editor_exists_on_the_design_page(monkeypatch, tmp_pa
     stored = at.session_state["confirmed_manipulation_checks"][0]
     for field_name in ("scale_min", "scale_max", "effect_size", "high_conditions"):
         assert field_name in stored
+
+
+# ---------------------------------------------------------------------------
+# Review findings on PR #375 (Codex, 2026-11-14)
+# ---------------------------------------------------------------------------
+
+def test_two_checks_with_the_same_settings_are_two_measurements():
+    """A shared seed made identical-looking checks the same column twice."""
+    eng = _engine(
+        sample_size=500,
+        manipulation_checks=[{"name": "MC_A"}, {"name": "MC_B"}],
+        comprehension_checks=[
+            {"name": "C_A", "correct_answer": "A", "answer_options": "A; B", "pass_rate": 0.8},
+            {"name": "C_B", "correct_answer": "A", "answer_options": "A; B", "pass_rate": 0.8},
+        ],
+    )
+    df, _ = eng.generate()
+    assert not df["MC_A"].equals(df["MC_B"])
+    assert not df["C_A_Pass"].equals(df["C_B_Pass"])
+    # Independent, not nested: both directions of disagreement occur.
+    assert ((df["C_A_Pass"] == 1) & (df["C_B_Pass"] == 0)).any()
+    assert ((df["C_A_Pass"] == 0) & (df["C_B_Pass"] == 1)).any()
+
+
+def test_labelled_answers_are_never_rewritten_as_prose():
+    """Long choice labels could be classified as open-ended text and reworded."""
+    options = [
+        "The product was described as being in limited supply this season",
+        "The product was described as widely available all year round",
+    ]
+    eng = _engine(
+        sample_size=20,
+        comprehension_checks=[{
+            "name": "Comp", "correct_answer": options[0],
+            "answer_options": "; ".join(options), "pass_rate": 0.7,
+        }],
+    )
+    df, _ = eng.generate()
+    assert set(df["Comp"].dropna().unique()) <= set(options)
+
+
+def test_pass_flags_are_reproducible_from_the_exported_columns():
+    """Every flag must be re-derivable from the data that is actually delivered."""
+    eng = _engine(
+        sample_size=300,
+        missing_data_rate=0.30,
+        scales=[
+            {"name": "Purchase", "num_items": 3, "scale_points": 7, "type": "matrix"},
+            {"name": "MC_Bound", "num_items": 3, "scale_points": 7, "type": "matrix"},
+        ],
+        manipulation_checks=[{"name": "MC_Bound"}],
+        comprehension_checks=[{"name": "Comp", "correct_answer": "A",
+                               "answer_options": "A; B", "pass_rate": 0.8}],
+    )
+    df, meta = eng.generate()
+
+    bound = meta["checks"]["manipulation_checks"][0]
+    assert bound["bound_to_dv"] is True
+    col = bound["column"]
+    targets = {k: float(v) for k, v in bound["condition_targets"].items()}
+    values = df[col]
+    # A bound check is a measured DV, so it carries that DV's missingness — and the
+    # flag goes missing with it rather than reading as "passed".
+    assert values.isna().sum() > 0
+    assert (df[f"{col}_Pass"].isna() == values.isna()).all()
+    for pos in range(len(df)):
+        val = values.iloc[pos]
+        if not np.isfinite(val):
+            continue
+        cond = str(df["CONDITION"].iloc[pos])
+        own = targets[cond]
+        expected = int(all(abs(val - own) <= abs(val - other) + 1e-9
+                           for label, other in targets.items() if label != cond))
+        assert int(df[f"{col}_Pass"].iloc[pos]) == expected
+
+    assert df["Comp"].isna().sum() == 0
+    assert (df["Comp_Pass"] == (df["Comp"] == "A").astype(int)).all()
+    assert (df["Flag_Comprehension"] == (1 - df["Comp_Pass"])).all()
+    # The reported rate is the delivered rate.
+    assert abs(meta["checks"]["comprehension_checks"][0]["pass_rate_observed"]
+               - df["Comp_Pass"].mean()) < 1e-3

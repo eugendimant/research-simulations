@@ -3906,6 +3906,9 @@ class EnhancedSimulationEngine:
         self._raw_named_attention_checks = list(named_attention_checks or [])
         self.check_metadata: Dict[str, Any] = {}
         self._check_warnings: List[str] = []
+        self._check_recompute: Dict[str, List[Dict[str, Any]]] = {
+            "manipulation": [], "comprehension": [],
+        }
         # v1.3.0.8: a declaration carried on the scale itself ("higher_means" / "base_rate") is the
         # route the app uses; an explicit dv_polarity / dv_base_rates argument wins over it.
         for _sc in self.scales:
@@ -4462,6 +4465,13 @@ class EnhancedSimulationEngine:
                 _PROTECTED_COLUMNS.add(col)
         for _spec in (self.check_metadata.get("named_attention_checks") or []):
             _PROTECTED_COLUMNS.add(str(_spec.get("column", "")))
+        # v1.3.1.4 (review): the answer columns too. A missing answer beside a 1/0 pass
+        # flag is a contradiction an analyst cannot resolve, and comprehension and
+        # manipulation checks are forced-response in practice — the same reason the
+        # attention-check columns above are protected.
+        for _family in ("manipulation", "comprehension"):
+            for _spec in self._check_recompute.get(_family, []):
+                _PROTECTED_COLUMNS.add(str(_spec.get("column", "")))
 
         # Identify eligible columns (numeric, not protected, not open-ended strings)
         eligible_cols: List[str] = []
@@ -11495,6 +11505,7 @@ class EnhancedSimulationEngine:
             df["Flag_Attention"] = (pr < (thr if thr > 0 else 1.0)).astype(int)
         if "Flag_StraightLine" in df.columns and "Max_Straight_Line" in df.columns:
             self._recompute_straight_line_columns(df)
+        self._recompute_check_flags(df, metadata)
         if "Exclude_Recommended" in df.columns:
             if crit.exclude_careless_responders:
                 df["Exclude_Recommended"] = 0
@@ -11620,8 +11631,12 @@ class EnhancedSimulationEngine:
                     f"column '{col}' was used as-is and only '{col}_Pass' was added."
                 )
             else:
+                # v1.3.1.4 (review): the seed carries the check's own name, so two
+                # manipulation checks with the same settings are two measurements
+                # rather than the same column twice.
                 values, passes = generate_manipulation_values(
-                    spec, cond_list, all_traits, dv_z, self.seed + 31337,
+                    spec, cond_list, all_traits, dv_z,
+                    self.seed + 31337 + _stable_int_hash(spec.column),
                 )
                 col = spec.column
                 data[col] = values
@@ -11637,6 +11652,12 @@ class EnhancedSimulationEngine:
                 f"participant's own condition): 1=Yes, 0=No",
             ))
             manip_fail += (1 - np.asarray(passes, dtype=int))
+            # v1.3.1.4 (review): a bound DV is still changed after this point by the
+            # game model, composite reconciliation and the validator, so the pass flag
+            # is recomputed from the FINAL column in _finalize_quality_flags.
+            self._check_recompute["manipulation"].append(
+                {"column": col, "targets": dict(spec.targets), "name": spec.name}
+            )
             manip_meta.append({
                 "name": spec.name,
                 "column": col,
@@ -11666,11 +11687,20 @@ class EnhancedSimulationEngine:
                     f"column '{spec.column}' and was skipped."
                 )
                 continue
+            # v1.3.1.4 (review): per-check seed — a shared one made two checks at the
+            # same pass rate produce identical pass/fail vectors, and checks at
+            # different rates produce nested ones.
             answers, passes = generate_comprehension_values(
-                spec, cond_list, all_traits, self.seed + 24691,
+                spec, cond_list, all_traits,
+                self.seed + 24691 + _stable_int_hash(spec.column),
             )
             data[spec.column] = answers
             data[f"{spec.column}_Pass"] = passes
+            # v1.3.1.4 (review): a labelled answer is a survey choice, not prose. Long
+            # choice labels can be classified as open-ended text, after which the
+            # stylometric engine and HBSValidator rewrite them and the exported answer
+            # no longer matches any option.
+            self._structured_oe_columns.add(spec.column)
             self.column_info.extend([
                 (spec.column,
                  f"Comprehension check '{spec.name}': "
@@ -11680,6 +11710,13 @@ class EnhancedSimulationEngine:
                  f"Comprehension check '{spec.name}' answered correctly: 1=Yes, 0=No"),
             ])
             comp_fail += (1 - np.asarray(passes, dtype=int))
+            self._check_recompute["comprehension"].append({
+                "column": spec.column,
+                "name": spec.name,
+                "correct_answer": spec.correct_answer,
+                "correct_by_condition": dict(spec.correct_by_condition),
+                "coded_only": spec.coded_only,
+            })
             comp_meta.append({
                 "name": spec.name,
                 "column": spec.column,
@@ -11741,6 +11778,93 @@ class EnhancedSimulationEngine:
         if self.attention_rate >= 1.0:
             p_fail = 0.0
         return bool(rng.random() >= p_fail), p_fail
+
+    def _recompute_check_flags(self, df: "pd.DataFrame", metadata: Dict[str, Any]) -> None:
+        """Re-derive every check's pass flag from the FINAL exported column.
+
+        v1.3.1.4 (review). The flags are first computed where the answers are drawn,
+        which is before the experimental game model, composite reconciliation, the
+        missing-data pass and the validator can still change a column — and a
+        manipulation check bound to a measured DV rides on exactly those columns. The
+        exported answer and its ``_Pass`` could therefore disagree, and the
+        disagreement could drive an exclusion. Every flag, the two aggregate
+        ``Flag_`` columns and the reported pass rates are rebuilt here, so each one is
+        reproducible from the data that is actually delivered.
+        """
+        specs_m = self._check_recompute.get("manipulation") or []
+        specs_c = self._check_recompute.get("comprehension") or []
+        if not (specs_m or specs_c):
+            return
+        conds = df["CONDITION"].astype(str) if "CONDITION" in df.columns else None
+
+        manip_fail = np.zeros(len(df), dtype=int)
+        for spec in specs_m:
+            col = str(spec.get("column", ""))
+            pass_col = f"{col}_Pass"
+            if col not in df.columns or pass_col not in df.columns:
+                continue
+            targets = {str(k): float(v) for k, v in (spec.get("targets") or {}).items()}
+            values = pd.to_numeric(df[col], errors="coerce")
+            flags = []
+            for pos in range(len(df)):
+                val = values.iloc[pos]
+                cond = str(conds.iloc[pos]) if conds is not None else ""
+                if not np.isfinite(val) or len(targets) < 2 or cond not in targets:
+                    # No answer to classify. A manipulation check bound to a measured
+                    # DV inherits that DV's missingness, and a participant cannot fail
+                    # an item they did not answer, so the flag is missing too rather
+                    # than silently reading as "passed".
+                    flags.append(float("nan"))
+                    continue
+                own = targets[cond]
+                own_gap = abs(val - own)
+                flags.append(1 if all(
+                    own_gap <= abs(val - other) + 1e-9
+                    for label, other in targets.items() if label != cond
+                ) else 0)
+            arr = np.asarray(flags, dtype=float)
+            df[pass_col] = arr if np.isnan(arr).any() else arr.astype(int)
+            manip_fail += (arr == 0.0).astype(int)
+            observed = float(np.nanmean(arr)) if np.isfinite(arr).any() else 0.0
+            self._update_check_pass_rate("manipulation_checks", col, observed)
+
+        comp_fail = np.zeros(len(df), dtype=int)
+        for spec in specs_c:
+            col = str(spec.get("column", ""))
+            pass_col = f"{col}_Pass"
+            if col not in df.columns or pass_col not in df.columns:
+                continue
+            by_condition = {str(k): str(v) for k, v in (spec.get("correct_by_condition") or {}).items()}
+            correct = str(spec.get("correct_answer", ""))
+            coded = bool(spec.get("coded_only"))
+            flags = []
+            for pos in range(len(df)):
+                answer = df[col].iloc[pos]
+                if answer is None or (isinstance(answer, float) and not np.isfinite(answer)):
+                    flags.append(float("nan"))
+                    continue
+                if coded:
+                    flags.append(1 if _safe_numeric(answer, 0.0) >= 0.5 else 0)
+                    continue
+                cond = str(conds.iloc[pos]) if conds is not None else ""
+                flags.append(1 if str(answer) == by_condition.get(cond, correct) else 0)
+            arr = np.asarray(flags, dtype=float)
+            df[pass_col] = arr if np.isnan(arr).any() else arr.astype(int)
+            comp_fail += (arr == 0.0).astype(int)
+            observed = float(np.nanmean(arr)) if np.isfinite(arr).any() else 0.0
+            self._update_check_pass_rate("comprehension_checks", col, observed)
+
+        if specs_m and "Flag_Manipulation" in df.columns:
+            df["Flag_Manipulation"] = (manip_fail > 0).astype(int)
+        if specs_c and "Flag_Comprehension" in df.columns:
+            df["Flag_Comprehension"] = (comp_fail > 0).astype(int)
+
+    def _update_check_pass_rate(self, family: str, column: str, rate: float) -> None:
+        """Keep metadata["checks"][family][i]["pass_rate_observed"] true to the data."""
+        for entry in (self.check_metadata.get(family) or []):
+            if str(entry.get("column", "")) == column:
+                entry["pass_rate_observed"] = round(float(rate), 4)
+                return
 
     def _calibrate_attention_fail_scale(self, all_traits: List[Dict[str, float]]) -> float:
         """Scale so that mean per-participant failure probability == 1 - attention_rate.
